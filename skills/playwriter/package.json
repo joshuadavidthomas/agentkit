@@ -9,8 +9,8 @@
     "build:browser": "bun build scripts/browser.js --compile --outfile dist/browser --external electron"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.0",
-    "playwright-core": "^1.52.0",
-    "chromium-bidi": "^13.0.0"
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "playwright-core": "^1.57.0",
+    "chromium-bidi": "^13.0.1"
   }
 }
