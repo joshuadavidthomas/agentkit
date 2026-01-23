@@ -4,13 +4,13 @@ A personal collection of commands, skills, subagents, and scripts for Claude Cod
 
 ## Skills
 
-### btca
+### [btca](./skills/btca/SKILL.md)
 
 Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code — searches actual source, not outdated docs.
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### frontend-design-principles
+### [frontend-design-principles](./skills/frontend-design-principles/SKILL.md)
 
 Create polished, intentional frontend interfaces. Fights the tendency toward generic AI output by requiring domain exploration and self-checks before generating code.
 
@@ -22,7 +22,7 @@ Includes:
 - Specialized guidance for app interfaces (dashboards, tools) and marketing (landing pages, creative work)
 - Technical foundations (spacing, oklch colors, depth strategies, dark mode)
 
-### writing-cli-skills
+### [writing-cli-skills](./skills/writing-cli-skills/SKILL.md)
 
 Guide for writing skills that wrap CLI tools. Use when creating a new CLI skill or reviewing an existing one.
 
