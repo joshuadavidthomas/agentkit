@@ -263,7 +263,7 @@ export default function (pi: ExtensionAPI) {
               theme.fg("dim", "at ") +
               theme.fg(contextColor, theme.bold(contextStr)) +
               " " +
-              theme.fg("dim", contextDetail)
+              theme.fg("dim", theme.italic(contextDetail))
             );
           }
 
