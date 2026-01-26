@@ -30,7 +30,9 @@ type HookOutput = {
 };
 
 type DcgBlockDetails = {
+  dcgBlocked: true;
   command: string;
+  summary: string;
   fullReason: string;
 };
 
@@ -217,24 +219,6 @@ class DcgDecisionComponent implements Component {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerMessageRenderer("dcg-block", (message, options, theme) => {
-    const details = message.details as DcgBlockDetails | undefined;
-    const header = theme.fg("accent", theme.bold("dcg blocked"));
-    const commandLine = details?.command
-      ? `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`
-      : "";
-    const summary = theme.fg("text", message.content);
-
-    if (options.expanded && details?.fullReason) {
-      const full = theme.fg("text", details.fullReason);
-      return new Text([header, commandLine, full].filter(Boolean).join("\n"), 1, 0);
-    }
-
-    const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
-    const parts = [header, commandLine, summary, hint].filter(Boolean).join("\n");
-    return new Text(parts, 1, 0);
-  });
-
   const runDcgHook = async (command: string, cwd: string) => {
     const payload = JSON.stringify({ tool_name: "Bash", tool_input: { command } });
     const escapedPayload = escapeForSingleQuotes(payload);
@@ -272,8 +256,37 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     ...baseBash,
+    renderResult(result, options, theme) {
+      const details = result.details as DcgBlockDetails | undefined;
+      if (!details?.dcgBlocked) {
+        return baseBash.renderResult
+          ? baseBash.renderResult(result, options, theme)
+          : new Text(
+              result.content?.map((item: { text?: string }) => item.text || "").join("\n") || "",
+              0,
+              0,
+            );
+      }
+
+      const header = theme.fg("accent", theme.bold("dcg blocked"));
+      const commandLine = `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`;
+      if (options.expanded) {
+        const full = theme.fg("text", details.fullReason);
+        return new Text([header, commandLine, full].join("\n"), 0, 0);
+      }
+
+      const summary = theme.fg("text", details.summary);
+      const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
+      return new Text([header, commandLine, summary, hint].join("\n"), 0, 0);
+    },
     async execute(toolCallId, params, onUpdate, ctx, signal) {
       const command = params.command ?? "";
+      const buildBlockDetails = (message: string): DcgBlockDetails => ({
+        dcgBlocked: true,
+        command,
+        summary: getDecisionReason(message),
+        fullReason: message,
+      });
 
       try {
         const output = await runDcgHook(command, ctx.cwd);
@@ -295,25 +308,12 @@ export default function (pi: ExtensionAPI) {
         }
 
         const reason = hookOutput.permissionDecisionReason ?? output;
-        const sendBlockMessage = (message: string) => {
-          pi.sendMessage(
-            {
-              customType: "dcg-block",
-              content: getDecisionReason(message),
-              display: true,
-              details: { command, fullReason: message },
-            },
-            { deliverAs: "steer" },
-          );
-        };
-
         const blockResult = {
           content: [],
-          details: {},
+          details: buildBlockDetails(reason),
         };
 
         if (!ctx.hasUI) {
-          sendBlockMessage(reason);
           return blockResult;
         }
 
@@ -334,7 +334,6 @@ export default function (pi: ExtensionAPI) {
         );
 
         const denyAndBlock = (explicit: boolean) => {
-          sendBlockMessage(reason);
           if (explicit) {
             pi.sendMessage(
               {
@@ -355,7 +354,6 @@ export default function (pi: ExtensionAPI) {
 
         if (result === "allowOnce") {
           if (!hookOutput.allowOnceCode) {
-            sendBlockMessage(reason);
             return blockResult;
           }
 
@@ -364,8 +362,7 @@ export default function (pi: ExtensionAPI) {
           });
 
           if (allowOnceResult.code !== 0) {
-            sendBlockMessage(allowOnceResult.stderr.trim() || reason);
-            return blockResult;
+            return { content: [], details: buildBlockDetails(allowOnceResult.stderr.trim() || reason) };
           }
 
           const followUpOutput = await runDcgHook(command, ctx.cwd);
@@ -377,8 +374,7 @@ export default function (pi: ExtensionAPI) {
           if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
             const followUpReason =
               followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput;
-            sendBlockMessage(followUpReason);
-            return blockResult;
+            return { content: [], details: buildBlockDetails(followUpReason) };
           }
 
           return runBashTool(toolCallId, params, onUpdate, ctx, signal);
@@ -386,7 +382,6 @@ export default function (pi: ExtensionAPI) {
 
         const ruleId = hookOutput.ruleId;
         if (!ruleId) {
-          sendBlockMessage(reason);
           return blockResult;
         }
 
@@ -398,8 +393,7 @@ export default function (pi: ExtensionAPI) {
         );
 
         if (allowlistResult.code !== 0) {
-          sendBlockMessage(allowlistResult.stderr.trim() || reason);
-          return blockResult;
+          return { content: [], details: buildBlockDetails(allowlistResult.stderr.trim() || reason) };
         }
 
         const followUpOutput = await runDcgHook(command, ctx.cwd);
@@ -411,8 +405,7 @@ export default function (pi: ExtensionAPI) {
         if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
           const followUpReason =
             followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput;
-          sendBlockMessage(followUpReason);
-          return blockResult;
+          return { content: [], details: buildBlockDetails(followUpReason) };
         }
 
         return runBashTool(toolCallId, params, onUpdate, ctx, signal);
@@ -421,7 +414,7 @@ export default function (pi: ExtensionAPI) {
           const message = error instanceof Error ? error.message : String(error);
           ctx.ui.notify(`dcg failed: ${message}`, "warning");
         }
-        return blockResult;
+        return { content: [], details: buildBlockDetails("Blocked by dcg") };
       }
     },
   });
