@@ -4,10 +4,10 @@
   "workspaces": {
     "": {
       "devDependencies": {
-        "@mariozechner/pi-ai": "latest",
-        "@mariozechner/pi-coding-agent": "latest",
-        "@types/node": "latest",
-        "typescript": "latest",
+        "@mariozechner/pi-ai": "^0.50.0",
+        "@mariozechner/pi-coding-agent": "^0.50.0",
+        "@types/node": "^25.0.10",
+        "typescript": "^5.9.3",
       },
     },
   },
