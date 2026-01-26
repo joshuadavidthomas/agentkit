@@ -1,6 +1,6 @@
 # agentkit
 
-A personal collection of commands, skills, subagents, and scripts for Claude Code, OpenCode, Codex, and other agentic-based LLM tools.
+A personal collection of commands, skills, subagents, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic-based LLM tools.
 
 ## Runtimes
 
