@@ -14,6 +14,8 @@ import {
   Text,
 } from "@mariozechner/pi-tui";
 
+const shortBlockReason = "Blocked by dcg";
+
 const escapeForSingleQuotes = (value: string) => value.replace(/'/g, "'\"'\"'");
 
 type HookSpecificOutput = {
@@ -26,6 +28,12 @@ type HookSpecificOutput = {
 
 type HookOutput = {
   hookSpecificOutput?: HookSpecificOutput;
+};
+
+type DcgBlockDetails = {
+  command: string;
+  severity?: string;
+  decision: string;
 };
 
 type DcgDecision =
@@ -211,6 +219,20 @@ class DcgDecisionComponent implements Component {
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.registerMessageRenderer("dcg-block", (message, _options, theme) => {
+    const details = message.details as DcgBlockDetails | undefined;
+    const badge = details?.severity
+      ? ` ${severityBadge(details.severity, theme)}`
+      : "";
+    const header = theme.fg("accent", theme.bold("dcg blocked")) + badge;
+    const commandLine = details?.command
+      ? `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`
+      : "";
+    const body = theme.fg("text", message.content);
+    const parts = [header, commandLine, body].filter(Boolean).join("\n");
+    return new Text(parts, 1, 0);
+  });
+
   const runDcgHook = async (command: string, cwd: string) => {
     const payload = JSON.stringify({ tool_name: "Bash", tool_input: { command } });
     const escapedPayload = escapeForSingleQuotes(payload);
@@ -260,8 +282,25 @@ export default function (pi: ExtensionAPI) {
       }
 
       const reason = hookOutput.permissionDecisionReason ?? output;
+      const sendBlockMessage = (decision: string, details?: HookSpecificOutput) => {
+        pi.sendMessage(
+          {
+            customType: "dcg-block",
+            content: reason,
+            display: true,
+            details: {
+              command,
+              severity: details?.severity,
+              decision,
+            },
+          },
+          { deliverAs: "steer" },
+        );
+      };
+
       if (!ctx.hasUI) {
-        return { block: true, reason };
+        sendBlockMessage("auto", hookOutput);
+        return { block: true, reason: shortBlockReason };
       }
 
       const result = await ctx.ui.custom<DcgDecision | null>((tui, theme, _kb, done) =>
@@ -284,15 +323,16 @@ export default function (pi: ExtensionAPI) {
         if (explicit) {
           pi.sendMessage(
             {
-              customType: "dcg-decision",
-              content: "User decision: deny (dcg UI)",
-              display: true,
+              customType: "dcg-user-decision",
+              content: "deny",
+              display: false,
               details: { command, decision: "deny" },
             },
             { deliverAs: "steer" },
           );
         }
-        return { block: true, reason };
+        sendBlockMessage(explicit ? "deny" : "implicit", hookOutput);
+        return { block: true, reason: shortBlockReason };
       };
 
       if (!result || result === "deny") {
@@ -301,7 +341,8 @@ export default function (pi: ExtensionAPI) {
 
       if (result === "allowOnce") {
         if (!hookOutput.allowOnceCode) {
-          return { block: true, reason };
+          sendBlockMessage("allowOnce-missing", hookOutput);
+          return { block: true, reason: shortBlockReason };
         }
 
         const allowOnceResult = await pi.exec("dcg", ["allow-once", hookOutput.allowOnceCode], {
@@ -309,6 +350,7 @@ export default function (pi: ExtensionAPI) {
         });
 
         if (allowOnceResult.code !== 0) {
+          sendBlockMessage("allowOnce-failed", hookOutput);
           return {
             block: true,
             reason: allowOnceResult.stderr.trim() || "dcg allow-once failed",
@@ -322,10 +364,10 @@ export default function (pi: ExtensionAPI) {
 
         const followUpParsed = parseHookOutput(followUpOutput);
         if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
+          sendBlockMessage("allowOnce-denied", followUpParsed.hookSpecificOutput);
           return {
             block: true,
-            reason:
-              followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput,
+            reason: shortBlockReason,
           };
         }
 
@@ -334,7 +376,8 @@ export default function (pi: ExtensionAPI) {
 
       const ruleId = hookOutput.ruleId;
       if (!ruleId) {
-        return { block: true, reason };
+        sendBlockMessage("allowAlways-missing", hookOutput);
+        return { block: true, reason: shortBlockReason };
       }
 
       const scopeFlag = result === "allowAlwaysGlobal" ? "--global" : "--project";
@@ -345,6 +388,7 @@ export default function (pi: ExtensionAPI) {
       );
 
       if (allowlistResult.code !== 0) {
+        sendBlockMessage("allowAlways-failed", hookOutput);
         return {
           block: true,
           reason: allowlistResult.stderr.trim() || "dcg allowlist add failed",
@@ -358,10 +402,10 @@ export default function (pi: ExtensionAPI) {
 
       const followUpParsed = parseHookOutput(followUpOutput);
       if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
+        sendBlockMessage("allowAlways-denied", followUpParsed.hookSpecificOutput);
         return {
           block: true,
-          reason:
-            followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput,
+          reason: shortBlockReason,
         };
       }
     } catch (error) {
