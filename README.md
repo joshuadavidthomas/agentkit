@@ -48,6 +48,12 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff check other places that need this fix
 ```
 
+#### [notify](./runtimes/pi/extensions/notify.ts)
+
+Desktop notifications when the agent finishes and is waiting for input. Uses OSC 777 escape sequence - no external dependencies.
+
+Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
+
 #### [statusline](./runtimes/pi/extensions/statusline.ts)
 
 Starship-style custom footer with model context, git status, costs, and token stats.
@@ -85,6 +91,10 @@ This repository includes and adapts work from several sources.
 ### answer
 
 From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
+
+### notify
+
+From [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
 ### frontend-design-principles
 
