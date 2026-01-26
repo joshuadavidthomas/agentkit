@@ -8,6 +8,24 @@ A personal collection of commands, skills, subagents, and scripts for Claude Cod
 
 Extensions for [pi](https://shittycodingagent.ai/), a TUI coding agent.
 
+#### [answer](./runtimes/pi/extensions/answer.ts)
+
+Extract questions from the last assistant message into an interactive Q&A interface.
+
+When the assistant asks multiple questions, `/answer` (or `Ctrl+.`) extracts them using a fast model (prefers Codex mini, falls back to Haiku), then presents a TUI for navigating and answering each question. Answers are compiled and submitted when complete.
+
+#### [dcg](./runtimes/pi/extensions/dcg.ts)
+
+Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
+
+Runs every bash command through dcg's hook mode before execution. When dcg blocks a potentially destructive command, presents an interactive decision UI:
+
+- **Deny** (default): Block the command
+- **Allow once**: Permit this specific invocation only
+- **Allow always**: Add to project or global allowlist
+
+Displays severity badges, detailed reasons, and tracks allow decisions in tool results. Falls back gracefully when dcg isn't available or returns unexpected output.
+
 #### [handoff](./runtimes/pi/extensions/handoff.ts)
 
 Transfer context to a new focused session instead of compacting.
@@ -25,18 +43,6 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff execute phase one of the plan
 /handoff check other places that need this fix
 ```
-
-#### [dcg](./runtimes/pi/extensions/dcg.ts)
-
-Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
-
-Runs every bash command through dcg's hook mode before execution. When dcg blocks a potentially destructive command, presents an interactive decision UI:
-
-- **Deny** (default): Block the command
-- **Allow once**: Permit this specific invocation only
-- **Allow always**: Add to project or global allowlist
-
-Displays severity badges, detailed reasons, and tracks allow decisions in tool results. Falls back gracefully when dcg isn't available or returns unexpected output.
 
 ## Skills
 
@@ -67,6 +73,10 @@ The key constraint: hands-on use over documentation. Install the tool, try it yo
 ## Acknowledgements
 
 This repository includes and adapts work from several sources.
+
+### answer
+
+From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 ### frontend-design-principles
 
