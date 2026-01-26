@@ -2,6 +2,42 @@
 
 A personal collection of commands, skills, subagents, and scripts for Claude Code, OpenCode, Codex, and other agentic-based LLM tools.
 
+## Runtimes
+
+### [Pi](./runtimes/pi/)
+
+Extensions for [pi](https://shittycodingagent.ai/), a TUI coding agent.
+
+#### [handoff](./runtimes/pi/extensions/handoff.ts)
+
+Transfer context to a new focused session instead of compacting.
+
+When sessions get long, compacting loses information. Handoff extracts what matters for your next task and creates a new session with a generated prompt containing:
+
+- **Files**: Absolute paths to relevant files (targets 8-15 files)
+- **Context**: Decisions made, constraints discovered, patterns established
+- **Task**: Clear description of what to do next
+
+The generated prompt appears in the editor for review before starting the new session.
+
+```
+/handoff now implement this for teams as well
+/handoff execute phase one of the plan
+/handoff check other places that need this fix
+```
+
+#### [dcg](./runtimes/pi/extensions/dcg.ts)
+
+Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
+
+Runs every bash command through dcg's hook mode before execution. When dcg blocks a potentially destructive command, presents an interactive decision UI:
+
+- **Deny** (default): Block the command
+- **Allow once**: Permit this specific invocation only
+- **Allow always**: Add to project or global allowlist
+
+Displays severity badges, detailed reasons, and tracks allow decisions in tool results. Falls back gracefully when dcg isn't available or returns unexpected output.
+
 ## Skills
 
 ### [btca](./skills/btca/SKILL.md)
