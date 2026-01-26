@@ -127,6 +127,9 @@ class DcgDecisionComponent implements Component {
     }
 
     this.selectList?.handleInput(data);
+    // Clear render cache so SelectList selection changes are visible
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
     this.tui.requestRender();
   }
 
@@ -413,7 +416,7 @@ const applyAllowOnce = async ({
   command,
   decisionReason,
 }: ApplyAllowOnceParams) => {
-  const allowOnceResult = await pi.exec("dcg", ["allow-once", allowOnceCode], {
+  const allowOnceResult = await pi.exec("dcg", ["allow-once", "--yes", allowOnceCode], {
     cwd: ctx.cwd,
   });
 
