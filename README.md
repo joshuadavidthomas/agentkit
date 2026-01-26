@@ -44,6 +44,10 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff check other places that need this fix
 ```
 
+#### [statusline](./runtimes/pi/extensions/statusline.ts)
+
+Starship-style custom footer with model context, git status, costs, and token stats.
+
 ## Skills
 
 ### [btca](./skills/btca/SKILL.md)
