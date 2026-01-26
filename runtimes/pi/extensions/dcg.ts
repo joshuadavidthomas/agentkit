@@ -87,6 +87,8 @@ class DcgDecisionComponent implements Component {
   private selectList?: SelectList;
   private mode: "decision" | "scope" = "decision";
   private showDetails = false;
+  private cachedWidth?: number;
+  private cachedLines?: string[];
 
   constructor(
     private readonly data: {
@@ -106,6 +108,8 @@ class DcgDecisionComponent implements Component {
 
   invalidate(): void {
     this.container.invalidate();
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
     this.rebuild();
   }
 
@@ -127,11 +131,19 @@ class DcgDecisionComponent implements Component {
   }
 
   render(width: number): string[] {
-    return this.container.render(width);
+    if (this.cachedLines && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+    const lines = this.container.render(width);
+    this.cachedLines = lines;
+    this.cachedWidth = width;
+    return lines;
   }
 
   private rebuild(): void {
     const previousSelection = this.selectList?.getSelectedItem()?.value;
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
     this.container.clear();
 
     this.container.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
@@ -232,6 +244,232 @@ class DcgDecisionComponent implements Component {
   }
 }
 
+type HookDecision =
+  | { action: "allow" }
+  | {
+      action: "deny";
+      reason: string;
+      decisionReason: string;
+      hookOutput?: HookSpecificOutput;
+    };
+
+type HookDecisionContext = {
+  hasUI: boolean;
+  ui: { notify: (message: string, level: "warning" | "info" | "error") => void };
+};
+
+type BlockResult = {
+  content: Array<TextContent | ImageContent>;
+  details: DcgBlockDetails;
+};
+
+type BuildBlockResult = (
+  message: string | undefined,
+  fallback: string,
+  decisionReason?: string,
+  contentText?: string,
+) => BlockResult;
+
+type RunDcgHook = (command: string, cwd: string) => Promise<string | null>;
+
+type RunHookDecisionParams = {
+  command: string;
+  cwd: string;
+  ctx: HookDecisionContext;
+  runDcgHook: RunDcgHook;
+  warnOnNonJson: boolean;
+  parseHookOutput: (output: string) => HookOutput | null;
+};
+
+type FollowUpParams = {
+  command: string;
+  cwd: string;
+  ctx: HookDecisionContext;
+  runDcgHook: RunDcgHook;
+  parseHookOutput: (output: string) => HookOutput | null;
+  runBash: () => Promise<unknown>;
+  buildBlockResult: BuildBlockResult;
+  fallbackReason: string;
+};
+
+type ApplyAllowOnceParams = {
+  pi: ExtensionAPI;
+  ctx: HookDecisionContext & { cwd: string };
+  allowOnceCode: string;
+  reason: string;
+  runBash: () => Promise<unknown>;
+  runDcgHook: RunDcgHook;
+  parseHookOutput: (output: string) => HookOutput | null;
+  buildBlockResult: BuildBlockResult;
+  command: string;
+  decisionReason: string;
+};
+
+type ApplyAllowlistParams = {
+  pi: ExtensionAPI;
+  ctx: HookDecisionContext & { cwd: string };
+  ruleId: string;
+  scopeFlag: "--global" | "--project";
+  reason: string;
+  runBash: () => Promise<unknown>;
+  runDcgHook: RunDcgHook;
+  parseHookOutput: (output: string) => HookOutput | null;
+  buildBlockResult: BuildBlockResult;
+  command: string;
+  decisionReason: string;
+};
+
+const buildBlockDetails = (
+  command: string,
+  message: string | undefined,
+  fallback: string,
+  decisionReason?: string,
+): DcgBlockDetails => ({
+  dcgBlocked: true,
+  command,
+  summary: decisionReason ?? getDecisionReason(message ?? fallback),
+  fullReason: message ?? fallback,
+});
+
+const buildBlockResult = (
+  command: string,
+  message: string | undefined,
+  fallback: string,
+  decisionReason?: string,
+  contentText?: string,
+): BlockResult => ({
+  content: contentText ? [{ type: "text", text: contentText }] : [],
+  details: buildBlockDetails(command, message, fallback, decisionReason),
+});
+
+const runHookDecision = async ({
+  command,
+  cwd,
+  ctx,
+  runDcgHook,
+  warnOnNonJson,
+  parseHookOutput,
+}: RunHookDecisionParams): Promise<HookDecision> => {
+  const output = await runDcgHook(command, cwd);
+  if (!output) {
+    return { action: "allow" };
+  }
+
+  const parsed = parseHookOutput(output);
+  if (!parsed) {
+    if (warnOnNonJson && ctx.hasUI) {
+      ctx.ui.notify("dcg returned non-JSON output; allowing command.", "warning");
+    }
+    return { action: "allow" };
+  }
+
+  const hookOutput = parsed.hookSpecificOutput;
+  if (hookOutput?.permissionDecision !== "deny") {
+    return { action: "allow" };
+  }
+
+  const reason = hookOutput.permissionDecisionReason ?? output;
+  return {
+    action: "deny",
+    reason,
+    decisionReason: getDecisionReason(reason),
+    hookOutput,
+  };
+};
+
+const followUpOrRun = async ({
+  command,
+  cwd,
+  ctx,
+  runDcgHook,
+  parseHookOutput,
+  runBash,
+  buildBlockResult,
+  fallbackReason,
+}: FollowUpParams) => {
+  const followUp = await runHookDecision({
+    command,
+    cwd,
+    ctx,
+    runDcgHook,
+    warnOnNonJson: false,
+    parseHookOutput,
+  });
+  if (followUp.action === "deny") {
+    return buildBlockResult(followUp.reason, fallbackReason, followUp.decisionReason);
+  }
+  return runBash();
+};
+
+const applyAllowOnce = async ({
+  pi,
+  ctx,
+  allowOnceCode,
+  reason,
+  runBash,
+  runDcgHook,
+  parseHookOutput,
+  buildBlockResult,
+  command,
+  decisionReason,
+}: ApplyAllowOnceParams) => {
+  const allowOnceResult = await pi.exec("dcg", ["allow-once", allowOnceCode], {
+    cwd: ctx.cwd,
+  });
+
+  if (allowOnceResult.code !== 0) {
+    const stderrMessage = allowOnceResult.stderr.trim() || undefined;
+    return buildBlockResult(stderrMessage, reason, decisionReason);
+  }
+
+  return followUpOrRun({
+    command,
+    cwd: ctx.cwd,
+    ctx,
+    runDcgHook,
+    parseHookOutput,
+    runBash,
+    buildBlockResult,
+    fallbackReason: reason,
+  });
+};
+
+const applyAllowlist = async ({
+  pi,
+  ctx,
+  ruleId,
+  scopeFlag,
+  reason,
+  runBash,
+  runDcgHook,
+  parseHookOutput,
+  buildBlockResult,
+  command,
+  decisionReason,
+}: ApplyAllowlistParams) => {
+  const allowlistResult = await pi.exec(
+    "dcg",
+    ["allowlist", "add", ruleId, scopeFlag],
+    { cwd: ctx.cwd },
+  );
+
+  if (allowlistResult.code !== 0) {
+    const stderrMessage = allowlistResult.stderr.trim() || undefined;
+    return buildBlockResult(stderrMessage, reason, decisionReason);
+  }
+
+  return followUpOrRun({
+    command,
+    cwd: ctx.cwd,
+    ctx,
+    runDcgHook,
+    parseHookOutput,
+    runBash,
+    buildBlockResult,
+    fallbackReason: reason,
+  });
+};
+
 export default function (pi: ExtensionAPI) {
   const runDcgHook = async (command: string, cwd: string) => {
     const payload = JSON.stringify({ tool_name: "Bash", tool_input: { command } });
@@ -248,8 +486,20 @@ export default function (pi: ExtensionAPI) {
   };
 
   const parseHookOutput = (output: string): HookOutput | null => {
+    let jsonText = output.trim();
+    const fencedMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fencedMatch) {
+      jsonText = fencedMatch[1].trim();
+    }
+
+    const firstBrace = jsonText.indexOf("{");
+    const lastBrace = jsonText.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      jsonText = jsonText.slice(firstBrace, lastBrace + 1);
+    }
+
     try {
-      return JSON.parse(output) as HookOutput;
+      return JSON.parse(jsonText) as HookOutput;
     } catch {
       return null;
     }
@@ -294,77 +544,32 @@ export default function (pi: ExtensionAPI) {
     },
     async execute(toolCallId, params, onUpdate, ctx, signal) {
       const command = params.command ?? "";
-      const buildBlockDetails = (
-        message: string | undefined,
-        fallback: string,
-        decisionReason?: string,
-      ): DcgBlockDetails => ({
-        dcgBlocked: true,
-        command,
-        summary: decisionReason ?? getDecisionReason(message ?? fallback),
-        fullReason: message ?? fallback,
-      });
-      const buildBlockResult = (
-        message: string | undefined,
-        fallback: string,
-        decisionReason?: string,
-      ) => ({
-        content: [],
-        details: buildBlockDetails(message, fallback, decisionReason),
-      });
       const runBash = () => runBashTool(toolCallId, params, onUpdate, ctx, signal);
-      const runHookDecision = async (warnOnNonJson: boolean) => {
-        const output = await runDcgHook(command, ctx.cwd);
-        if (!output) {
-          return { action: "allow" as const };
-        }
-
-        const parsed = parseHookOutput(output);
-        if (!parsed) {
-          if (warnOnNonJson && ctx.hasUI) {
-            ctx.ui.notify("dcg returned non-JSON output; allowing command.", "warning");
-          }
-          return { action: "allow" as const };
-        }
-
-        const hookOutput = parsed.hookSpecificOutput;
-        if (hookOutput?.permissionDecision !== "deny") {
-          return { action: "allow" as const };
-        }
-
-        const reason = hookOutput.permissionDecisionReason ?? output;
-        return {
-          action: "deny" as const,
-          reason,
-          decisionReason: getDecisionReason(reason),
-          hookOutput,
-        };
-      };
-      const followUpOrRun = async (fallbackReason: string) => {
-        const followUp = await runHookDecision(false);
-        if (followUp.action === "deny") {
-          return buildBlockResult(
-            followUp.reason,
-            fallbackReason,
-            followUp.decisionReason,
-          );
-        }
-        return runBash();
-      };
+      const buildResult: BuildBlockResult = (
+        message,
+        fallback,
+        decisionReason,
+        contentText,
+      ) => buildBlockResult(command, message, fallback, decisionReason, contentText);
 
       try {
-        const initialDecision = await runHookDecision(true);
+        const initialDecision = await runHookDecision({
+          command,
+          cwd: ctx.cwd,
+          ctx,
+          runDcgHook,
+          warnOnNonJson: true,
+          parseHookOutput,
+        });
         if (initialDecision.action === "allow") {
           return runBash();
         }
 
-        const reason = initialDecision.reason;
-        const decisionReason = initialDecision.decisionReason;
-        const hookOutput = initialDecision.hookOutput;
-        const blockResult = buildBlockResult(reason, reason, decisionReason);
+        const { reason, decisionReason, hookOutput } = initialDecision;
+        const blockResult = buildResult(reason, reason, decisionReason);
 
         if (!ctx.hasUI) {
-          return blockResult;
+          return buildResult(reason, reason, decisionReason, decisionReason);
         }
 
         const result = await ctx.ui.custom<DcgDecision | null>((tui, theme, _kb, done) =>
@@ -407,16 +612,18 @@ export default function (pi: ExtensionAPI) {
             return blockResult;
           }
 
-          const allowOnceResult = await pi.exec("dcg", ["allow-once", hookOutput.allowOnceCode], {
-            cwd: ctx.cwd,
+          return applyAllowOnce({
+            pi,
+            ctx,
+            allowOnceCode: hookOutput.allowOnceCode,
+            reason,
+            runBash,
+            runDcgHook,
+            parseHookOutput,
+            buildBlockResult: buildResult,
+            command,
+            decisionReason,
           });
-
-          if (allowOnceResult.code !== 0) {
-            const stderrMessage = allowOnceResult.stderr.trim() || undefined;
-            return buildBlockResult(stderrMessage, reason);
-          }
-
-          return followUpOrRun(reason);
         }
 
         const ruleId = hookOutput?.ruleId;
@@ -425,24 +632,25 @@ export default function (pi: ExtensionAPI) {
         }
 
         const scopeFlag = result === "allowAlwaysGlobal" ? "--global" : "--project";
-        const allowlistResult = await pi.exec(
-          "dcg",
-          ["allowlist", "add", ruleId, scopeFlag],
-          { cwd: ctx.cwd },
-        );
-
-        if (allowlistResult.code !== 0) {
-          const stderrMessage = allowlistResult.stderr.trim() || undefined;
-          return buildBlockResult(stderrMessage, reason);
-        }
-
-        return followUpOrRun(reason);
+        return applyAllowlist({
+          pi,
+          ctx,
+          ruleId,
+          scopeFlag,
+          reason,
+          runBash,
+          runDcgHook,
+          parseHookOutput,
+          buildBlockResult: buildResult,
+          command,
+          decisionReason,
+        });
       } catch (error) {
         if (ctx.hasUI) {
           const message = error instanceof Error ? error.message : String(error);
           ctx.ui.notify(`dcg failed: ${message}`, "warning");
         }
-        return buildBlockResult("Blocked by dcg", "Blocked by dcg");
+        return buildResult("Blocked by dcg", "Blocked by dcg");
       }
     },
   });
