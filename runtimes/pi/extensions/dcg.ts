@@ -2,7 +2,14 @@
  * Bash tool override that runs `dcg` in hook mode before execution.
  */
 
-import { createBashTool, DynamicBorder, keyHint } from "@mariozechner/pi-coding-agent";
+import {
+  createBashTool,
+  DEFAULT_MAX_BYTES,
+  DynamicBorder,
+  formatSize,
+  keyHint,
+  truncateToVisualLines,
+} from "@mariozechner/pi-coding-agent";
 import type { AgentToolUpdateCallback, ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import {
@@ -13,7 +20,9 @@ import {
   type SelectItem,
   SelectList,
   Text,
+  truncateToWidth,
 } from "@mariozechner/pi-tui";
+import stripAnsi from "strip-ansi";
 
 
 const escapeForSingleQuotes = (value: string) => value.replace(/'/g, "'\"'\"'");
@@ -86,6 +95,92 @@ const extractTextContent = (content: Array<TextContent | ImageContent> | undefin
     .filter((item): item is TextContent => item.type === "text")
     .map((item) => item.text ?? "")
     .join("\n");
+
+const sanitizeBinaryOutput = (value: string): string =>
+  Array.from(value)
+    .filter((char) => {
+      const code = char.codePointAt(0);
+      if (code === undefined) return false;
+      if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
+      if (code <= 0x1f) return false;
+      if (code >= 0xfff9 && code <= 0xfffb) return false;
+      return true;
+    })
+    .join("");
+
+const getBashOutputText = (content: Array<TextContent | ImageContent> | undefined): string =>
+  sanitizeBinaryOutput(stripAnsi(extractTextContent(content))).replace(/\r/g, "");
+
+const BASH_PREVIEW_LINES = 5;
+
+const buildBashOutputComponent = (
+  output: string,
+  options: { expanded?: boolean },
+  theme: any,
+  details?: { truncation?: { truncated?: boolean; truncatedBy?: "lines" | "bytes"; outputLines?: number; totalLines?: number; maxBytes?: number }; fullOutputPath?: string },
+): Component => {
+  const container = new Container();
+  const trimmedOutput = output.trim();
+
+  if (trimmedOutput) {
+    const styledOutput = trimmedOutput
+      .split("\n")
+      .map((line) => theme.fg("toolOutput", line))
+      .join("\n");
+
+    if (options.expanded) {
+      container.addChild(new Text(`\n${styledOutput}`, 0, 0));
+    } else {
+      let cachedWidth: number | undefined;
+      let cachedLines: string[] | undefined;
+      let cachedSkipped: number | undefined;
+
+      container.addChild({
+        render: (width: number) => {
+          if (cachedLines === undefined || cachedWidth !== width) {
+            const result = truncateToVisualLines(styledOutput, BASH_PREVIEW_LINES, width);
+            cachedLines = result.visualLines;
+            cachedSkipped = result.skippedCount;
+            cachedWidth = width;
+          }
+          if (cachedSkipped && cachedSkipped > 0) {
+            const hint =
+              theme.fg("muted", `... (${cachedSkipped} earlier lines,`) +
+              ` ${keyHint("expandTools", "to expand")})`;
+            return ["", truncateToWidth(hint, width, "..."), ...(cachedLines ?? [])];
+          }
+          return ["", ...(cachedLines ?? [])];
+        },
+        invalidate: () => {
+          cachedWidth = undefined;
+          cachedLines = undefined;
+          cachedSkipped = undefined;
+        },
+      });
+    }
+  }
+
+  const truncation = details?.truncation;
+  const fullOutputPath = details?.fullOutputPath;
+  if (truncation?.truncated || fullOutputPath) {
+    const warnings: string[] = [];
+    if (fullOutputPath) {
+      warnings.push(`Full output: ${fullOutputPath}`);
+    }
+    if (truncation?.truncated) {
+      if (truncation.truncatedBy === "lines") {
+        warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
+      } else {
+        warnings.push(
+          `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+        );
+      }
+    }
+    container.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
+  }
+
+  return container;
+};
 
 class DcgDecisionComponent implements Component {
   private container = new Container();
@@ -538,7 +633,10 @@ export default function (pi: ExtensionAPI) {
     ...baseBash,
     renderCall(args, theme) {
       const command = args?.command ?? "";
-      const text = theme.fg("toolTitle", "$ ") + theme.fg("text", command);
+      const timeout = args?.timeout as number | undefined;
+      const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+      const commandText = command || theme.fg("toolOutput", "...");
+      const text = theme.fg("toolTitle", theme.bold(`$ ${commandText}`)) + timeoutSuffix;
       return new Text(text, 0, 0);
     },
     renderResult(result, options, theme) {
@@ -552,8 +650,13 @@ export default function (pi: ExtensionAPI) {
           ? theme.fg("warning", "allowed (once)")
           : theme.fg("success", "allowed");
         const label = theme.bold(`${dcgPrefix} ${state}`);
-        const output = extractTextContent(result.content);
-        return new Text(output ? `${label}\n${output}` : label, 0, 0);
+        const output = getBashOutputText(result.content);
+        const container = new Container();
+        container.addChild(new Text(label, 0, 0));
+        container.addChild(
+          buildBashOutputComponent(output, options, theme, result.details as any),
+        );
+        return container;
       }
 
       // Handle blocked case
@@ -570,7 +673,12 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Normal bash output (no dcg involvement)
-      return new Text(extractTextContent(result.content), 0, 0);
+      return buildBashOutputComponent(
+        getBashOutputText(result.content),
+        options,
+        theme,
+        result.details as any,
+      );
     },
     async execute(toolCallId, params, onUpdate, ctx, signal) {
       const command = params.command ?? "";
