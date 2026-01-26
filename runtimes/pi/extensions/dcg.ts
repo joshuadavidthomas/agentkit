@@ -420,6 +420,11 @@ const applyAllowOnce = async ({
     cwd: ctx.cwd,
   });
 
+  // Debug logging
+  if (ctx.hasUI) {
+    ctx.ui.notify(`allow-once: code=${allowOnceCode} exit=${allowOnceResult.code} stderr=${allowOnceResult.stderr.slice(0, 100)}`, "info");
+  }
+
   if (allowOnceResult.code !== 0) {
     const stderrMessage = allowOnceResult.stderr.trim() || undefined;
     return buildBlockResult(stderrMessage, reason, decisionReason);
