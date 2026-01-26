@@ -267,13 +267,13 @@ export default function (pi: ExtensionAPI) {
         return baseBash.renderResult
           ? baseBash.renderResult(result, options, theme)
           : new Text(
-              result.content?.map((item: { text?: string }) => item.text || "").join("\n") || "",
-              0,
-              0,
-            );
+            result.content?.map((item: { text?: string }) => item.text || "").join("\n") || "",
+            0,
+            0,
+          );
       }
 
-      const header = theme.fg("accent", theme.bold("dcg blocked"));
+      const header = theme.fg("accent", theme.bold("\ndcg blocked"));
       const commandLine = `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`;
       if (options.expanded) {
         const full = theme.fg("text", details.fullReason);
