@@ -288,12 +288,15 @@ export default function (pi: ExtensionAPI) {
 
         const reason = hookOutput.permissionDecisionReason ?? output;
         const sendBlockMessage = (message: string) => {
-          pi.sendMessage({
-            customType: "dcg-block",
-            content: message,
-            display: true,
-            details: { command },
-          });
+          pi.sendMessage(
+            {
+              customType: "dcg-block",
+              content: message,
+              display: true,
+              details: { command },
+            },
+            { deliverAs: "steer" },
+          );
         };
 
         const blockResult = {
@@ -323,18 +326,18 @@ export default function (pi: ExtensionAPI) {
         );
 
         const denyAndBlock = (explicit: boolean) => {
+          sendBlockMessage(reason);
           if (explicit) {
             pi.sendMessage(
               {
                 customType: "dcg-user-decision",
                 content: "deny",
-                display: false,
+                display: true,
                 details: { command, decision: "deny" },
               },
               { deliverAs: "steer" },
             );
           }
-          sendBlockMessage(reason);
           return blockResult;
         };
 
