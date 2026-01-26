@@ -408,7 +408,7 @@ const followUpOrRun = async ({
   if (followUp.action === "deny") {
     return buildBlockResult(followUp.reason, fallbackReason, followUp.decisionReason);
   }
-  const bashResult = await runBash() as { content: Array<TextContent | ImageContent>; details?: unknown };
+  const bashResult = await runBash() as { content: Array<TextContent | ImageContent>; details?: Record<string, unknown> };
   return {
     ...bashResult,
     details: { ...bashResult.details, dcgAllowed: true, allowType },

@@ -227,7 +227,7 @@ export default function (pi: ExtensionAPI) {
             line1Parts.push(
               theme.fg("accent", theme.bold(`${modelIcon} ${modelName.toLowerCase()}`)) +
               theme.fg("dim", " from ") +
-              theme.fg("muted", PROVIDER_MAP[model.provider] || model.provider)
+              theme.fg("muted", PROVIDER_MAP[model.provider as keyof typeof PROVIDER_MAP] || model.provider)
             );
           }
 
