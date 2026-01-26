@@ -256,6 +256,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     ...baseBash,
+    renderCall(args, theme) {
+      const command = args?.command ?? "";
+      const text = theme.fg("toolTitle", "$ ") + theme.fg("text", command);
+      return new Text(text, 0, 0);
+    },
     renderResult(result, options, theme) {
       const details = result.details as DcgBlockDetails | undefined;
       if (!details?.dcgBlocked) {
