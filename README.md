@@ -84,6 +84,22 @@ Guide for writing skills that wrap CLI tools. Use when creating a new CLI skill 
 
 The key constraint: hands-on use over documentation. Install the tool, try it yourself, note what surprises you. Reading docs is no substitute for actually running commands. Provides section templates, organization patterns (group by task, progressive disclosure), and a complete starting template in `references/`.
 
+## Tools
+
+### [dcg](./dcg/)
+
+Custom packs for [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
+
+> **Note:** Custom pack loading is not yet functional in dcg. The `ExternalPackLoader` is implemented but not wired up. See [issue #24](https://github.com/Dicklesworthstone/destructive_command_guard/issues/24).
+
+#### [devtools-noblock](./dcg/devtools-noblock.yaml)
+
+Prevents agents from running blocking dev server commands that hang indefinitely.
+
+Blocks commands like `npm run dev`, `vite`, `python manage.py runserver`, `docker compose up` (without `-d`), `cargo watch`, and various `just` recipes that start attached servers or follow logs.
+
+When blocked, the agent is instructed to ask if the server is already running, and if not, offer to run it in a tmux session.
+
 ## Acknowledgements
 
 This repository includes and adapts work from several sources.

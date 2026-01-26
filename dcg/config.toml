@@ -1,0 +1,7 @@
+[packs]
+custom_paths = [
+  "~/.config/dcg/packs/*.yaml",
+]
+enabled = [
+  "devtools.noblock",
+]
