@@ -544,19 +544,22 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, options, theme) {
       const blockDetails = result.details as DcgBlockDetails | undefined;
       const allowDetails = result.details as DcgAllowedDetails | undefined;
+      const dcgPrefix = theme.fg("accent", "[dcg]");
 
       // Handle allowed (once) case
       if (allowDetails?.dcgAllowed) {
-        const label = allowDetails.allowType === "once" 
-          ? theme.fg("warning", "[dcg] allowed (once)")
-          : theme.fg("success", "[dcg] allowed");
+        const state = allowDetails.allowType === "once"
+          ? theme.fg("warning", "allowed (once)")
+          : theme.fg("success", "allowed");
+        const label = theme.bold(`${dcgPrefix} ${state}`);
         const output = extractTextContent(result.content);
         return new Text(output ? `${label}\n${output}` : label, 0, 0);
       }
 
       // Handle blocked case
       if (blockDetails?.dcgBlocked) {
-        const label = theme.fg("error", "[dcg] blocked");
+        const state = theme.fg("error", "blocked");
+        const label = theme.bold(`${dcgPrefix} ${state}`);
         const reason = theme.fg("text", blockDetails.summary);
         if (options.expanded) {
           const full = theme.fg("dim", blockDetails.fullReason);
