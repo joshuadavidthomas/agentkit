@@ -3,7 +3,8 @@
  */
 
 import { createBashTool, DynamicBorder, keyHint } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import {
   Container,
   type Component,
@@ -65,6 +66,12 @@ const severityBadge = (severity: string | undefined, theme: any): string => {
   }
   return theme.fg("muted", label);
 };
+
+const extractTextContent = (content: Array<TextContent | ImageContent> | undefined): string =>
+  (content ?? [])
+    .filter((item): item is TextContent => item.type === "text")
+    .map((item) => item.text ?? "")
+    .join("\n");
 
 class DcgDecisionComponent implements Component {
   private container = new Container();
@@ -244,7 +251,7 @@ export default function (pi: ExtensionAPI) {
   const runBashTool = async (
     toolCallId: string,
     params: { command: string; timeout?: number },
-    onUpdate: ((update: { content?: { type: "text"; text: string }[]; details?: unknown }) => void) | undefined,
+    onUpdate: AgentToolUpdateCallback<unknown> | undefined,
     ctx: { cwd: string },
     signal: AbortSignal | undefined,
   ) => {
@@ -264,13 +271,7 @@ export default function (pi: ExtensionAPI) {
     renderResult(result, options, theme) {
       const details = result.details as DcgBlockDetails | undefined;
       if (!details?.dcgBlocked) {
-        return baseBash.renderResult
-          ? baseBash.renderResult(result, options, theme)
-          : new Text(
-            result.content?.map((item: { text?: string }) => item.text || "").join("\n") || "",
-            0,
-            0,
-          );
+        return new Text(extractTextContent(result.content), 0, 0);
       }
 
       const header = theme.fg("accent", theme.bold("\ndcg blocked"));
