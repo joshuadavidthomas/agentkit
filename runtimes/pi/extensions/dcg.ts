@@ -1,8 +1,8 @@
 /**
- * Pre-tool hook to run `dcg` in hook mode before any bash tool call.
+ * Bash tool override that runs `dcg` in hook mode before execution.
  */
 
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { createBashTool, DynamicBorder } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   Container,
@@ -14,7 +14,6 @@ import {
   Text,
 } from "@mariozechner/pi-tui";
 
-const shortBlockReason = "Blocked by dcg";
 
 const escapeForSingleQuotes = (value: string) => value.replace(/'/g, "'\"'\"'");
 
@@ -32,8 +31,6 @@ type HookOutput = {
 
 type DcgBlockDetails = {
   command: string;
-  severity?: string;
-  decision: string;
 };
 
 type DcgDecision =
@@ -221,10 +218,7 @@ class DcgDecisionComponent implements Component {
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("dcg-block", (message, _options, theme) => {
     const details = message.details as DcgBlockDetails | undefined;
-    const badge = details?.severity
-      ? ` ${severityBadge(details.severity, theme)}`
-      : "";
-    const header = theme.fg("accent", theme.bold("dcg blocked")) + badge;
+    const header = theme.fg("accent", theme.bold("dcg blocked"));
     const commandLine = details?.command
       ? `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`
       : "";
@@ -255,164 +249,169 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "bash") {
-      return;
-    }
+  const runBashTool = async (
+    toolCallId: string,
+    params: { command: string; timeout?: number },
+    onUpdate: ((update: { content?: { type: "text"; text: string }[]; details?: unknown }) => void) | undefined,
+    ctx: { cwd: string },
+    signal: AbortSignal | undefined,
+  ) => {
+    const tool = createBashTool(ctx.cwd);
+    return tool.execute(toolCallId, params, signal, onUpdate);
+  };
 
-    const command = event.input?.command ?? "";
+  const baseBash = createBashTool(process.cwd());
 
-    try {
-      const output = await runDcgHook(command, ctx.cwd);
-      if (!output) {
-        return;
-      }
+  pi.registerTool({
+    ...baseBash,
+    async execute(toolCallId, params, onUpdate, ctx, signal) {
+      const command = params.command ?? "";
 
-      const parsed = parseHookOutput(output);
-      if (!parsed) {
-        if (ctx.hasUI) {
-          ctx.ui.notify("dcg returned non-JSON output; allowing command.", "warning");
+      try {
+        const output = await runDcgHook(command, ctx.cwd);
+        if (!output) {
+          return runBashTool(toolCallId, params, onUpdate, ctx, signal);
         }
-        return;
-      }
 
-      const hookOutput = parsed.hookSpecificOutput;
-      if (hookOutput?.permissionDecision !== "deny") {
-        return;
-      }
+        const parsed = parseHookOutput(output);
+        if (!parsed) {
+          if (ctx.hasUI) {
+            ctx.ui.notify("dcg returned non-JSON output; allowing command.", "warning");
+          }
+          return runBashTool(toolCallId, params, onUpdate, ctx, signal);
+        }
 
-      const reason = hookOutput.permissionDecisionReason ?? output;
-      const sendBlockMessage = (decision: string, details?: HookSpecificOutput) => {
-        pi.sendMessage(
-          {
+        const hookOutput = parsed.hookSpecificOutput;
+        if (hookOutput?.permissionDecision !== "deny") {
+          return runBashTool(toolCallId, params, onUpdate, ctx, signal);
+        }
+
+        const reason = hookOutput.permissionDecisionReason ?? output;
+        const sendBlockMessage = (message: string) => {
+          pi.sendMessage({
             customType: "dcg-block",
-            content: reason,
+            content: message,
             display: true,
-            details: {
-              command,
-              severity: details?.severity,
-              decision,
-            },
-          },
-          { deliverAs: "steer" },
-        );
-      };
+            details: { command },
+          });
+        };
 
-      if (!ctx.hasUI) {
-        sendBlockMessage("auto", hookOutput);
-        return { block: true, reason: shortBlockReason };
-      }
+        const blockResult = {
+          content: [],
+          details: {},
+        };
 
-      const result = await ctx.ui.custom<DcgDecision | null>((tui, theme, _kb, done) =>
-        new DcgDecisionComponent(
-          {
-            command,
-            reason: getDecisionReason(reason),
-            details: reason,
-            allowOnceCode: hookOutput.allowOnceCode,
-            ruleId: hookOutput.ruleId,
-            severity: hookOutput.severity,
-          },
-          tui,
-          theme,
-          done,
-        ),
-      );
+        if (!ctx.hasUI) {
+          sendBlockMessage(reason);
+          return blockResult;
+        }
 
-      const denyAndBlock = (explicit: boolean) => {
-        if (explicit) {
-          pi.sendMessage(
+        const result = await ctx.ui.custom<DcgDecision | null>((tui, theme, _kb, done) =>
+          new DcgDecisionComponent(
             {
-              customType: "dcg-user-decision",
-              content: "deny",
-              display: false,
-              details: { command, decision: "deny" },
+              command,
+              reason: getDecisionReason(reason),
+              details: reason,
+              allowOnceCode: hookOutput.allowOnceCode,
+              ruleId: hookOutput.ruleId,
+              severity: hookOutput.severity,
             },
-            { deliverAs: "steer" },
-          );
+            tui,
+            theme,
+            done,
+          ),
+        );
+
+        const denyAndBlock = (explicit: boolean) => {
+          if (explicit) {
+            pi.sendMessage(
+              {
+                customType: "dcg-user-decision",
+                content: "deny",
+                display: false,
+                details: { command, decision: "deny" },
+              },
+              { deliverAs: "steer" },
+            );
+          }
+          sendBlockMessage(reason);
+          return blockResult;
+        };
+
+        if (!result || result === "deny") {
+          return denyAndBlock(result === "deny");
         }
-        sendBlockMessage(explicit ? "deny" : "implicit", hookOutput);
-        return { block: true, reason: shortBlockReason };
-      };
 
-      if (!result || result === "deny") {
-        return denyAndBlock(result === "deny");
-      }
+        if (result === "allowOnce") {
+          if (!hookOutput.allowOnceCode) {
+            sendBlockMessage(reason);
+            return blockResult;
+          }
 
-      if (result === "allowOnce") {
-        if (!hookOutput.allowOnceCode) {
-          sendBlockMessage("allowOnce-missing", hookOutput);
-          return { block: true, reason: shortBlockReason };
+          const allowOnceResult = await pi.exec("dcg", ["allow-once", hookOutput.allowOnceCode], {
+            cwd: ctx.cwd,
+          });
+
+          if (allowOnceResult.code !== 0) {
+            sendBlockMessage(allowOnceResult.stderr.trim() || reason);
+            return blockResult;
+          }
+
+          const followUpOutput = await runDcgHook(command, ctx.cwd);
+          if (!followUpOutput) {
+            return runBashTool(toolCallId, params, onUpdate, ctx, signal);
+          }
+
+          const followUpParsed = parseHookOutput(followUpOutput);
+          if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
+            const followUpReason =
+              followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput;
+            sendBlockMessage(followUpReason);
+            return blockResult;
+          }
+
+          return runBashTool(toolCallId, params, onUpdate, ctx, signal);
         }
 
-        const allowOnceResult = await pi.exec("dcg", ["allow-once", hookOutput.allowOnceCode], {
-          cwd: ctx.cwd,
-        });
+        const ruleId = hookOutput.ruleId;
+        if (!ruleId) {
+          sendBlockMessage(reason);
+          return blockResult;
+        }
 
-        if (allowOnceResult.code !== 0) {
-          sendBlockMessage("allowOnce-failed", hookOutput);
-          return {
-            block: true,
-            reason: allowOnceResult.stderr.trim() || "dcg allow-once failed",
-          };
+        const scopeFlag = result === "allowAlwaysGlobal" ? "--global" : "--project";
+        const allowlistResult = await pi.exec(
+          "dcg",
+          ["allowlist", "add", ruleId, scopeFlag],
+          { cwd: ctx.cwd },
+        );
+
+        if (allowlistResult.code !== 0) {
+          sendBlockMessage(allowlistResult.stderr.trim() || reason);
+          return blockResult;
         }
 
         const followUpOutput = await runDcgHook(command, ctx.cwd);
         if (!followUpOutput) {
-          return;
+          return runBashTool(toolCallId, params, onUpdate, ctx, signal);
         }
 
         const followUpParsed = parseHookOutput(followUpOutput);
         if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
-          sendBlockMessage("allowOnce-denied", followUpParsed.hookSpecificOutput);
-          return {
-            block: true,
-            reason: shortBlockReason,
-          };
+          const followUpReason =
+            followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput;
+          sendBlockMessage(followUpReason);
+          return blockResult;
         }
 
-        return;
+        return runBashTool(toolCallId, params, onUpdate, ctx, signal);
+      } catch (error) {
+        if (ctx.hasUI) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`dcg failed: ${message}`, "warning");
+        }
+        return blockResult;
       }
-
-      const ruleId = hookOutput.ruleId;
-      if (!ruleId) {
-        sendBlockMessage("allowAlways-missing", hookOutput);
-        return { block: true, reason: shortBlockReason };
-      }
-
-      const scopeFlag = result === "allowAlwaysGlobal" ? "--global" : "--project";
-      const allowlistResult = await pi.exec(
-        "dcg",
-        ["allowlist", "add", ruleId, scopeFlag],
-        { cwd: ctx.cwd },
-      );
-
-      if (allowlistResult.code !== 0) {
-        sendBlockMessage("allowAlways-failed", hookOutput);
-        return {
-          block: true,
-          reason: allowlistResult.stderr.trim() || "dcg allowlist add failed",
-        };
-      }
-
-      const followUpOutput = await runDcgHook(command, ctx.cwd);
-      if (!followUpOutput) {
-        return;
-      }
-
-      const followUpParsed = parseHookOutput(followUpOutput);
-      if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
-        sendBlockMessage("allowAlways-denied", followUpParsed.hookSpecificOutput);
-        return {
-          block: true,
-          reason: shortBlockReason,
-        };
-      }
-    } catch (error) {
-      if (ctx.hasUI) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`dcg failed: ${message}`, "warning");
-      }
-    }
+    },
   });
 }
