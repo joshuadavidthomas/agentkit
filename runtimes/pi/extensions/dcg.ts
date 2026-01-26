@@ -22,8 +22,9 @@ import {
   Text,
   truncateToWidth,
 } from "@mariozechner/pi-tui";
-import stripAnsi from "strip-ansi";
-
+// Simple ANSI strip function - removes all ANSI escape sequences
+const stripAnsi = (str: string): string =>
+  str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
 
 const escapeForSingleQuotes = (value: string) => value.replace(/'/g, "'\"'\"'");
 
