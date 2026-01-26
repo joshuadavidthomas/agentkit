@@ -2,48 +2,352 @@
  * Pre-tool hook to run `dcg` in hook mode before any bash tool call.
  */
 
+import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  Container,
+  type Component,
+  Key,
+  matchesKey,
+  type SelectItem,
+  SelectList,
+  Text,
+} from "@mariozechner/pi-tui";
 
 const escapeForSingleQuotes = (value: string) => value.replace(/'/g, "'\"'\"'");
 
+type HookSpecificOutput = {
+  permissionDecision?: string;
+  permissionDecisionReason?: string;
+  allowOnceCode?: string;
+  ruleId?: string;
+  severity?: string;
+};
+
+type HookOutput = {
+  hookSpecificOutput?: HookSpecificOutput;
+};
+
+type DcgDecision =
+  | "deny"
+  | "allowOnce"
+  | "allowAlways"
+  | "allowAlwaysProject"
+  | "allowAlwaysGlobal";
+
+const getDecisionReason = (reason: string | undefined): string => {
+  if (!reason) return "Blocked by dcg";
+  const lines = reason.split("\n");
+  const reasonLine = lines.find((line) => line.startsWith("Reason:"));
+  if (reasonLine) {
+    return reasonLine.replace("Reason:", "").trim();
+  }
+  return lines[0]?.trim() || reason;
+};
+
+const severityBadge = (severity: string | undefined, theme: any): string => {
+  if (!severity) return "";
+  const normalized = severity.toLowerCase();
+  const label = `[${severity.toUpperCase()}]`;
+  if (normalized === "critical" || normalized === "high") {
+    return theme.fg("error", label);
+  }
+  if (normalized === "medium") {
+    return theme.fg("warning", label);
+  }
+  return theme.fg("muted", label);
+};
+
+class DcgDecisionComponent implements Component {
+  private container = new Container();
+  private selectList?: SelectList;
+  private mode: "decision" | "scope" = "decision";
+  private showDetails = false;
+
+  constructor(
+    private readonly data: {
+      command: string;
+      reason: string;
+      details: string;
+      allowOnceCode?: string;
+      ruleId?: string;
+      severity?: string;
+    },
+    private readonly tui: any,
+    private readonly theme: any,
+    private readonly onDone: (result: DcgDecision | null) => void,
+  ) {
+    this.rebuild();
+  }
+
+  invalidate(): void {
+    this.container.invalidate();
+    this.rebuild();
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+      this.onDone("deny");
+      return;
+    }
+
+    if (data.toLowerCase() === "e") {
+      this.showDetails = !this.showDetails;
+      this.rebuild();
+      this.tui.requestRender();
+      return;
+    }
+
+    this.selectList?.handleInput(data);
+    this.tui.requestRender();
+  }
+
+  render(width: number): string[] {
+    return this.container.render(width);
+  }
+
+  private rebuild(): void {
+    const previousSelection = this.selectList?.getSelectedItem()?.value;
+    this.container.clear();
+
+    this.container.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
+    const title =
+      this.theme.fg("accent", this.theme.bold("Destructive command blocked")) +
+      (this.data.severity ? ` ${severityBadge(this.data.severity, this.theme)}` : "");
+    this.container.addChild(new Text(title, 1, 0));
+
+    const commandLine =
+      this.theme.fg("dim", "Command: ") + this.theme.fg("text", this.data.command);
+    this.container.addChild(new Text(commandLine, 1, 0));
+
+    const reasonLine =
+      this.theme.fg("dim", "Reason: ") + this.theme.fg("text", this.data.reason);
+    this.container.addChild(new Text(reasonLine, 1, 0));
+
+    if (this.showDetails) {
+      this.container.addChild(new Text(this.theme.fg("muted", this.data.details), 1, 0));
+    }
+
+    const toggleText = this.showDetails
+      ? "Press e to hide details"
+      : "Press e to show details";
+    this.container.addChild(new Text(this.theme.fg("dim", toggleText), 1, 0));
+
+    const items = this.mode === "decision" ? this.getDecisionItems() : this.getScopeItems();
+    this.selectList = new SelectList(items, Math.min(items.length, 6), {
+      selectedPrefix: (text) => this.theme.fg("accent", text),
+      selectedText: (text) => this.theme.fg("accent", text),
+      description: (text) => this.theme.fg("muted", text),
+      scrollInfo: (text) => this.theme.fg("dim", text),
+      noMatch: (text) => this.theme.fg("warning", text),
+    });
+
+    this.selectList.onSelect = (item) => {
+      if (item.value === "allowAlways") {
+        this.mode = "scope";
+        this.rebuild();
+        this.tui.requestRender();
+        return;
+      }
+
+      if (item.value === "back") {
+        this.mode = "decision";
+        this.rebuild();
+        this.tui.requestRender();
+        return;
+      }
+
+      this.onDone(item.value as DcgDecision);
+    };
+    this.selectList.onCancel = () => this.onDone("deny");
+
+    if (previousSelection) {
+      const index = items.findIndex((item) => item.value === previousSelection);
+      if (index >= 0) {
+        this.selectList.setSelectedIndex(index);
+      } else {
+        this.selectList.setSelectedIndex(0);
+      }
+    } else {
+      this.selectList.setSelectedIndex(0);
+    }
+
+    this.container.addChild(this.selectList);
+    this.container.addChild(
+      new Text(
+        this.theme.fg("dim", "↑↓ navigate • enter confirm • esc deny • e details"),
+        1,
+        0,
+      ),
+    );
+    this.container.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
+  }
+
+  private getDecisionItems(): SelectItem[] {
+    const items: SelectItem[] = [{ value: "deny", label: "Deny (default)", description: "" }];
+
+    if (this.data.allowOnceCode) {
+      items.push({ value: "allowOnce", label: "Allow once", description: "" });
+    }
+
+    if (this.data.ruleId) {
+      items.push({
+        value: "allowAlways",
+        label: "Allow always…",
+        description: "Choose project or global scope",
+      });
+    }
+
+    return items;
+  }
+
+  private getScopeItems(): SelectItem[] {
+    return [
+      { value: "allowAlwaysProject", label: "Allow always (project)", description: "" },
+      { value: "allowAlwaysGlobal", label: "Allow always (global)", description: "" },
+      { value: "back", label: "Back", description: "" },
+    ];
+  }
+}
+
 export default function (pi: ExtensionAPI) {
+  const runDcgHook = async (command: string, cwd: string) => {
+    const payload = JSON.stringify({ tool_name: "Bash", tool_input: { command } });
+    const escapedPayload = escapeForSingleQuotes(payload);
+    const { stdout } = await pi.exec(
+      "bash",
+      ["-c", `printf '%s' '${escapedPayload}' | dcg`],
+      { cwd },
+    );
+
+    const output = stdout.trim();
+    if (!output) return null;
+    return output;
+  };
+
+  const parseHookOutput = (output: string): HookOutput | null => {
+    try {
+      return JSON.parse(output) as HookOutput;
+    } catch {
+      return null;
+    }
+  };
+
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") {
       return;
     }
 
     const command = event.input?.command ?? "";
-    const payload = JSON.stringify({ tool_name: "Bash", tool_input: { command } });
-    const escapedPayload = escapeForSingleQuotes(payload);
 
     try {
-      const { stdout } = await pi.exec(
-        "bash",
-        ["-c", `printf '%s' '${escapedPayload}' | dcg`],
-        { cwd: ctx.cwd }
-      );
-
-      const output = stdout.trim();
+      const output = await runDcgHook(command, ctx.cwd);
       if (!output) {
         return;
       }
 
-      try {
-        const parsed = JSON.parse(output) as {
-          hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string };
-        };
-        const decision = parsed.hookSpecificOutput?.permissionDecision;
-        if (decision === "deny") {
-          const reason = parsed.hookSpecificOutput?.permissionDecisionReason ?? output;
-          if (ctx.hasUI) {
-            ctx.ui.notify("dcg blocked this bash command.", "warning");
-          }
-          return { block: true, reason };
-        }
-      } catch (parseError) {
+      const parsed = parseHookOutput(output);
+      if (!parsed) {
         if (ctx.hasUI) {
           ctx.ui.notify("dcg returned non-JSON output; allowing command.", "warning");
         }
+        return;
+      }
+
+      const hookOutput = parsed.hookSpecificOutput;
+      if (hookOutput?.permissionDecision !== "deny") {
+        return;
+      }
+
+      const reason = hookOutput.permissionDecisionReason ?? output;
+      if (!ctx.hasUI) {
+        return { block: true, reason };
+      }
+
+      const result = await ctx.ui.custom<DcgDecision | null>((tui, theme, _kb, done) =>
+        new DcgDecisionComponent(
+          {
+            command,
+            reason: getDecisionReason(reason),
+            details: reason,
+            allowOnceCode: hookOutput.allowOnceCode,
+            ruleId: hookOutput.ruleId,
+            severity: hookOutput.severity,
+          },
+          tui,
+          theme,
+          done,
+        ),
+      );
+
+      if (!result || result === "deny") {
+        return { block: true, reason };
+      }
+
+      if (result === "allowOnce") {
+        if (!hookOutput.allowOnceCode) {
+          return { block: true, reason };
+        }
+
+        const allowOnceResult = await pi.exec("dcg", ["allow-once", hookOutput.allowOnceCode], {
+          cwd: ctx.cwd,
+        });
+
+        if (allowOnceResult.code !== 0) {
+          return {
+            block: true,
+            reason: allowOnceResult.stderr.trim() || "dcg allow-once failed",
+          };
+        }
+
+        const followUpOutput = await runDcgHook(command, ctx.cwd);
+        if (!followUpOutput) {
+          return;
+        }
+
+        const followUpParsed = parseHookOutput(followUpOutput);
+        if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
+          return {
+            block: true,
+            reason:
+              followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput,
+          };
+        }
+
+        return;
+      }
+
+      const ruleId = hookOutput.ruleId;
+      if (!ruleId) {
+        return { block: true, reason };
+      }
+
+      const scopeFlag = result === "allowAlwaysGlobal" ? "--global" : "--project";
+      const allowlistResult = await pi.exec(
+        "dcg",
+        ["allowlist", "add", ruleId, scopeFlag],
+        { cwd: ctx.cwd },
+      );
+
+      if (allowlistResult.code !== 0) {
+        return {
+          block: true,
+          reason: allowlistResult.stderr.trim() || "dcg allowlist add failed",
+        };
+      }
+
+      const followUpOutput = await runDcgHook(command, ctx.cwd);
+      if (!followUpOutput) {
+        return;
+      }
+
+      const followUpParsed = parseHookOutput(followUpOutput);
+      if (followUpParsed?.hookSpecificOutput?.permissionDecision === "deny") {
+        return {
+          block: true,
+          reason:
+            followUpParsed.hookSpecificOutput.permissionDecisionReason || followUpOutput,
+        };
       }
     } catch (error) {
       if (ctx.hasUI) {
