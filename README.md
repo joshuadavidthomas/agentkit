@@ -14,6 +14,10 @@ Extract questions from the last assistant message into an interactive Q&A interf
 
 When the assistant asks multiple questions, `/answer` (or `Ctrl+.`) extracts them using a fast model (prefers Codex mini, falls back to Haiku), then presents a TUI for navigating and answering each question. Answers are compiled and submitted when complete.
 
+#### [beans](./runtimes/pi/extensions/beans.ts)
+
+Integrates [Beans](https://github.com/hmans/beans) with pi by running `beans prime` in a project using Beans to track issues and injecting its output into the system prompt at session start and after compaction.
+
 #### [dcg](./runtimes/pi/extensions/dcg.ts)
 
 Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
