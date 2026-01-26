@@ -390,6 +390,9 @@ const followUpOrRun = async ({
   buildBlockResult,
   fallbackReason,
 }: FollowUpParams) => {
+  if ((ctx as any).hasUI) {
+    (ctx as any).ui.notify("followUpOrRun: checking dcg again", "info");
+  }
   const followUp = await runHookDecision({
     command,
     cwd,
@@ -398,10 +401,20 @@ const followUpOrRun = async ({
     warnOnNonJson: false,
     parseHookOutput,
   });
+  if ((ctx as any).hasUI) {
+    (ctx as any).ui.notify(`followUpOrRun: decision=${followUp.action}`, "info");
+  }
   if (followUp.action === "deny") {
     return buildBlockResult(followUp.reason, fallbackReason, followUp.decisionReason);
   }
-  return runBash();
+  if ((ctx as any).hasUI) {
+    (ctx as any).ui.notify("followUpOrRun: running bash", "info");
+  }
+  const result = await runBash();
+  if ((ctx as any).hasUI) {
+    (ctx as any).ui.notify("followUpOrRun: bash complete", "info");
+  }
+  return result;
 };
 
 const applyAllowOnce = async ({
