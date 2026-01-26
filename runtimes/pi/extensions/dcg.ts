@@ -2,7 +2,7 @@
  * Bash tool override that runs `dcg` in hook mode before execution.
  */
 
-import { createBashTool, DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { createBashTool, DynamicBorder, keyHint } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   Container,
@@ -31,6 +31,7 @@ type HookOutput = {
 
 type DcgBlockDetails = {
   command: string;
+  fullReason: string;
 };
 
 type DcgDecision =
@@ -216,14 +217,21 @@ class DcgDecisionComponent implements Component {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerMessageRenderer("dcg-block", (message, _options, theme) => {
+  pi.registerMessageRenderer("dcg-block", (message, options, theme) => {
     const details = message.details as DcgBlockDetails | undefined;
     const header = theme.fg("accent", theme.bold("dcg blocked"));
     const commandLine = details?.command
       ? `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`
       : "";
-    const body = theme.fg("text", message.content);
-    const parts = [header, commandLine, body].filter(Boolean).join("\n");
+    const summary = theme.fg("text", message.content);
+
+    if (options.expanded && details?.fullReason) {
+      const full = theme.fg("text", details.fullReason);
+      return new Text([header, commandLine, full].filter(Boolean).join("\n"), 1, 0);
+    }
+
+    const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
+    const parts = [header, commandLine, summary, hint].filter(Boolean).join("\n");
     return new Text(parts, 1, 0);
   });
 
@@ -291,9 +299,9 @@ export default function (pi: ExtensionAPI) {
           pi.sendMessage(
             {
               customType: "dcg-block",
-              content: message,
+              content: getDecisionReason(message),
               display: true,
-              details: { command },
+              details: { command, fullReason: message },
             },
             { deliverAs: "steer" },
           );
@@ -332,7 +340,7 @@ export default function (pi: ExtensionAPI) {
               {
                 customType: "dcg-user-decision",
                 content: "deny",
-                display: true,
+                display: false,
                 details: { command, decision: "deny" },
               },
               { deliverAs: "steer" },
