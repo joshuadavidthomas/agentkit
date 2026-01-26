@@ -37,6 +37,11 @@ type DcgBlockDetails = {
   fullReason: string;
 };
 
+type DcgAllowedDetails = {
+  dcgAllowed: true;
+  allowType: "once" | "always" | "always-project" | "always-global";
+};
+
 type DcgDecision =
   | "deny"
   | "allowOnce"
@@ -293,6 +298,7 @@ type FollowUpParams = {
   runBash: () => Promise<unknown>;
   buildBlockResult: BuildBlockResult;
   fallbackReason: string;
+  allowType: "once" | "always" | "always-project" | "always-global";
 };
 
 type ApplyAllowOnceParams = {
@@ -389,6 +395,7 @@ const followUpOrRun = async ({
   runBash,
   buildBlockResult,
   fallbackReason,
+  allowType,
 }: FollowUpParams) => {
   const followUp = await runHookDecision({
     command,
@@ -401,7 +408,11 @@ const followUpOrRun = async ({
   if (followUp.action === "deny") {
     return buildBlockResult(followUp.reason, fallbackReason, followUp.decisionReason);
   }
-  return runBash();
+  const bashResult = await runBash() as { content: Array<TextContent | ImageContent>; details?: unknown };
+  return {
+    ...bashResult,
+    details: { ...bashResult.details, dcgAllowed: true, allowType },
+  };
 };
 
 const applyAllowOnce = async ({
@@ -434,6 +445,7 @@ const applyAllowOnce = async ({
     runBash,
     buildBlockResult,
     fallbackReason: reason,
+    allowType: "once",
   });
 };
 
@@ -470,6 +482,7 @@ const applyAllowlist = async ({
     runBash,
     buildBlockResult,
     fallbackReason: reason,
+    allowType: scopeFlag === "--global" ? "always-global" : "always-project",
   });
 };
 
@@ -529,21 +542,32 @@ export default function (pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
     renderResult(result, options, theme) {
-      const details = result.details as DcgBlockDetails | undefined;
-      if (!details?.dcgBlocked) {
-        return new Text(extractTextContent(result.content), 0, 0);
+      const blockDetails = result.details as DcgBlockDetails | undefined;
+      const allowDetails = result.details as DcgAllowedDetails | undefined;
+
+      // Handle allowed (once) case
+      if (allowDetails?.dcgAllowed) {
+        const label = allowDetails.allowType === "once" 
+          ? theme.fg("warning", "[dcg] allowed (once)")
+          : theme.fg("success", "[dcg] allowed");
+        const output = extractTextContent(result.content);
+        return new Text(output ? `${label}\n${output}` : label, 0, 0);
       }
 
-      const header = theme.fg("accent", theme.bold("\ndcg blocked"));
-      const commandLine = `${theme.fg("dim", "Command: ")}${theme.fg("text", details.command)}`;
-      if (options.expanded) {
-        const full = theme.fg("text", details.fullReason);
-        return new Text([header, commandLine, full].join("\n"), 0, 0);
+      // Handle blocked case
+      if (blockDetails?.dcgBlocked) {
+        const label = theme.fg("error", "[dcg] blocked");
+        const reason = theme.fg("text", blockDetails.summary);
+        if (options.expanded) {
+          const full = theme.fg("dim", blockDetails.fullReason);
+          return new Text(`${label}: ${reason}\n${full}`, 0, 0);
+        }
+        const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
+        return new Text(`${label}: ${reason}\n${hint}`, 0, 0);
       }
 
-      const summary = theme.fg("text", details.summary);
-      const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
-      return new Text([header, commandLine, summary, hint].join("\n"), 0, 0);
+      // Normal bash output (no dcg involvement)
+      return new Text(extractTextContent(result.content), 0, 0);
     },
     async execute(toolCallId, params, onUpdate, ctx, signal) {
       const command = params.command ?? "";
