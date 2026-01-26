@@ -416,14 +416,9 @@ const applyAllowOnce = async ({
   command,
   decisionReason,
 }: ApplyAllowOnceParams) => {
-  const allowOnceResult = await pi.exec("dcg", ["allow-once", "--yes", allowOnceCode], {
+  const allowOnceResult = await pi.exec("dcg", ["allow-once", "--yes", "--single-use", allowOnceCode], {
     cwd: ctx.cwd,
   });
-
-  // Debug logging
-  if (ctx.hasUI) {
-    ctx.ui.notify(`allow-once: code=${allowOnceCode} exit=${allowOnceResult.code} stderr=${allowOnceResult.stderr.slice(0, 100)}`, "info");
-  }
 
   if (allowOnceResult.code !== 0) {
     const stderrMessage = allowOnceResult.stderr.trim() || undefined;
