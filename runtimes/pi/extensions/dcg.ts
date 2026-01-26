@@ -280,8 +280,23 @@ export default function (pi: ExtensionAPI) {
         ),
       );
 
-      if (!result || result === "deny") {
+      const denyAndBlock = (explicit: boolean) => {
+        if (explicit) {
+          pi.sendMessage(
+            {
+              customType: "dcg-decision",
+              content: "User decision: deny (dcg UI)",
+              display: true,
+              details: { command, decision: "deny" },
+            },
+            { deliverAs: "followUp" },
+          );
+        }
         return { block: true, reason };
+      };
+
+      if (!result || result === "deny") {
+        return denyAndBlock(result === "deny");
       }
 
       if (result === "allowOnce") {
