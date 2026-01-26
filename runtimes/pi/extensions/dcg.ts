@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
               display: true,
               details: { command, decision: "deny" },
             },
-            { deliverAs: "followUp" },
+            { deliverAs: "steer" },
           );
         }
         return { block: true, reason };
