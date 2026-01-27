@@ -50,7 +50,7 @@ The generated prompt appears in the editor for review before starting the new se
 
 #### [notify](./runtimes/pi/extensions/notify.ts)
 
-Desktop notifications when the agent finishes and is waiting for input. Uses OSC 777 escape sequence - no external dependencies.
+Desktop notifications when the agent finishes. Uses a cheap model to summarize what was done ("Wrote auth.ts") or what's blocking ("Need: which database?") so you know at a glance whether to come back.
 
 Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
 
