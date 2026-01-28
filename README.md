@@ -48,6 +48,12 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff check other places that need this fix
 ```
 
+#### [messages](./runtimes/pi/extensions/messages.ts)
+
+Whimsical working messages while the agent thinks.
+
+Replaces the default "Working..." message with randomly selected playful alternatives like "Percolating...", "Consulting the void...", "Herding pointers...", and "Reticulating splines...". Messages change on each turn for variety and delight.
+
 #### [notify](./runtimes/pi/extensions/notify.ts)
 
 Desktop notifications when the agent finishes. Uses a cheap model to summarize what was done ("Wrote auth.ts") or what's blocking ("Need: which database?") so you know at a glance whether to come back.
@@ -105,6 +111,10 @@ When blocked, the agent is instructed to ask if the server is already running, a
 This repository includes and adapts work from several sources.
 
 ### answer
+
+From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
+
+### messages
 
 From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
