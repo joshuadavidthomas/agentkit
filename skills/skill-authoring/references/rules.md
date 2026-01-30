@@ -187,6 +187,27 @@ description: Use when tests timeout.
 
 Violations reduce discoverability or maintainability.
 
+### style-agent-agnostic
+Write for "the agent" not a specific model. Skills work across LLMs.
+
+```markdown
+# ✓ Good - agent-agnostic
+The agent should validate input before processing.
+When the agent encounters an error, it should...
+
+# ✗ Bad - model-specific
+Claude should validate input before processing.
+When Claude encounters an error, Claude should...
+GPT will analyze the code and then...
+```
+
+**Why this matters:**
+- Skills are portable across agents (Claude, GPT, Gemini, local models)
+- Model-specific language creates unnecessary coupling
+- "The agent" is clearer about the role being addressed
+
+**Exception:** If a skill is genuinely model-specific (e.g., uses Claude-only features), make that explicit in the description and use the model name consistently.
+
 ### test-trigger-phrases
 Test with 10+ real user phrases before deployment.
 

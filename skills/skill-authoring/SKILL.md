@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Use when authoring, creating, or troubleshooting agent skills — covers SKILL.md structure, frontmatter syntax, description optimization, and activation testing. Also when building a new skill from scratch, or when a skill won't trigger, loads incorrectly, or the agent ignores it entirely.
+description: Use when authoring, creating, refining, or troubleshooting agent skills — covers SKILL.md structure, frontmatter syntax, description optimization, and activation testing. Also when building a new skill from scratch, when a skill won't trigger, loads incorrectly, or the agent ignores it entirely. Use when a skill misbehaved in the current session and needs adjustment based on learnings.
 ---
 
 # Writing Skills
@@ -124,6 +124,7 @@ Structure your skill in layers:
 | SKILL.md under 500 lines | Context is precious |
 | One excellent example > many mediocre | Quality over quantity |
 | Test activation before deployment | A skill that works but never triggers = zero value |
+| Use agent-agnostic language | Skills work with any LLM, not just one |
 
 ## When You're Ready to Build
 
@@ -150,6 +151,7 @@ skills-ref validate path/to/skill
 | Create a new skill from scratch | [workflows/create.md](workflows/create.md) |
 | Test activation and behavior | [workflows/test.md](workflows/test.md) |
 | Debug a skill that isn't working | [workflows/debug.md](workflows/debug.md) |
+| Refine a skill from session learnings | [workflows/refine.md](workflows/refine.md) |
 
 **References** — Things you look up:
 
