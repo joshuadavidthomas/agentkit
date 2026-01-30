@@ -214,7 +214,31 @@ Coolify generates values using `SERVICE_<TYPE>_<IDENTIFIER>`:
 | `REALBASE64_64` | `SERVICE_REALBASE64_64_JWT` | Actual base64-encoded string |
 | `HEX_32` | `SERVICE_HEX_32_KEY` | 64-char hex string |
 | `URL` | `SERVICE_URL_APP_3000` | `https://app-uuid.example.com` + proxy |
-| `FQDN` | `SERVICE_FQDN_APP` | `app-uuid.example.com` (no scheme) |
+| `FQDN` | `SERVICE_FQDN_APP` | `app-uuid.example.com` (no scheme, no port suffix) |
+
+### Declaration vs Reference (Critical)
+
+For `SERVICE_URL`, the port suffix configures proxy routing but is **not part of the variable name**:
+
+```yaml
+# Declare WITH port suffix (configures proxy to route to port 3000)
+- SERVICE_URL_MYAPP_3000
+
+# Reference WITHOUT port suffix (gets the URL value)
+- APP_URL=$SERVICE_URL_MYAPP
+- WEBHOOK_URL=${SERVICE_URL_MYAPP}/webhooks
+```
+
+`SERVICE_FQDN` is automatically available when `SERVICE_URL` is declared — no separate declaration needed:
+
+```yaml
+# This single declaration...
+- SERVICE_URL_MYAPP_3000
+
+# ...makes BOTH of these available:
+- FULL_URL=$SERVICE_URL_MYAPP           # https://myapp-uuid.example.com
+- HOSTNAME=${SERVICE_FQDN_MYAPP}        # myapp-uuid.example.com
+```
 
 **⚠️ Important:** Use hyphens, not underscores, before port numbers:
 ```yaml
@@ -341,7 +365,9 @@ environment:
 
 ## Examples
 
-When the user pastes a compose file, analyze it and use the matching example:
+**First, check for an official template:** Many popular services have official Coolify templates at [github.com/coollabsio/coolify/tree/main/templates/compose](https://github.com/coollabsio/coolify/tree/main/templates/compose). If one exists, use it as the reference for correct patterns.
+
+When converting a compose file without an official template, analyze it and use the matching example:
 
 | Compose file has... | Use example |
 |---------------------|-------------|
@@ -359,4 +385,5 @@ When the user pastes a compose file, analyze it and use the matching example:
 
 - [references/magic-variables.md](references/magic-variables.md) — Complete variable type reference
 - [references/categories.md](references/categories.md) — Valid category values
-- [Coolify Docs](https://coolify.io/docs/knowledge-base/docker/compose)
+- [Official Coolify Compose Docs](https://coolify.io/docs/knowledge-base/docker/compose) — Authoritative documentation
+- [Official Service Templates](https://github.com/coollabsio/coolify/tree/main/templates/compose) — Reference implementations for correct patterns
