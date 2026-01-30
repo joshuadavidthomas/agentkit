@@ -28,7 +28,7 @@ PI_EXTENSIONS_SRC="$REPO_DIR/runtimes/pi/extensions"
 
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
     mkdir -p "$PI_EXTENSIONS_DIR"
-    for ext in "$PI_EXTENSIONS_SRC"/*.ts; do
+    for ext in "$PI_EXTENSIONS_SRC"/*; do
         [[ -e "$ext" ]] || continue
         ext_name=$(basename "$ext")
         ln -sfn "$ext" "$PI_EXTENSIONS_DIR/$ext_name"
