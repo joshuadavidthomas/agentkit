@@ -7,6 +7,67 @@ description: Convert Docker Compose files to Coolify templates. Use when creatin
 
 Convert standard Docker Compose files into Coolify-compatible templates with automatic credential generation, dynamic URLs, and one-click deployment.
 
+## Two Deployment Modes
+
+Coolify supports two ways to deploy compose files with different capabilities:
+
+### 1. Raw Compose (Paste Content)
+
+Paste compose YAML directly into Coolify's UI. **Limited feature set:**
+
+| Feature | Supported |
+|---------|-----------|
+| `image:` | ✅ Yes |
+| `build:` | ❌ No - must use pre-built images |
+| External config files | ❌ No - must use inline `content:` |
+| YAML anchors (`&`, `*`) | ✅ Yes - resolved by YAML parser |
+| Coolify magic variables | ✅ Yes |
+| `content:` for inline files | ✅ Yes |
+
+**Use when:** Quick deployments, simple services, no custom images needed.
+
+### 2. Repository Mode (Git URL)
+
+Point Coolify to a Git repository containing your compose file. **Full Docker Compose features:**
+
+| Feature | Supported |
+|---------|-----------|
+| `image:` | ✅ Yes |
+| `build:` | ✅ Yes - builds from Dockerfile in repo |
+| External config files | ✅ Yes - relative paths work |
+| Coolify magic variables | ✅ Yes |
+| `content:` for inline files | ✅ Yes |
+
+**Use when:** Custom images needed, complex multi-file setups, existing docker-compose.yml in a repo.
+
+**Repository setup:**
+```
+my-service/
+├── compose.yml          # or docker-compose.yml
+├── custom-image/
+│   ├── Dockerfile
+│   └── config.sql
+└── other-files/
+```
+
+```yaml
+# compose.yml - can use build:
+services:
+  app:
+    build:
+      context: ./custom-image
+      dockerfile: Dockerfile
+```
+
+### Which Mode to Use?
+
+| Original compose has... | Recommended mode |
+|------------------------|------------------|
+| Only `image:` references | Either works |
+| `build:` directives | Repository mode |
+| External config files to mount | Repository mode (or use `content:` in raw) |
+| Single simple service | Raw mode is faster |
+
 ## Quick Start
 
 Every Coolify template needs a header and magic variables:
@@ -49,6 +110,29 @@ services:
 ## Conversion Checklist
 
 When converting a standard `docker-compose.yml`:
+
+### 0. Check for `build:` Directives
+
+If the compose has `build:` entries:
+- **Repository mode:** Keep them. Coolify will build from the Dockerfile.
+- **Raw mode:** Replace with pre-built `image:` references or find equivalent images.
+
+```yaml
+# Original with build:
+services:
+  custom-db:
+    build: ./custom-postgres
+
+# Raw mode: find or create pre-built image
+  custom-db:
+    image: your-registry.com/custom-postgres:latest
+
+# Repository mode: keep build:, include Dockerfile in repo
+  custom-db:
+    build:
+      context: ./custom-postgres
+      dockerfile: Dockerfile
+```
 
 ### 1. Add Header Metadata
 
@@ -154,13 +238,20 @@ volumes:
 
 ### Create File with Content
 
+Useful in **raw mode** when you can't reference external files. In **repository mode**, you can just mount files normally.
+
 ```yaml
+# Raw mode: embed file content inline
 volumes:
   - type: bind
     source: ./config.json
     target: /app/config.json
     content: |
       {"key": "${SERVICE_PASSWORD_APP}"}
+
+# Repository mode: reference actual file in repo
+volumes:
+  - ./config/settings.json:/app/config.json:ro
 ```
 
 ### Exclude from Health Checks
