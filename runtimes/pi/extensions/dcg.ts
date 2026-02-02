@@ -351,11 +351,11 @@ class DcgDecisionComponent implements Component {
 type HookDecision =
   | { action: "allow" }
   | {
-      action: "deny";
-      reason: string;
-      decisionReason: string;
-      hookOutput?: HookSpecificOutput;
-    };
+    action: "deny";
+    reason: string;
+    decisionReason: string;
+    hookOutput?: HookSpecificOutput;
+  };
 
 type HookDecisionContext = {
   hasUI: boolean;
@@ -681,7 +681,7 @@ export default function (pi: ExtensionAPI) {
         result.details as any,
       );
     },
-    async execute(toolCallId, params, onUpdate, ctx, signal) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       const command = params.command ?? "";
       const runBash = () => runBashTool(toolCallId, params, onUpdate, ctx, signal);
       const buildResult: BuildBlockResult = (
