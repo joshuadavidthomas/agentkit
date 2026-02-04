@@ -40,7 +40,7 @@ import {
 	WIDGET_KEY,
 } from "./types.js";
 import { formatDuration } from "./formatters.js";
-import { readStatus, findByPrefix, getFinalOutput, mapConcurrent, listRecentRuns } from "./utils.js";
+import { readStatus, findByPrefix, getFinalOutput, mapConcurrent, listRecentAsyncRuns, listRunsFromArtifacts } from "./utils.js";
 import { runSync } from "./execution.js";
 import { renderWidget, renderSubagentResult } from "./render.js";
 import { SubagentParams, StatusParams } from "./schemas.js";
@@ -665,13 +665,26 @@ Returns: run state, step progress, token usage, duration, artifact paths, sessio
 Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 		parameters: StatusParams,
 
-		async execute(_id, params, _signal, _onUpdate, _ctx) {
+		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!params.id && !params.dir) {
-				const diskRuns = listRecentRuns(ASYNC_DIR, 10);
+				const asyncRuns = listRecentAsyncRuns(ASYNC_DIR, 10);
 				const memoryJobs = Array.from(asyncJobs.values());
-				const memoryIds = new Set(memoryJobs.map(j => j.asyncId));
-				const combinedRuns = [
-					...memoryJobs.map(j => ({
+				
+				const artifactDirs: string[] = [getArtifactsDir(null)];
+				if (ctx?.sessionManager) {
+					const sessionFile = ctx.sessionManager.getSessionFile();
+					if (sessionFile) {
+						artifactDirs.push(getArtifactsDir(sessionFile));
+					}
+				}
+				const artifactRuns = listRunsFromArtifacts(artifactDirs, 10);
+				
+				const seenIds = new Set<string>();
+				const combinedRuns: typeof asyncRuns = [];
+				
+				for (const j of memoryJobs) {
+					seenIds.add(j.asyncId);
+					combinedRuns.push({
 						id: j.asyncId,
 						dir: j.asyncDir,
 						mode: j.mode ?? "single" as const,
@@ -681,9 +694,21 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 						updatedAt: j.updatedAt ?? Date.now(),
 						stepsTotal: j.stepsTotal ?? 1,
 						currentStep: j.currentStep,
-					})),
-					...diskRuns.filter(r => !memoryIds.has(r.id)),
-				];
+					});
+				}
+				for (const r of asyncRuns) {
+					if (!seenIds.has(r.id)) {
+						seenIds.add(r.id);
+						combinedRuns.push(r);
+					}
+				}
+				for (const r of artifactRuns) {
+					if (!seenIds.has(r.id)) {
+						seenIds.add(r.id);
+						combinedRuns.push(r);
+					}
+				}
+				
 				combinedRuns.sort((a, b) => b.updatedAt - a.updatedAt);
 				const runs = combinedRuns.slice(0, 10);
 				
@@ -734,7 +759,7 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 				params.id && !asyncDir ? findByPrefix(RESULTS_DIR, params.id, ".json") : null;
 
 			if (!asyncDir && !resultPath) {
-				const recentRuns = listRecentRuns(ASYNC_DIR, 3);
+				const recentRuns = listRecentAsyncRuns(ASYNC_DIR, 3);
 				const hint = recentRuns.length > 0
 					? `\n\nRecent runs:\n${recentRuns.map(r => `  - ${r.id.slice(0, 8)} (${r.state})`).join("\n")}\n\nOr call with no parameters to list all recent runs.`
 					: "\n\nCall with no parameters to list recent runs.";

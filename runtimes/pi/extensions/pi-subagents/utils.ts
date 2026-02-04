@@ -120,12 +120,12 @@ export function findByPrefix(dir: string, prefix: string, suffix?: string): stri
 }
 
 /**
- * Summary of a recent async run for listing
+ * Summary of a recent run for listing
  */
 export interface RecentRunSummary {
 	id: string;
 	dir: string;
-	mode: "single" | "chain";
+	mode: "single" | "parallel" | "chain";
 	state: "queued" | "running" | "complete" | "failed";
 	agents: string[];
 	startedAt: number;
@@ -134,10 +134,73 @@ export interface RecentRunSummary {
 	currentStep?: number;
 }
 
+interface ArtifactMeta {
+	runId: string;
+	agent: string;
+	task: string;
+	exitCode: number;
+	durationMs?: number;
+	timestamp: number;
+}
+
+/**
+ * List runs from artifact metadata files
+ */
+export function listRunsFromArtifacts(artifactsDirs: string[], limit: number = 10): RecentRunSummary[] {
+	const runMap = new Map<string, { agents: string[]; exitCodes: number[]; timestamp: number; dir: string }>();
+	
+	for (const dir of artifactsDirs) {
+		if (!fs.existsSync(dir)) continue;
+		
+		try {
+			const files = fs.readdirSync(dir).filter(f => f.endsWith("_meta.json"));
+			for (const file of files) {
+				try {
+					const content = fs.readFileSync(path.join(dir, file), "utf-8");
+					const meta = JSON.parse(content) as ArtifactMeta;
+					
+					const existing = runMap.get(meta.runId);
+					if (existing) {
+						existing.agents.push(meta.agent);
+						existing.exitCodes.push(meta.exitCode);
+						existing.timestamp = Math.max(existing.timestamp, meta.timestamp);
+					} else {
+						runMap.set(meta.runId, {
+							agents: [meta.agent],
+							exitCodes: [meta.exitCode],
+							timestamp: meta.timestamp,
+							dir,
+						});
+					}
+				} catch {}
+			}
+		} catch {}
+	}
+	
+	const runs: RecentRunSummary[] = [];
+	for (const [id, data] of runMap) {
+		const hasFailure = data.exitCodes.some(c => c !== 0);
+		const mode = data.agents.length > 1 ? "parallel" : "single";
+		runs.push({
+			id,
+			dir: data.dir,
+			mode,
+			state: hasFailure ? "failed" : "complete",
+			agents: data.agents,
+			startedAt: data.timestamp,
+			updatedAt: data.timestamp,
+			stepsTotal: data.agents.length,
+		});
+	}
+	
+	runs.sort((a, b) => b.updatedAt - a.updatedAt);
+	return runs.slice(0, limit);
+}
+
 /**
  * List recent async runs from disk, sorted by most recent first
  */
-export function listRecentRuns(asyncDir: string, limit: number = 10): RecentRunSummary[] {
+export function listRecentAsyncRuns(asyncDir: string, limit: number = 10): RecentRunSummary[] {
 	if (!fs.existsSync(asyncDir)) return [];
 	
 	const runs: RecentRunSummary[] = [];
@@ -167,7 +230,6 @@ export function listRecentRuns(asyncDir: string, limit: number = 10): RecentRunS
 	} catch {}
 	
 	runs.sort((a, b) => b.updatedAt - a.updatedAt);
-	
 	return runs.slice(0, limit);
 }
 
@@ -266,19 +328,24 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 		if (exitMatch) {
 			const code = parseInt(exitMatch[1], 10);
 			if (code !== 0) {
-				return { hasError: true, exitCode: code, errorType: "bash", details: output.slice(0, 200) };
+				// Exit code 1 from search tools means "no matches" - not an error
+				const isSearchTool = /^\s*(grep|rg|ack|ag|find|fd|locate)\b/.test(output) ||
+					/\b(grep|rg|ack|ag)\s+/.test(output);
+				if (code === 1 && isSearchTool) {
+					// Skip - "no matches" is not a failure
+				} else {
+					return { hasError: true, exitCode: code, errorType: "bash", details: output.slice(0, 200) };
+				}
 			}
 		}
 
 		const errorPatterns = [
 			/command not found/i,
 			/permission denied/i,
-			/no such file or directory/i,
 			/segmentation fault/i,
 			/killed|terminated/i,
 			/out of memory/i,
 			/connection refused/i,
-			/timeout/i,
 		];
 		for (const pattern of errorPatterns) {
 			if (pattern.test(output)) {

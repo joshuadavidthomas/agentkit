@@ -27,7 +27,8 @@ Multiple improvements to tooling, output formatting, and descriptions.
   - When called without `id` or `dir`, show recent runs from current session (or globally)
   - Include: id, mode, status, timestamp, artifact dir
   - Guide user toward inspection: "To inspect: subagent_status({ id: 'xyz' })"
-  - Added `listRecentRuns()` to utils.ts, merges in-memory asyncJobs with disk runs
+  - Scans **both** async runs dir AND artifact metadata files (for sync runs)
+  - Merges in-memory asyncJobs + async disk runs + artifact-based runs
 
 - [x] **B: Inline failure details in results**
   - When parallel/chain tasks fail, include the error message inline
@@ -53,6 +54,11 @@ Multiple improvements to tooling, output formatting, and descriptions.
 - [x] **F: Actionable artifact paths in output**
   - When showing artifact dir, also show specific file paths for failed tasks
   - Format as ready-to-use read commands
+
+- [x] **G: Reduce false positive failure detection**
+  - Exit code 1 from search tools (grep, rg, find, fd, ack, ag) means "no matches" - not an error
+  - Other commands with exit code 1 still treated as failures
+  - Removed overly aggressive patterns ("no such file or directory", "timeout")
 
 ## Files
 
