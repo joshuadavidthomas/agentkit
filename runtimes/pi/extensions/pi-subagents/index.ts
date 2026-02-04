@@ -434,10 +434,28 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 
 				// Execute with overrides (tasks array has same length as params.tasks)
 				const behaviors = agentConfigs.map(c => resolveStepBehavior(c, {}));
+				
+				// Track progress for all parallel tasks
+				const taskProgress: AgentProgress[] = params.tasks.map((t, i) => ({
+					index: i,
+					agent: t.agent,
+					status: "pending" as const,
+					task: tasks[i]!,
+					recentTools: [],
+					recentOutput: [],
+					toolCount: 0,
+					tokens: 0,
+					durationMs: 0,
+				}));
+				const completedResults: (SingleResult | null)[] = new Array(params.tasks.length).fill(null);
+				
 				const results = await mapConcurrent(params.tasks, MAX_CONCURRENCY, async (t, i) => {
 					const overrideSkills = skillOverrides[i];
 					const effectiveSkills = overrideSkills === undefined ? behaviors[i]?.skills : overrideSkills;
-					return runSync(ctx.cwd, agents, t.agent, tasks[i]!, {
+					
+					taskProgress[i]!.status = "running";
+					
+					const r = await runSync(ctx.cwd, agents, t.agent, tasks[i]!, {
 						cwd: t.cwd ?? params.cwd,
 						signal,
 						runId,
@@ -449,7 +467,25 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 						maxOutput: params.maxOutput,
 						modelOverride: modelOverrides[i],
 						skills: effectiveSkills === false ? [] : effectiveSkills,
+						onUpdate: onUpdate ? (p) => {
+							if (p.details?.progress?.[0]) {
+								taskProgress[i] = p.details.progress[0];
+							}
+							completedResults[i] = p.details?.results?.[0] ?? null;
+							onUpdate({
+								content: [{ type: "text", text: "(running...)" }],
+								details: {
+									mode: "parallel",
+									results: completedResults.filter((r): r is SingleResult => r !== null),
+									progress: taskProgress,
+								},
+							});
+						} : undefined,
 					});
+					
+					taskProgress[i]!.status = r.exitCode === 0 ? "completed" : "failed";
+					completedResults[i] = r;
+					return r;
 				});
 
 				for (const r of results) {

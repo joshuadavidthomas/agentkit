@@ -201,7 +201,7 @@ export function renderSubagentResult(
 			? ` | ${totalSummary.toolCount} tools, ${formatTokens(totalSummary.tokens)} tok, ${formatDuration(totalSummary.durationMs)}`
 			: "";
 
-	const modeLabel = d.mode === "parallel" ? "parallel (no live progress)" : d.mode;
+	const modeLabel = d.mode;
 	// For parallel-in-chain, show task count (results) for consistency with step display
 	// For sequential chains, show logical step count
 	const hasParallelInChain = d.chainAgents?.some((a) => a.startsWith("["));
@@ -252,17 +252,17 @@ export function renderSubagentResult(
 	const useResultsDirectly = hasParallelInChain || !d.chainAgents?.length;
 	const stepsToShow = useResultsDirectly ? d.results.length : d.chainAgents!.length;
 
+	const itemLabel = d.mode === "parallel" ? "Task" : "Step";
 	c.addChild(new Spacer(1));
 
 	for (let i = 0; i < stepsToShow; i++) {
 		const r = d.results[i];
 		const agentName = useResultsDirectly 
-			? (r?.agent || `step-${i + 1}`)
-			: (d.chainAgents![i] || r?.agent || `step-${i + 1}`);
+			? (r?.agent || `${itemLabel.toLowerCase()}-${i + 1}`)
+			: (d.chainAgents![i] || r?.agent || `${itemLabel.toLowerCase()}-${i + 1}`);
 
 		if (!r) {
-			// Pending step
-			c.addChild(new Text(theme.fg("dim", `  Step ${i + 1}: ${agentName}`), 0, 0));
+			c.addChild(new Text(theme.fg("dim", `  ${itemLabel} ${i + 1}: ${agentName}`), 0, 0));
 			c.addChild(new Text(theme.fg("dim", `    status: ○ pending`), 0, 0));
 			c.addChild(new Spacer(1));
 			continue;
@@ -273,19 +273,17 @@ export function renderSubagentResult(
 		const rProg = r.progress || progressFromArray || r.progressSummary;
 		const rRunning = rProg?.status === "running";
 
-		// Step header with status
 		const statusIcon = rRunning
 			? theme.fg("warning", "●")
 			: r.exitCode === 0
 				? theme.fg("success", "✓")
 				: theme.fg("error", "✗");
 		const stats = rProg ? ` | ${rProg.toolCount} tools, ${formatDuration(rProg.durationMs)}` : "";
-		// Show model if available (full provider/model format)
 		const modelDisplay = r.model ? theme.fg("dim", ` (${r.model})`) : "";
-		const stepHeader = rRunning
-			? `${statusIcon} Step ${i + 1}: ${theme.bold(theme.fg("warning", r.agent))}${modelDisplay}${stats}`
-			: `${statusIcon} Step ${i + 1}: ${theme.bold(r.agent)}${modelDisplay}${stats}`;
-		c.addChild(new Text(stepHeader, 0, 0));
+		const header = rRunning
+			? `${statusIcon} ${itemLabel} ${i + 1}: ${theme.bold(theme.fg("warning", r.agent))}${modelDisplay}${stats}`
+			: `${statusIcon} ${itemLabel} ${i + 1}: ${theme.bold(r.agent)}${modelDisplay}${stats}`;
+		c.addChild(new Text(header, 0, 0));
 
 		// Task (truncated)
 		const taskPreview = r.task.slice(0, 120) + (r.task.length > 120 ? "..." : "");
