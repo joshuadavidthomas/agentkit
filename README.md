@@ -221,6 +221,10 @@ From [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/pa
 
 Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
+### agents
+
+Inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
+
 ### frontend-design-principles
 
 Cobbled together from:

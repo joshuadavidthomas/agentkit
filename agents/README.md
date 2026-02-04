@@ -1,18 +1,41 @@
 # Agents
 
-This directory contains reference agent definitions for the researching-codebases skill. These files are not usable directly from this location - they must be installed to your agentic CLI tool to be utilized.
+Subagent definitions in a superset frontmatter format supporting multiple harnesses (OpenCode, Pi, etc.).
+
+Inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer).
+
+## Installation
+
+Run `./install.sh` from the repo root to transform and install agents to:
+
+- `~/.config/opencode/agents/` (OpenCode)
+- `~/.pi/agent/agents/` (Pi)
 
 ## Format
 
-The definitions are written in [OpenCode](https://opencode.ai) format. If using another tool, refer to your tool's documentation on configuring agents and adapt accordingly. Each agent file contains:
+Each agent uses a superset frontmatter with harness-specific namespaces:
 
-- **YAML frontmatter**: Tool-specific configuration (model, tools, permissions)
-- **Markdown body**: System prompt defining the agent's behavior
+```yaml
+---
+description: What this agent does
+model: openai/gpt-5.1-codex
+temperature: 0.2
 
-The system prompt content should be portable across tools. The frontmatter will need adaptation to your tool's configuration format.
+opencode:
+  mode: subagent
+  reasoningEffort: medium
+  tools:
+    read: true
+    grep: true
 
-## Migration Prompt
+pi:
+  tools: read, grep, glob, ls
+  output: analysis.md
+---
 
-If your tool supports custom agents, you can use this prompt to help migrate:
+System prompt goes here...
+```
 
-> Read the agent definitions in this directory and convert them to [YOUR TOOL] format. Preserve the system prompts exactly - only adapt the configuration (model selection, tool access, permissions) to match [YOUR TOOL]'s agent configuration format.
+Common fields (description, model, temperature) are shared. Harness-specific fields live under their namespace.
+
+The `scripts/transform-agent.ts` script extracts common fields + the relevant namespace for each harness.
