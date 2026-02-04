@@ -7,17 +7,9 @@ set unstable := true
 default:
     @just --list --list-submodules
 
-# ------------------------------------------------------------------------------
-# Installation
-# ------------------------------------------------------------------------------
-
 # Install everything (skills, agents, extensions)
 install:
     ./install.sh
-
-# ------------------------------------------------------------------------------
-# Vendored Dependencies (subtrees)
-# ------------------------------------------------------------------------------
 
 # Update pi-subagents from upstream
 pi-subagents-update:
