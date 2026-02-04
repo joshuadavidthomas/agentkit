@@ -26,12 +26,12 @@ Coordinate parallel sub-agents to answer complex codebase questions.
 
 Before decomposing a new research question, consider checking for related past research:
 
-1. Run `list-research.py` script to see recent research docs
-2. Run `search-research.py` script with relevant keywords
-3. If related research exists, run `read-research.py` script to load it
+1. Run `scripts/list-research.py` to see recent research docs
+2. Run `scripts/search-research.py` with relevant keywords
+3. If related research exists, run `scripts/read-research.py` to load it
 4. Build on previous findings instead of starting fresh
 
-See `research-tools.md` for script usage.
+See `research-tools.md` for script usage and arguments.
 
 ### 1. Read mentioned files first
 
@@ -70,7 +70,7 @@ Skip this for quick answers.
 
 When saving:
 
-1. Run `gather-metadata.py` script to get date, repo, branch, commit, cwd.
+1. Run `scripts/gather-metadata.py` to get date, repo, branch, commit, cwd.
 2. Add query (from user's question) and tags (from content)
 3. Format YAML frontmatter per `output-format.md`
 4. Create directory if it doesn't exist

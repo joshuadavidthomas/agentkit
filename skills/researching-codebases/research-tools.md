@@ -2,23 +2,25 @@
 
 Scripts for working with past research documents.
 
+All script paths below are relative to this skill's directory.
+
 ## Available Scripts
 
 | Script | Purpose | Use When |
 |--------|---------|----------|
-| `list-research.py` | List past research docs with metadata | Starting research, checking what exists |
-| `search-research.py` | Search past research by topic or tags | Looking for specific past findings |
-| `read-research.py` | Read full content of a research doc | Loading a specific document by path |
-| `gather-metadata.py` | Generate frontmatter metadata | Creating a new research document |
-| `promote-research.py` | Copy local research to global | Making project research available everywhere |
+| `scripts/list-research.py` | List past research docs with metadata | Starting research, checking what exists |
+| `scripts/search-research.py` | Search past research by topic or tags | Looking for specific past findings |
+| `scripts/read-research.py` | Read full content of a research doc | Loading a specific document by path |
+| `scripts/gather-metadata.py` | Generate frontmatter metadata | Creating a new research document |
+| `scripts/promote-research.py` | Copy local research to global | Making project research available everywhere |
 
 ## Usage
 
-Run scripts by name with arguments as needed. Examples below show the script name and available arguments.
+Run scripts with `python3` using the path relative to this skill directory. Examples below show the script path and available arguments.
 
 ### List recent research
 
-Run `list-research.py` to see recent research docs.
+Run `scripts/list-research.py` to see recent research docs.
 
 Arguments:
 - `--limit N`: Max results (default: 10)
@@ -26,7 +28,7 @@ Arguments:
 
 ### Search for topic
 
-Run `search-research.py` with a search term to find related research.
+Run `scripts/search-research.py` with a search term to find related research.
 
 Arguments:
 - First positional: Search term (required)
@@ -35,17 +37,17 @@ Arguments:
 
 ### Read full content
 
-Run `read-research.py` with a path to load a research document. Use paths returned by `list-research.py` or `search-research.py`.
+Run `scripts/read-research.py` with a path to load a research document. Use paths returned by `scripts/list-research.py` or `scripts/search-research.py`.
 
 ### Generate metadata
 
-Run `gather-metadata.py` to get deterministic metadata for research documents.
+Run `scripts/gather-metadata.py` to get deterministic metadata for research documents.
 
 Returns key-value pairs: `date`, `filename_date`, `cwd`, `repository`, `branch`, `commit`
 
 ### Promote to global
 
-Run `promote-research.py` with a filename from `.research/` to copy it to `~/.research/`.
+Run `scripts/promote-research.py` with a filename from `.research/` to copy it to `~/.research/`.
 
 Arguments:
 - First positional: Filename in `.research/` (required)
