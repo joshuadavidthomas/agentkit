@@ -314,27 +314,38 @@ export function renderSubagentResult(
 		}
 
 		if (rRunning && rProg) {
-			if (rProg.skills?.length) {
+			// For parallel: minimal output (just current activity)
+			// For chains: more detail since only one runs at a time
+			const isParallel = d.mode === "parallel";
+			
+			if (!isParallel && rProg.skills?.length) {
 				c.addChild(new Text(theme.fg("accent", `    skills: ${rProg.skills.join(", ")}`), 0, 0));
 			}
-			// Current tool for running step
+			
+			// Current tool or most recent
 			if (rProg.currentTool) {
 				const toolLine = rProg.currentToolArgs
-					? `${rProg.currentTool}: ${rProg.currentToolArgs.slice(0, 100)}${rProg.currentToolArgs.length > 100 ? "..." : ""}`
+					? `${rProg.currentTool}: ${rProg.currentToolArgs.slice(0, 80)}${rProg.currentToolArgs.length > 80 ? "..." : ""}`
 					: rProg.currentTool;
-				c.addChild(new Text(theme.fg("warning", `    > ${toolLine}`), 0, 0));
+				c.addChild(new Text(theme.fg("dim", `    ${toolLine}`), 0, 0));
+			} else if (rProg.recentTools?.length) {
+				const t = rProg.recentTools[0]!;
+				const args = t.args.slice(0, 80) + (t.args.length > 80 ? "..." : "");
+				c.addChild(new Text(theme.fg("dim", `    ${t.tool}: ${args}`), 0, 0));
 			}
-			// Recent tools
-			if (rProg.recentTools?.length) {
-				for (const t of rProg.recentTools.slice(0, 3)) {
-					const args = t.args.slice(0, 90) + (t.args.length > 90 ? "..." : "");
-					c.addChild(new Text(theme.fg("dim", `      ${t.tool}: ${args}`), 0, 0));
+			
+			// Only show more detail for chains (sequential)
+			if (!isParallel) {
+				if (rProg.recentTools?.length) {
+					for (const t of rProg.recentTools.slice(0, 2)) {
+						const args = t.args.slice(0, 90) + (t.args.length > 90 ? "..." : "");
+						c.addChild(new Text(theme.fg("dim", `      ${t.tool}: ${args}`), 0, 0));
+					}
 				}
-			}
-			// Recent output (limited)
-			const recentLines = (rProg.recentOutput ?? []).slice(-5);
-			for (const line of recentLines) {
-				c.addChild(new Text(theme.fg("dim", `      ${line.slice(0, 100)}${line.length > 100 ? "..." : ""}`), 0, 0));
+				const recentLines = (rProg.recentOutput ?? []).slice(-3);
+				for (const line of recentLines) {
+					c.addChild(new Text(theme.fg("dim", `      ${line.slice(0, 100)}${line.length > 100 ? "..." : ""}`), 0, 0));
+				}
 			}
 		}
 
