@@ -152,6 +152,20 @@ export function renderSubagentResult(
 			c.addChild(new Spacer(1));
 			c.addChild(new Text(theme.fg("dim", `Artifacts: ${shortenPath(r.artifactPaths.outputPath)}`), 0, 0));
 		}
+
+		if (r.exitCode !== 0 && !isRunning) {
+			c.addChild(new Spacer(1));
+			if (r.error) {
+				const errorPreview = r.error.length > 150 ? r.error.slice(0, 147) + "..." : r.error;
+				c.addChild(new Text(theme.fg("error", `Error: ${errorPreview}`), 0, 0));
+			}
+			c.addChild(new Text(theme.fg("dim", "To investigate:"), 0, 0));
+			if (r.artifactPaths?.outputPath) {
+				c.addChild(new Text(theme.fg("dim", `  read ${shortenPath(r.artifactPaths.outputPath)}`), 0, 0));
+			}
+			c.addChild(new Text(theme.fg("dim", `  subagent_status({})`), 0, 0));
+		}
+
 		return c;
 	}
 
@@ -290,6 +304,17 @@ export function renderSubagentResult(
 			c.addChild(new Text(theme.fg("warning", `    ⚠️ ${r.skillsWarning}`), 0, 0));
 		}
 
+		if (r.exitCode !== 0 && !rRunning) {
+			if (r.error) {
+				// Truncate error to first 200 chars for inline display
+				const errorPreview = r.error.length > 200 ? r.error.slice(0, 197) + "..." : r.error;
+				c.addChild(new Text(theme.fg("error", `    error: ${errorPreview}`), 0, 0));
+			}
+			if (r.artifactPaths?.outputPath) {
+				c.addChild(new Text(theme.fg("dim", `    full output: ${shortenPath(r.artifactPaths.outputPath)}`), 0, 0));
+			}
+		}
+
 		if (rRunning && rProg) {
 			if (rProg.skills?.length) {
 				c.addChild(new Text(theme.fg("accent", `    skills: ${rProg.skills.join(", ")}`), 0, 0));
@@ -322,5 +347,24 @@ export function renderSubagentResult(
 		c.addChild(new Spacer(1));
 		c.addChild(new Text(theme.fg("dim", `Artifacts dir: ${shortenPath(d.artifacts.dir)}`), 0, 0));
 	}
+
+	const failedResults = d.results.filter((r) => r.exitCode !== 0 && r.progress?.status !== "running");
+	if (failedResults.length > 0) {
+		c.addChild(new Spacer(1));
+		c.addChild(new Text(theme.fg("dim", `${failedResults.length} task${failedResults.length > 1 ? "s" : ""} failed. To investigate:`), 0, 0));
+		for (const fr of failedResults.slice(0, 3)) {
+			if (fr.artifactPaths?.outputPath) {
+				c.addChild(new Text(theme.fg("dim", `  read ${shortenPath(fr.artifactPaths.outputPath)}`), 0, 0));
+			}
+		}
+		if (failedResults.length > 3) {
+			c.addChild(new Text(theme.fg("dim", `  ... and ${failedResults.length - 3} more`), 0, 0));
+		}
+		if (d.artifacts?.dir) {
+			c.addChild(new Text(theme.fg("dim", `  ls ${shortenPath(d.artifacts.dir)}`), 0, 0));
+		}
+		c.addChild(new Text(theme.fg("dim", `  subagent_status({})`), 0, 0));
+	}
+
 	return c;
 }

@@ -40,7 +40,7 @@ import {
 	WIDGET_KEY,
 } from "./types.js";
 import { formatDuration } from "./formatters.js";
-import { readStatus, findByPrefix, getFinalOutput, mapConcurrent } from "./utils.js";
+import { readStatus, findByPrefix, getFinalOutput, mapConcurrent, listRecentRuns } from "./utils.js";
 import { runSync } from "./execution.js";
 import { renderWidget, renderSubagentResult } from "./render.js";
 import { SubagentParams, StatusParams } from "./schemas.js";
@@ -631,10 +631,65 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 	const statusTool: ToolDefinition<typeof StatusParams, Details> = {
 		name: "subagent_status",
 		label: "Subagent Status",
-		description: "Inspect async subagent run status and artifacts",
+		description: `Inspect subagent runs - status, progress, artifacts, and session files.
+
+Use cases:
+• List recent runs: {} (no parameters)
+• Check async run progress: { id: "<id>" }
+• Review completed run details: { id: "<id>" }
+• Inspect by directory: { dir: "/tmp/pi-async-subagent-runs/..." }
+
+Returns: run state, step progress, token usage, duration, artifact paths, session file location.
+Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 		parameters: StatusParams,
 
 		async execute(_id, params, _signal, _onUpdate, _ctx) {
+			if (!params.id && !params.dir) {
+				const diskRuns = listRecentRuns(ASYNC_DIR, 10);
+				const memoryJobs = Array.from(asyncJobs.values());
+				const memoryIds = new Set(memoryJobs.map(j => j.asyncId));
+				const combinedRuns = [
+					...memoryJobs.map(j => ({
+						id: j.asyncId,
+						dir: j.asyncDir,
+						mode: j.mode ?? "single" as const,
+						state: j.status,
+						agents: j.agents ?? [],
+						startedAt: j.startedAt ?? Date.now(),
+						updatedAt: j.updatedAt ?? Date.now(),
+						stepsTotal: j.stepsTotal ?? 1,
+						currentStep: j.currentStep,
+					})),
+					...diskRuns.filter(r => !memoryIds.has(r.id)),
+				];
+				combinedRuns.sort((a, b) => b.updatedAt - a.updatedAt);
+				const runs = combinedRuns.slice(0, 10);
+				
+				if (runs.length === 0) {
+					return {
+						content: [{ type: "text", text: "No recent subagent runs found.\n\nTo inspect a specific run:\n  subagent_status({ id: \"<run-id>\" })" }],
+						details: { mode: "single" as const, results: [] },
+					};
+				}
+				
+				const lines: string[] = ["Recent subagent runs:", ""];
+				for (const run of runs) {
+					const shortId = run.id.slice(0, 8);
+					const stateIcon = run.state === "complete" ? "✓" : run.state === "failed" ? "✗" : run.state === "running" ? "●" : "○";
+					const agentList = run.agents.length > 0 ? run.agents.join(" → ") : run.mode;
+					const ago = formatDuration(Date.now() - run.updatedAt);
+					const stepInfo = run.currentStep !== undefined 
+						? `step ${run.currentStep + 1}/${run.stepsTotal}` 
+						: `${run.stepsTotal} step${run.stepsTotal > 1 ? "s" : ""}`;
+					lines.push(`  ${stateIcon} ${shortId} | ${run.state.padEnd(8)} | ${agentList} | ${stepInfo} | ${ago} ago`);
+				}
+				lines.push("");
+				lines.push("To inspect a run:");
+				lines.push(`  subagent_status({ id: "${runs[0]?.id.slice(0, 8) ?? "abc123"}" })`);
+				
+				return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [] } };
+			}
+
 			let asyncDir: string | null = null;
 			let resolvedId = params.id;
 
@@ -657,8 +712,12 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 				params.id && !asyncDir ? findByPrefix(RESULTS_DIR, params.id, ".json") : null;
 
 			if (!asyncDir && !resultPath) {
+				const recentRuns = listRecentRuns(ASYNC_DIR, 3);
+				const hint = recentRuns.length > 0
+					? `\n\nRecent runs:\n${recentRuns.map(r => `  - ${r.id.slice(0, 8)} (${r.state})`).join("\n")}\n\nOr call with no parameters to list all recent runs.`
+					: "\n\nCall with no parameters to list recent runs.";
 				return {
-					content: [{ type: "text", text: "Async run not found. Provide id or dir." }],
+					content: [{ type: "text", text: `Run "${params.id}" not found.${hint}` }],
 					isError: true,
 					details: { mode: "single" as const, results: [] },
 				};

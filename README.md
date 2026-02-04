@@ -98,7 +98,13 @@ Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitt
 
 #### [pi-subagents](./runtimes/pi/extensions/pi-subagents/)
 
-Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications to use pi's `SettingsManager` for skill discovery (respects user-configured skill paths).
+Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
+
+- **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
+- **`subagent_status` without args**: Lists recent runs instead of erroring, merges in-memory jobs with disk runs
+- **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
+- **Inline failure details**: Failed steps show truncated error message and artifact output path
+- **Recovery guidance**: Failed runs show investigation hints (`read <artifact>`, `subagent_status({})`, `ls <dir>`)
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 

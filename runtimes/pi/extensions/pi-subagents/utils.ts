@@ -120,6 +120,58 @@ export function findByPrefix(dir: string, prefix: string, suffix?: string): stri
 }
 
 /**
+ * Summary of a recent async run for listing
+ */
+export interface RecentRunSummary {
+	id: string;
+	dir: string;
+	mode: "single" | "chain";
+	state: "queued" | "running" | "complete" | "failed";
+	agents: string[];
+	startedAt: number;
+	updatedAt: number;
+	stepsTotal: number;
+	currentStep?: number;
+}
+
+/**
+ * List recent async runs from disk, sorted by most recent first
+ */
+export function listRecentRuns(asyncDir: string, limit: number = 10): RecentRunSummary[] {
+	if (!fs.existsSync(asyncDir)) return [];
+	
+	const runs: RecentRunSummary[] = [];
+	
+	try {
+		const entries = fs.readdirSync(asyncDir, { withFileTypes: true });
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			
+			const runDir = path.join(asyncDir, entry.name);
+			const status = readStatus(runDir);
+			if (!status) continue;
+			
+			const agents = status.steps?.map(s => s.agent) ?? [];
+			runs.push({
+				id: status.runId,
+				dir: runDir,
+				mode: status.mode,
+				state: status.state,
+				agents,
+				startedAt: status.startedAt,
+				updatedAt: status.lastUpdate ?? status.startedAt,
+				stepsTotal: status.steps?.length ?? 1,
+				currentStep: status.currentStep,
+			});
+		}
+	} catch {}
+	
+	runs.sort((a, b) => b.updatedAt - a.updatedAt);
+	
+	return runs.slice(0, limit);
+}
+
+/**
  * Find the latest session file in a directory
  */
 export function findLatestSessionFile(sessionDir: string): string | null {
