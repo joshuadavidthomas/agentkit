@@ -8,20 +8,12 @@ default:
     @just --list --list-submodules
 
 # ------------------------------------------------------------------------------
-# Agents
+# Installation
 # ------------------------------------------------------------------------------
 
-# Install agents to harness directories (.opencode/agents, .pi/agents)
-agents-install *ARGS:
-    ./scripts/install-agents.sh {{ ARGS }}
-
-# Install agents to opencode only
-agents-install-opencode:
-    @just agents-install --opencode
-
-# Install agents to pi only
-agents-install-pi:
-    @just agents-install --pi
+# Install everything (skills, agents, extensions)
+install:
+    ./install.sh
 
 # ------------------------------------------------------------------------------
 # Vendored Dependencies (subtrees)

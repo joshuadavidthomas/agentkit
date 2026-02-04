@@ -10,10 +10,31 @@ SKILLS_DIR="$HOME/.agents/skills"
 # Install skills
 mkdir -p "$SKILLS_DIR"
 for skill in "$REPO_DIR/skills/"*/; do
+    [[ -d "$skill" ]] || continue
     skill_name=$(basename "$skill")
     ln -sfn "$skill" "$SKILLS_DIR/$skill_name"
     echo "Linked $skill_name -> $SKILLS_DIR/"
 done
+
+# Install agents (transform from superset format to harness-specific)
+AGENTS_SRC="$REPO_DIR/agents"
+TRANSFORM="$REPO_DIR/scripts/transform-agent.ts"
+OPENCODE_AGENTS_DIR="$HOME/.config/opencode/agents"
+PI_AGENTS_DIR="$HOME/.pi/agent/agents"
+
+if [[ -d "$AGENTS_SRC" ]]; then
+    mkdir -p "$OPENCODE_AGENTS_DIR" "$PI_AGENTS_DIR"
+
+    for agent in "$AGENTS_SRC"/*.md; do
+        [[ -f "$agent" ]] || continue
+        name=$(basename "$agent")
+        [[ "$name" == "README.md" ]] && continue
+
+        bun run "$TRANSFORM" "$agent" opencode >"$OPENCODE_AGENTS_DIR/$name"
+        bun run "$TRANSFORM" "$agent" pi >"$PI_AGENTS_DIR/$name"
+        echo "Installed agent: $name"
+    done
+fi
 
 # Pi extensions
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
