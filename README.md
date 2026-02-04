@@ -44,33 +44,6 @@ Finds similar implementations, usage examples, or existing patterns to model aft
 
 Web research specialist for finding modern information not in training data. Searches strategically, fetches content, synthesizes findings with citations.
 
-### Multi-harness format
-
-Agents use a superset frontmatter with harness-specific namespaces:
-
-```yaml
----
-description: What this agent does
-model: openai/gpt-5.1-codex
-temperature: 0.2
-
-opencode:
-  mode: subagent
-  reasoningEffort: medium
-  tools:
-    read: true
-    grep: true
-
-pi:
-  tools: read, grep, glob, ls
-  output: analysis.md
----
-
-System prompt goes here...
-```
-
-The install script extracts common fields plus the relevant namespace for each harness.
-
 ## Runtimes
 
 ### [Pi](./runtimes/pi/)
