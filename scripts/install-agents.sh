@@ -5,9 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/../agents"
 TRANSFORM="$SCRIPT_DIR/transform-agent.ts"
 
-# Default output locations (can be overridden)
-OPENCODE_DIR="${OPENCODE_DIR:-.opencode/agents}"
-PI_DIR="${PI_DIR:-.pi/agents}"
+# Default output locations (global)
+OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode/agents}"
+PI_DIR="${PI_DIR:-$HOME/.pi/agent/agents}"
 
 usage() {
   echo "Usage: $0 [--opencode] [--pi] [--all]"
@@ -18,8 +18,8 @@ usage() {
   echo "  --all         Install to both (default)"
   echo ""
   echo "Environment variables:"
-  echo "  OPENCODE_DIR  Override opencode output dir (default: .opencode/agents)"
-  echo "  PI_DIR        Override pi output dir (default: .pi/agents)"
+  echo "  OPENCODE_DIR  Override opencode output dir (default: ~/.config/opencode/agents)"
+  echo "  PI_DIR        Override pi output dir (default: ~/.pi/agent/agents)"
   exit 1
 }
 
@@ -43,9 +43,6 @@ else
   done
 fi
 
-# Find project root (where .opencode or .pi would be)
-PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-
 count=0
 
 for file in "$SOURCE_DIR"/*.md; do
@@ -56,16 +53,14 @@ for file in "$SOURCE_DIR"/*.md; do
   [[ "$name" == "README.md" ]] && continue
   
   if $install_opencode; then
-    outdir="$PROJECT_ROOT/$OPENCODE_DIR"
-    mkdir -p "$outdir"
-    bun run "$TRANSFORM" "$file" opencode > "$outdir/$name"
+    mkdir -p "$OPENCODE_DIR"
+    bun run "$TRANSFORM" "$file" opencode > "$OPENCODE_DIR/$name"
     echo "✓ opencode: $name"
   fi
   
   if $install_pi; then
-    outdir="$PROJECT_ROOT/$PI_DIR"
-    mkdir -p "$outdir"
-    bun run "$TRANSFORM" "$file" pi > "$outdir/$name"
+    mkdir -p "$PI_DIR"
+    bun run "$TRANSFORM" "$file" pi > "$PI_DIR/$name"
     echo "✓ pi: $name"
   fi
   
