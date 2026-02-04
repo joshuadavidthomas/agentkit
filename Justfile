@@ -13,7 +13,7 @@ default:
 
 # Install agents to harness directories (.opencode/agents, .pi/agents)
 agents-install *ARGS:
-    ./skills/researching-codebases/scripts/install-agents.sh {{ ARGS }}
+    ./scripts/install-agents.sh {{ ARGS }}
 
 # Install agents to opencode only
 agents-install-opencode:
