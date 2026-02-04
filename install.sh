@@ -4,22 +4,15 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Skill directories for each runtime
-SKILL_TARGETS=(
-    "$HOME/.claude/skills"         # Claude Code
-    "$HOME/.config/opencode/skill" # OpenCode
-    "$HOME/.pi/agent/skills"       # Pi
-    "$HOME/.codex/skills"          # Codex
-)
+# Unified skills directory
+SKILLS_DIR="$HOME/.agents/skills"
 
 # Install skills
-for target in "${SKILL_TARGETS[@]}"; do
-    mkdir -p "$target"
-    for skill in "$REPO_DIR/skills/"*/; do
-        skill_name=$(basename "$skill")
-        ln -sfn "$skill" "$target/$skill_name"
-        echo "Linked $skill_name -> $target/"
-    done
+mkdir -p "$SKILLS_DIR"
+for skill in "$REPO_DIR/skills/"*/; do
+    skill_name=$(basename "$skill")
+    ln -sfn "$skill" "$SKILLS_DIR/$skill_name"
+    echo "Linked $skill_name -> $SKILLS_DIR/"
 done
 
 # Pi extensions
