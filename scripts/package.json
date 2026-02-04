@@ -1,0 +1,7 @@
+{
+  "name": "agentkit-scripts",
+  "private": true,
+  "dependencies": {
+    "yaml": "^2.8.2"
+  }
+}
