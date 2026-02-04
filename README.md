@@ -26,7 +26,7 @@ just pi-subagents-update  # pull upstream pi-subagents changes
 
 ## Agents
 
-Agents live in `agents/` using a superset frontmatter format that supports multiple harnesses. The install script transforms them to harness-specific formats.
+Agents live in `agents/` using a superset frontmatter format that supports multiple harnesses. The install script transforms them to harness-specific formats. See [agents/README.md](./agents/README.md) for format details.
 
 ### [code-analyzer](./agents/code-analyzer.md)
 
