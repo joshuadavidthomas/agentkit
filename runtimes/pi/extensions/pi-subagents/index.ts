@@ -723,7 +723,11 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 				for (const run of runs) {
 					const shortId = run.id.slice(0, 8);
 					const stateIcon = run.state === "complete" ? "✓" : run.state === "failed" ? "✗" : run.state === "running" ? "●" : "○";
-					const agentList = run.agents.length > 0 ? run.agents.join(" → ") : run.mode;
+					const agentList = run.agents.length > 0
+						? run.mode === "parallel"
+							? `${[...new Set(run.agents)].join(", ")} (×${run.agents.length})`
+							: run.agents.join(" → ")
+						: run.mode;
 					const ago = formatDuration(Date.now() - run.updatedAt);
 					const stepInfo = run.currentStep !== undefined 
 						? `step ${run.currentStep + 1}/${run.stepsTotal}` 
