@@ -2,7 +2,7 @@
 
 Subagent definitions in a superset frontmatter format supporting multiple harnesses (OpenCode, Pi, etc.).
 
-Inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer).
+code-analyzer, code-locator, code-pattern-finder, and web-searcher are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer).
 
 ## Installation
 

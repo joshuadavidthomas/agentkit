@@ -180,7 +180,7 @@ This repository includes and adapts work from several sources.
 
 ### agents
 
-Inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
+code-analyzer, code-locator, code-pattern-finder, and web-searcher are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
 
 ### answer
 
