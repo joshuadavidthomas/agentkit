@@ -458,9 +458,26 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 				}
 
 				const ok = results.filter((r) => r.exitCode === 0).length;
+				const failed = results.filter((r) => r.exitCode !== 0);
 				const downgradeNote = parallelDowngraded ? " (async not supported for parallel)" : "";
+				
+				let text = `${ok}/${results.length} succeeded${downgradeNote}`;
+				if (failed.length > 0) {
+					text += "\n\nFailed tasks:";
+					for (const f of failed) {
+						const errorPreview = f.error ? `: ${f.error.slice(0, 150)}${f.error.length > 150 ? "..." : ""}` : "";
+						text += `\n- ${f.agent}${errorPreview}`;
+						if (f.artifactPaths?.outputPath) {
+							text += `\n  full output: ${f.artifactPaths.outputPath}`;
+						}
+					}
+					if (artifactsDir) {
+						text += `\n\nArtifacts: ${artifactsDir}`;
+					}
+				}
+				
 				return {
-					content: [{ type: "text", text: `${ok}/${results.length} succeeded${downgradeNote}` }],
+					content: [{ type: "text", text }],
 					details: {
 						mode: "parallel",
 						results,
@@ -569,9 +586,13 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 					output += `\n\n📄 Output saved to: ${outputPath}`;
 				}
 
-				if (r.exitCode !== 0)
+				if (r.exitCode !== 0) {
+					let errorText = r.error || "Failed";
+					if (r.artifactPaths?.outputPath) {
+						errorText += `\n\nFull output: ${r.artifactPaths.outputPath}`;
+					}
 					return {
-						content: [{ type: "text", text: r.error || "Failed" }],
+						content: [{ type: "text", text: errorText }],
 						details: {
 							mode: "single",
 							results: [r],
@@ -581,6 +602,7 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 						},
 						isError: true,
 					};
+				}
 				return {
 					content: [{ type: "text", text: output || "(no output)" }],
 					details: {

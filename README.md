@@ -103,8 +103,8 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 - **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
 - **`subagent_status` without args**: Lists recent runs instead of erroring, merges in-memory jobs with disk runs
 - **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
-- **Inline failure details**: Failed steps show truncated error message and artifact output path
-- **Recovery guidance**: Failed runs show investigation hints (`read <artifact>`, `subagent_status({})`, `ls <dir>`)
+- **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
+- **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 

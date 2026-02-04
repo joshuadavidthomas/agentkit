@@ -76,7 +76,15 @@ export function buildChainSummary(
 	} else {
 		const stepInfo = failedStep ? ` at step ${failedStep.index + 1}` : "";
 		const errorInfo = failedStep?.error ? `: ${failedStep.error}` : "";
-		return `❌ Chain failed${stepInfo}${errorInfo}${skillsLine ? `\n${skillsLine}` : ""}
+		
+		const failedResults = results.filter(r => r.exitCode !== 0);
+		const failedOutputs = failedResults
+			.filter(r => r.artifactPaths?.outputPath)
+			.map(r => `  ${r.artifactPaths!.outputPath}`)
+			.join("\n");
+		const outputsSection = failedOutputs ? `\n📄 Failed outputs:\n${failedOutputs}` : "";
+		
+		return `❌ Chain failed${stepInfo}${errorInfo}${skillsLine ? `\n${skillsLine}` : ""}${outputsSection}
 
 📋 Progress: ${hasProgress ? progressPath : "(none)"}
 📁 Artifacts: ${chainDir}`;

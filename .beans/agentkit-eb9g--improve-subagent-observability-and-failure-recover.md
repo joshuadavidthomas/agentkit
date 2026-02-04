@@ -32,12 +32,14 @@ Multiple improvements to tooling, output formatting, and descriptions.
 - [x] **B: Inline failure details in results**
   - When parallel/chain tasks fail, include the error message inline
   - Show truncated error in the step output, not just "failed"
-  - Shows error preview (200 chars) and artifact output path for failed steps
+  - Shows error preview and artifact output path for failed steps
+  - **Important**: Added to text content (what agent sees), not just TUI rendering
 
 - [x] **C: Add recovery guidance on failures**
   - When any task fails, append investigation hints to output
-  - Include: path to failed output file, `subagent_status` invocation example, `ls` command for artifacts
-  - Added for both single and multi-agent results
+  - Include: path to failed output file in text content
+  - TUI also shows `subagent_status({})` and `ls` hints for human
+  - **Important**: Agent sees artifact paths in tool result text, not just TUI
 
 - [x] **D: Session-aware run tracking**
   - `subagent_status` with no args merges in-memory asyncJobs with disk runs
