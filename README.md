@@ -1,6 +1,75 @@
 # agentkit
 
-A personal collection of commands, skills, subagents, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic-based LLM tools.
+A personal collection of agents, skills, extensions, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic LLM tools.
+
+## Installation
+
+```bash
+./install.sh
+```
+
+This installs everything:
+
+| What | Where |
+|------|-------|
+| Skills | `~/.agents/skills/` (symlinked) |
+| Agents | `~/.config/opencode/agents/`, `~/.pi/agent/agents/` (transformed) |
+| Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
+| dcg config | `~/.config/dcg/` (symlinked) |
+
+Or use just:
+
+```bash
+just install              # install everything
+just pi-subagents-update  # pull upstream pi-subagents changes
+```
+
+## Agents
+
+Agents live in `agents/` using a superset frontmatter format that supports multiple harnesses. The install script transforms them to harness-specific formats.
+
+### [code-analyzer](./agents/code-analyzer.md)
+
+Analyzes codebase implementation details with precise file:line references. Call when you need to understand HOW code works—traces data flow, identifies patterns, explains technical workings.
+
+### [code-locator](./agents/code-locator.md)
+
+Locates files, directories, and components relevant to a feature or task. A "super grep/glob/ls tool"—finds WHERE code lives without analyzing contents.
+
+### [code-pattern-finder](./agents/code-pattern-finder.md)
+
+Finds similar implementations, usage examples, or existing patterns to model after. Like code-locator but includes actual code snippets and details.
+
+### [web-searcher](./agents/web-searcher.md)
+
+Web research specialist for finding modern information not in training data. Searches strategically, fetches content, synthesizes findings with citations.
+
+### Multi-harness format
+
+Agents use a superset frontmatter with harness-specific namespaces:
+
+```yaml
+---
+description: What this agent does
+model: openai/gpt-5.1-codex
+temperature: 0.2
+
+opencode:
+  mode: subagent
+  reasoningEffort: medium
+  tools:
+    read: true
+    grep: true
+
+pi:
+  tools: read, grep, glob, ls
+  output: analysis.md
+---
+
+System prompt goes here...
+```
+
+The install script extracts common fields plus the relevant namespace for each harness.
 
 ## Runtimes
 
@@ -60,17 +129,31 @@ Desktop notifications when the agent finishes. Uses a cheap model to summarize w
 
 Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
 
+#### [pi-subagents](./runtimes/pi/extensions/pi-subagents/)
+
+Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications to use pi's `SettingsManager` for skill discovery (respects user-configured skill paths).
+
+Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
+
 #### [statusline](./runtimes/pi/extensions/statusline.ts)
 
 Starship-style custom footer with model context, git status, costs, and token stats.
 
 ## Skills
 
+### [brave-search](./skills/brave-search/SKILL.md)
+
+Web search and content extraction via Brave Search API.
+
 ### [btca](./skills/btca/SKILL.md)
 
-Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code — searches actual source, not outdated docs.
+Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code—searches actual source, not outdated docs.
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
+
+### [coolify-compose](./skills/coolify-compose/SKILL.md)
+
+Convert Docker Compose files to Coolify templates.
 
 ### [frontend-design-principles](./skills/frontend-design-principles/SKILL.md)
 
@@ -84,11 +167,23 @@ Includes:
 - Specialized guidance for app interfaces (dashboards, tools) and marketing (landing pages, creative work)
 - Technical foundations (spacing, oklch colors, depth strategies, dark mode)
 
+### [researching-codebases](./skills/researching-codebases/SKILL.md)
+
+Methodical approach to researching unfamiliar codebases using specialized subagents.
+
+### [skill-authoring](./skills/skill-authoring/SKILL.md)
+
+Guide for authoring, creating, refining, or troubleshooting agent skills.
+
 ### [writing-cli-skills](./skills/writing-cli-skills/SKILL.md)
 
 Guide for writing skills that wrap CLI tools. Use when creating a new CLI skill or reviewing an existing one.
 
 The key constraint: hands-on use over documentation. Install the tool, try it yourself, note what surprises you. Reading docs is no substitute for actually running commands. Provides section templates, organization patterns (group by task, progressive disclosure), and a complete starting template in `references/`.
+
+### [youtube-transcript](./skills/youtube-transcript/SKILL.md)
+
+Extract and work with YouTube video transcripts.
 
 ## Tools
 
@@ -121,6 +216,10 @@ From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2
 ### notify
 
 From [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
+
+### pi-subagents
+
+Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
 ### frontend-design-principles
 
