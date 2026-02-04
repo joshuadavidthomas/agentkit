@@ -353,7 +353,6 @@ export function renderSubagentResult(
 	}
 
 	if (d.artifacts) {
-		c.addChild(new Spacer(1));
 		c.addChild(new Text(theme.fg("dim", `Artifacts dir: ${shortenPath(d.artifacts.dir)}`), 0, 0));
 	}
 
