@@ -17,12 +17,6 @@ This installs everything:
 | Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
 | dcg config | `~/.config/dcg/` (symlinked) |
 
-Or use just:
-
-```bash
-just install              # install everything
-just pi-subagents-update  # pull upstream pi-subagents changes
-```
 
 ## Agents
 
