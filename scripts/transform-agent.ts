@@ -33,8 +33,14 @@ const harnessMeta = (meta[target] as Record<string, unknown>) || {};
 delete meta.opencode;
 delete meta.pi;
 
+// Derive agent name from filename
+const name = file.split("/").pop()?.replace(/\.md$/, "") || "unknown";
+
 // Merge: common fields + harness-specific overrides
-const output = { ...meta, ...harnessMeta };
+// Add name for pi (required by pi-subagents)
+const output = target === "pi" 
+  ? { name, ...meta, ...harnessMeta }
+  : { ...meta, ...harnessMeta };
 
 // Output the transformed file
 console.log(`---\n${stringify(output).trim()}\n---\n${body}`);
