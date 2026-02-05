@@ -478,6 +478,7 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 									mode: "parallel",
 									results: completedResults.filter((r): r is SingleResult => r !== null),
 									progress: taskProgress,
+									totalSteps: params.tasks.length,
 								},
 							});
 						} : undefined,

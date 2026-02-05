@@ -106,6 +106,7 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 - **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
 - **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
 - **Reduced false positives**: Exit code 1 from search tools (grep, rg, find, fd) means "no matches", not failure
+- **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 

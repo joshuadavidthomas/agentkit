@@ -250,19 +250,29 @@ export function renderSubagentResult(
 	// Note: For chains with parallel steps, chainAgents indices don't map 1:1 to results
 	// (parallel steps produce multiple results). Fall back to result-based iteration.
 	const useResultsDirectly = hasParallelInChain || !d.chainAgents?.length;
-	const stepsToShow = useResultsDirectly ? d.results.length : d.chainAgents!.length;
+	// For parallel mode, use totalSteps if available (tracks all tasks, not just started/completed)
+	const stepsToShow = useResultsDirectly ? (d.totalSteps ?? d.results.length) : d.chainAgents!.length;
 
 	const itemLabel = d.mode === "parallel" ? "Task" : "Step";
 	c.addChild(new Spacer(1));
 
 	for (let i = 0; i < stepsToShow; i++) {
 		const r = d.results[i];
+		// Get agent name from result, chainAgents, progress array, or fallback to generic label
+		const progressForIndex = d.progress?.find((p) => p.index === i);
 		const agentName = useResultsDirectly 
-			? (r?.agent || `${itemLabel.toLowerCase()}-${i + 1}`)
+			? (r?.agent || progressForIndex?.agent || `${itemLabel.toLowerCase()}-${i + 1}`)
 			: (d.chainAgents![i] || r?.agent || `${itemLabel.toLowerCase()}-${i + 1}`);
 
 		if (!r) {
+			// Show pending task with info from progress if available
+			const taskPreview = progressForIndex?.task 
+				? progressForIndex.task.slice(0, 80) + (progressForIndex.task.length > 80 ? "..." : "")
+				: undefined;
 			c.addChild(new Text(theme.fg("dim", `  ${itemLabel} ${i + 1}: ${agentName}`), 0, 0));
+			if (taskPreview) {
+				c.addChild(new Text(theme.fg("dim", `    task: ${taskPreview}`), 0, 0));
+			}
 			c.addChild(new Text(theme.fg("dim", `    status: ○ pending`), 0, 0));
 			c.addChild(new Spacer(1));
 			continue;
