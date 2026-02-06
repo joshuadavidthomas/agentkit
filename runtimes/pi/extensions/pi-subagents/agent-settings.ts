@@ -201,10 +201,19 @@ function createModelPickerSubmenu(
 	let selectedIndex = 0;
 	let isFocused = false;
 
+	// Match current model flexibly: the agent frontmatter may store the model
+	// as "openai/gpt-5.2-codex" but the registry may have it under provider
+	// "openai-codex" with id "gpt-5.2-codex" (fullId "openai-codex/gpt-5.2-codex").
+	// So we match by fullId, by id, or by extracting the id part after "/" from currentModel.
+	const currentModelId = currentModel.includes("/") ? currentModel.split("/").slice(1).join("/") : currentModel;
+	function isCurrentModel(m: ModelInfo): boolean {
+		return m.fullId === currentModel || m.id === currentModel || m.id === currentModelId;
+	}
+
 	// Sort: current model first, then by provider
 	const sortedModels = [...availableModels].sort((a, b) => {
-		const aIsCurrent = a.fullId === currentModel || a.id === currentModel;
-		const bIsCurrent = b.fullId === currentModel || b.id === currentModel;
+		const aIsCurrent = isCurrentModel(a);
+		const bIsCurrent = isCurrentModel(b);
 		if (aIsCurrent && !bIsCurrent) return -1;
 		if (!aIsCurrent && bIsCurrent) return 1;
 		return a.provider.localeCompare(b.provider);
@@ -246,7 +255,7 @@ function createModelPickerSubmenu(
 		for (let i = startIndex; i < endIndex; i++) {
 			const model = filteredModels[i]!;
 			const isSelected = i === selectedIndex;
-			const isCurrent = model.fullId === currentModel || model.id === currentModel;
+			const isCurrent = isCurrentModel(model);
 
 			let line: string;
 			if (isSelected) {
