@@ -126,7 +126,6 @@ export function renderSubagentResult(
 		c.addChild(
 			new Text(theme.fg("dim", `Task: ${r.task.slice(0, 150)}${r.task.length > 150 ? "..." : ""}`), 0, 0),
 		);
-		c.addChild(new Spacer(1));
 
 		const items = getDisplayItems(r.messages);
 
