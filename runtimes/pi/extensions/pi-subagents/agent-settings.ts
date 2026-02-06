@@ -37,6 +37,7 @@ export interface ModelInfo {
 	provider: string;
 	id: string;
 	fullId: string;
+	name: string;
 }
 
 export interface ToolInfo {
@@ -183,135 +184,141 @@ function createTextInputSubmenu(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Model picker submenu
+// Model picker submenu (lifted from pi's ModelSelectorComponent)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createModelPickerSubmenu(
 	currentModel: string,
 	availableModels: ModelInfo[],
+	theme: import("@mariozechner/pi-coding-agent").Theme,
 	onSelect: (model: string) => void,
 	onCancel: () => void,
 ): Component {
-	let searchQuery = "";
+	const container = new Container();
+	const searchInput = new Input();
+	const listContainer = new Container();
+
 	let selectedIndex = 0;
-	let filteredModels = [...availableModels];
 	let isFocused = false;
 
-	// Pre-select current model
-	const currentIdx = filteredModels.findIndex(
-		(m) => m.fullId === currentModel || m.id === currentModel,
-	);
-	if (currentIdx >= 0) selectedIndex = currentIdx;
+	// Sort: current model first, then by provider
+	const sortedModels = [...availableModels].sort((a, b) => {
+		const aIsCurrent = a.fullId === currentModel || a.id === currentModel;
+		const bIsCurrent = b.fullId === currentModel || b.id === currentModel;
+		if (aIsCurrent && !bIsCurrent) return -1;
+		if (!aIsCurrent && bIsCurrent) return 1;
+		return a.provider.localeCompare(b.provider);
+	});
+
+	let filteredModels = [...sortedModels];
 
 	const MAX_VISIBLE = 10;
 
-	function filterModels(): void {
-		if (!searchQuery) {
-			filteredModels = [...availableModels];
-		} else {
-			filteredModels = fuzzyFilter(
-				availableModels,
-				searchQuery,
-				(m) => `${m.id} ${m.provider}`,
-			);
-		}
+	// Layout: spacer, search input, spacer, list, spacer
+	container.addChild(new Spacer(1));
+	container.addChild(searchInput);
+	container.addChild(new Spacer(1));
+	container.addChild(listContainer);
+	container.addChild(new Spacer(1));
+
+	searchInput.onSubmit = () => {
+		const selected = filteredModels[selectedIndex];
+		if (selected) onSelect(selected.fullId);
+	};
+
+	function filterModels(query: string): void {
+		filteredModels = query
+			? fuzzyFilter(sortedModels, query, (m) => `${m.id} ${m.provider}`)
+			: [...sortedModels];
 		selectedIndex = Math.min(selectedIndex, Math.max(0, filteredModels.length - 1));
+		updateList();
 	}
+
+	function updateList(): void {
+		listContainer.clear();
+
+		const startIndex = Math.max(0, Math.min(
+			selectedIndex - Math.floor(MAX_VISIBLE / 2),
+			filteredModels.length - MAX_VISIBLE,
+		));
+		const endIndex = Math.min(startIndex + MAX_VISIBLE, filteredModels.length);
+
+		for (let i = startIndex; i < endIndex; i++) {
+			const model = filteredModels[i]!;
+			const isSelected = i === selectedIndex;
+			const isCurrent = model.fullId === currentModel || model.id === currentModel;
+
+			let line: string;
+			if (isSelected) {
+				const prefix = theme.fg("accent", "→ ");
+				const modelText = theme.fg("accent", model.id);
+				const providerBadge = theme.fg("muted", ` [${model.provider}]`);
+				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+				line = `${prefix}${modelText} ${providerBadge}${checkmark}`;
+			} else {
+				const providerBadge = theme.fg("muted", `[${model.provider}]`);
+				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+				line = `  ${model.id} ${providerBadge}${checkmark}`;
+			}
+
+			listContainer.addChild(new Text(line, 0, 0));
+		}
+
+		// Scroll indicator
+		if (startIndex > 0 || endIndex < filteredModels.length) {
+			listContainer.addChild(new Text(
+				theme.fg("muted", `  (${selectedIndex + 1}/${filteredModels.length})`),
+				0, 0,
+			));
+		}
+
+		// Model name detail or empty state
+		if (filteredModels.length === 0) {
+			listContainer.addChild(new Text(theme.fg("muted", "  No matching models"), 0, 0));
+		} else {
+			const selected = filteredModels[selectedIndex];
+			if (selected) {
+				listContainer.addChild(new Spacer(1));
+				listContainer.addChild(new Text(
+					theme.fg("muted", `  Model Name: ${selected.name}`),
+					0, 0,
+				));
+			}
+		}
+	}
+
+	// Initial render
+	updateList();
 
 	return {
 		render(width: number) {
-			const lines: string[] = [];
-
-			lines.push("");
-			lines.push(` Model Selector`);
-			lines.push(` Current: ${currentModel || "(default)"}`);
-			lines.push("");
-			const cursor = "\x1b[7m \x1b[27m";
-			lines.push(` Search: ${searchQuery}${cursor}`);
-			lines.push("");
-
-			if (filteredModels.length === 0) {
-				lines.push("  No matching models");
-			} else {
-				let startIdx = 0;
-				if (filteredModels.length > MAX_VISIBLE) {
-					startIdx = Math.max(0, selectedIndex - Math.floor(MAX_VISIBLE / 2));
-					startIdx = Math.min(startIdx, filteredModels.length - MAX_VISIBLE);
-				}
-				const endIdx = Math.min(startIdx + MAX_VISIBLE, filteredModels.length);
-
-				if (startIdx > 0) {
-					lines.push(`    ↑ ${startIdx} more`);
-				}
-
-				for (let i = startIdx; i < endIdx; i++) {
-					const model = filteredModels[i]!;
-					const isSelected = i === selectedIndex;
-					const isCurrent = model.fullId === currentModel || model.id === currentModel;
-
-					const prefix = isSelected ? "→ " : "  ";
-					const badge = ` [${model.provider}]`;
-					const check = isCurrent ? " ✓" : "";
-
-					lines.push(` ${prefix}${model.id}${badge}${check}`);
-				}
-
-				const remaining = filteredModels.length - endIdx;
-				if (remaining > 0) {
-					lines.push(`    ↓ ${remaining} more`);
-				}
-			}
-
-			lines.push("");
-			lines.push(` (${filteredModels.length}/${availableModels.length}) enter select • esc cancel • type to filter`);
-			lines.push("");
-
-			return lines;
+			return container.render(width);
 		},
-		invalidate() {},
+		invalidate() {
+			container.invalidate();
+		},
 		handleInput(data: string) {
-			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
-				onCancel();
-				return;
-			}
+			const kb = getEditorKeybindings();
 
-			if (matchesKey(data, "return")) {
-				const selected = filteredModels[selectedIndex];
-				if (selected) {
-					onSelect(selected.fullId);
-				} else {
-					onCancel();
-				}
-				return;
-			}
-
-			if (matchesKey(data, "up")) {
+			if (kb.matches(data, "selectUp")) {
 				if (filteredModels.length > 0) {
 					selectedIndex = selectedIndex === 0 ? filteredModels.length - 1 : selectedIndex - 1;
+					updateList();
 				}
-				return;
-			}
-
-			if (matchesKey(data, "down")) {
+			} else if (kb.matches(data, "selectDown")) {
 				if (filteredModels.length > 0) {
 					selectedIndex = selectedIndex === filteredModels.length - 1 ? 0 : selectedIndex + 1;
+					updateList();
 				}
-				return;
-			}
-
-			if (matchesKey(data, "backspace")) {
-				if (searchQuery.length > 0) {
-					searchQuery = searchQuery.slice(0, -1);
-					filterModels();
-				}
-				return;
-			}
-
-			// Printable character
-			if (data.length === 1 && data.charCodeAt(0) >= 32) {
-				searchQuery += data;
-				filterModels();
-				return;
+			} else if (kb.matches(data, "selectConfirm")) {
+				const selected = filteredModels[selectedIndex];
+				if (selected) onSelect(selected.fullId);
+			} else if (kb.matches(data, "selectCancel")) {
+				onCancel();
+			} else {
+				// Forward to search input, then re-filter
+				searchInput.handleInput(data);
+				filterModels(searchInput.getValue());
 			}
 		},
 		get focused() {
@@ -319,6 +326,7 @@ function createModelPickerSubmenu(
 		},
 		set focused(value: boolean) {
 			isFocused = value;
+			searchInput.focused = value;
 		},
 	} as Component;
 }
@@ -330,86 +338,106 @@ function createModelPickerSubmenu(
 function createToolsToggleSubmenu(
 	currentTools: string[],
 	allTools: ToolInfo[],
+	theme: import("@mariozechner/pi-coding-agent").Theme,
 	onSave: (tools: string[]) => void,
 	onCancel: () => void,
 ): Component {
-	let searchQuery = "";
-	let cursorIndex = 0;
+	const container = new Container();
+	const searchInput = new Input();
+	const listContainer = new Container();
 	const selectedTools = new Set(currentTools);
-	let filteredTools = [...allTools];
 	let isFocused = false;
+
+	// Sort: selected tools first, then alphabetically
+	const sortedTools = [...allTools].sort((a, b) => {
+		const aSelected = selectedTools.has(a.name);
+		const bSelected = selectedTools.has(b.name);
+		if (aSelected && !bSelected) return -1;
+		if (!aSelected && bSelected) return 1;
+		return a.name.localeCompare(b.name);
+	});
+
+	let cursorIndex = 0;
+	let filteredTools = [...sortedTools];
 
 	const MAX_VISIBLE = 12;
 
-	function filterTools(): void {
-		if (!searchQuery) {
-			filteredTools = [...allTools];
-		} else {
-			filteredTools = fuzzyFilter(
-				allTools,
-				searchQuery,
-				(t) => `${t.name} ${t.description ?? ""}`,
-			);
-		}
+	// Layout
+	container.addChild(new Spacer(1));
+	container.addChild(searchInput);
+	container.addChild(new Spacer(1));
+	container.addChild(listContainer);
+	container.addChild(new Spacer(1));
+
+	function filterTools(query: string): void {
+		filteredTools = query
+			? fuzzyFilter(sortedTools, query, (t) => `${t.name} ${t.description ?? ""}`)
+			: [...sortedTools];
 		cursorIndex = Math.min(cursorIndex, Math.max(0, filteredTools.length - 1));
+		updateList();
 	}
+
+	function updateList(): void {
+		listContainer.clear();
+
+		if (filteredTools.length === 0) {
+			listContainer.addChild(new Text(theme.fg("muted", "  No matching tools"), 0, 0));
+			return;
+		}
+
+		const startIndex = Math.max(0, Math.min(
+			cursorIndex - Math.floor(MAX_VISIBLE / 2),
+			filteredTools.length - MAX_VISIBLE,
+		));
+		const endIndex = Math.min(startIndex + MAX_VISIBLE, filteredTools.length);
+
+		for (let i = startIndex; i < endIndex; i++) {
+			const tool = filteredTools[i]!;
+			const isCursor = i === cursorIndex;
+			const isSelected = selectedTools.has(tool.name);
+
+			const prefix = isCursor ? theme.fg("accent", "→ ") : "  ";
+			const checkbox = isSelected ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
+			const nameText = isCursor ? theme.fg("accent", tool.name) : tool.name;
+
+			listContainer.addChild(new Text(`${prefix}${checkbox} ${nameText}`, 0, 0));
+		}
+
+		// Scroll indicator
+		if (startIndex > 0 || endIndex < filteredTools.length) {
+			listContainer.addChild(new Text(
+				theme.fg("muted", `  (${cursorIndex + 1}/${filteredTools.length})`),
+				0, 0,
+			));
+		}
+
+		// Selected count
+		listContainer.addChild(new Spacer(1));
+		listContainer.addChild(new Text(
+			theme.fg("muted", `  ${selectedTools.size} selected · space toggle · enter confirm`),
+			0, 0,
+		));
+	}
+
+	// Initial render
+	updateList();
 
 	return {
 		render(width: number) {
-			const lines: string[] = [];
-
-			lines.push("");
-			lines.push(` Tools (${selectedTools.size} selected)`);
-			lines.push("");
-			const cursor = "\x1b[7m \x1b[27m";
-			lines.push(` Search: ${searchQuery}${cursor}`);
-			lines.push("");
-
-			if (filteredTools.length === 0) {
-				lines.push("  No matching tools");
-			} else {
-				let startIdx = 0;
-				if (filteredTools.length > MAX_VISIBLE) {
-					startIdx = Math.max(0, cursorIndex - Math.floor(MAX_VISIBLE / 2));
-					startIdx = Math.min(startIdx, filteredTools.length - MAX_VISIBLE);
-				}
-				const endIdx = Math.min(startIdx + MAX_VISIBLE, filteredTools.length);
-
-				if (startIdx > 0) {
-					lines.push(`    ↑ ${startIdx} more`);
-				}
-
-				for (let i = startIdx; i < endIdx; i++) {
-					const tool = filteredTools[i]!;
-					const isCursor = i === cursorIndex;
-					const isSelected = selectedTools.has(tool.name);
-
-					const prefix = isCursor ? "→ " : "  ";
-					const checkbox = isSelected ? "[x]" : "[ ]";
-
-					lines.push(` ${prefix}${checkbox} ${tool.name}`);
-				}
-
-				const remaining = filteredTools.length - endIdx;
-				if (remaining > 0) {
-					lines.push(`    ↓ ${remaining} more`);
-				}
-			}
-
-			lines.push("");
-			lines.push(` enter confirm • space toggle • esc cancel • type to filter`);
-			lines.push("");
-
-			return lines;
+			return container.render(width);
 		},
-		invalidate() {},
+		invalidate() {
+			container.invalidate();
+		},
 		handleInput(data: string) {
-			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			const kb = getEditorKeybindings();
+
+			if (kb.matches(data, "selectCancel")) {
 				onCancel();
 				return;
 			}
 
-			if (matchesKey(data, "return")) {
+			if (kb.matches(data, "selectConfirm")) {
 				onSave([...selectedTools]);
 				return;
 			}
@@ -423,38 +451,26 @@ function createToolsToggleSubmenu(
 						} else {
 							selectedTools.add(tool.name);
 						}
+						updateList();
 					}
 				}
 				return;
 			}
 
-			if (matchesKey(data, "up")) {
+			if (kb.matches(data, "selectUp")) {
 				if (filteredTools.length > 0) {
 					cursorIndex = cursorIndex === 0 ? filteredTools.length - 1 : cursorIndex - 1;
+					updateList();
 				}
-				return;
-			}
-
-			if (matchesKey(data, "down")) {
+			} else if (kb.matches(data, "selectDown")) {
 				if (filteredTools.length > 0) {
 					cursorIndex = cursorIndex === filteredTools.length - 1 ? 0 : cursorIndex + 1;
+					updateList();
 				}
-				return;
-			}
-
-			if (matchesKey(data, "backspace")) {
-				if (searchQuery.length > 0) {
-					searchQuery = searchQuery.slice(0, -1);
-					filterTools();
-				}
-				return;
-			}
-
-			// Printable character (but not space — that's toggle)
-			if (data.length === 1 && data.charCodeAt(0) > 32) {
-				searchQuery += data;
-				filterTools();
-				return;
+			} else {
+				// Forward to search input (except space which is toggle)
+				searchInput.handleInput(data);
+				filterTools(searchInput.getValue());
 			}
 		},
 		get focused() {
@@ -462,6 +478,7 @@ function createToolsToggleSubmenu(
 		},
 		set focused(value: boolean) {
 			isFocused = value;
+			searchInput.focused = value;
 		},
 	} as Component;
 }
@@ -625,6 +642,7 @@ export class AgentSettingsComponent {
 						return createModelPickerSubmenu(
 							current === "(default)" ? "" : current,
 							this.availableModels,
+							this.ctx.ui.theme,
 							(model: string) => {
 								this.agentFrontmatter[def.key] = model;
 								this.saveCurrentAgent();
@@ -646,6 +664,7 @@ export class AgentSettingsComponent {
 						return createToolsToggleSubmenu(
 							this.parseToolsList(this.agentFrontmatter[def.key]),
 							this.availableTools,
+							this.ctx.ui.theme,
 							(tools: string[]) => {
 								this.agentFrontmatter[def.key] = tools.join(", ");
 								this.saveCurrentAgent();

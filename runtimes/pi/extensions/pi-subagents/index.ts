@@ -963,6 +963,7 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 				provider: m.provider,
 				id: m.id,
 				fullId: `${m.provider}/${m.id}`,
+				name: m.name,
 			}));
 			const availableTools = pi.getAllTools().map((t) => ({
 				name: t.name,
