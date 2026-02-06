@@ -533,11 +533,59 @@ async function handleStart(
 		"info",
 	);
 
-	// Set status bar showing the running loop
-	ctx.ui.setWidget(
-		"ralph",
-		[ctx.ui.theme.fg("accent", `ralph: ${parsed.name} | running`)],
-	);
+	// Live widget tracking loop progress
+	startLoopWidget(ctx, parsed.name, dir);
+}
+
+let widgetInterval: ReturnType<typeof setInterval> | null = null;
+
+function startLoopWidget(ctx: ExtensionCommandContext, name: string, dir: string) {
+	// Clear any existing widget polling
+	if (widgetInterval) {
+		clearInterval(widgetInterval);
+		widgetInterval = null;
+	}
+
+	let lastLine = "";
+
+	function updateWidget() {
+		const state = readLoopState(dir);
+		let line: string;
+		if (!state) {
+			line = `ralph: ${name} | starting`;
+		} else {
+			const maxStr = state.config.maxIterations > 0 ? `/${state.config.maxIterations}` : "";
+			const cost = state.stats.cost > 0 ? ` | ${fmtCost(state.stats.cost)}` : "";
+			const duration = state.stats.durationMs > 0 ? ` | ${fmtDuration(state.stats.durationMs)}` : "";
+			line = `ralph: ${name} | ${state.status} | iter ${state.iteration}${maxStr}${duration}${cost}`;
+		}
+
+		// Only re-render if changed
+		if (line !== lastLine) {
+			lastLine = line;
+			ctx.ui.setWidget("ralph", (_tui, theme) => ({
+				render(width: number): string[] {
+					return [theme.fg("accent", line)];
+				},
+				invalidate() {},
+			}));
+		}
+
+		// Stop polling if loop is done
+		if (state && (state.status === "completed" || state.status === "stopped" || state.status === "error")) {
+			if (widgetInterval) {
+				clearInterval(widgetInterval);
+				widgetInterval = null;
+			}
+			// Clear widget after a few seconds
+			setTimeout(() => {
+				ctx.ui.setWidget("ralph", undefined);
+			}, 5000);
+		}
+	}
+
+	updateWidget();
+	widgetInterval = setInterval(updateWidget, 1000);
 }
 
 async function handleStop(
