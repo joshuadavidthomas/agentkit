@@ -290,22 +290,7 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 
 // ── Status Line Formatting ─────────────────────────────────────────
 
-function statusEmoji(status: string): string {
-	switch (status) {
-		case "running":
-			return "🔄";
-		case "completed":
-			return "✅";
-		case "stopped":
-			return "⏹";
-		case "error":
-			return "❌";
-		case "starting":
-			return "⏳";
-		default:
-			return "❓";
-	}
-}
+
 
 // ── Extension Entry Point ──────────────────────────────────────────
 
@@ -419,7 +404,7 @@ export default function (pi: ExtensionAPI) {
 		if (runningLoops.length > 0) {
 			const names = runningLoops.map((l) => l.name).join(", ");
 			ctx.ui.notify(
-				`🔄 Ralph: ${runningLoops.length} loop${runningLoops.length > 1 ? "s" : ""} running: ${names}`,
+				`ralph: ${runningLoops.length} loop${runningLoops.length > 1 ? "s" : ""} running: ${names}`,
 				"info",
 			);
 		}
@@ -434,7 +419,7 @@ export default function (pi: ExtensionAPI) {
 		if (orphanedLoops.length > 0) {
 			const names = orphanedLoops.map((l) => l.name).join(", ");
 			ctx.ui.notify(
-				`⚠️ Ralph: ${orphanedLoops.length} orphaned loop${orphanedLoops.length > 1 ? "s" : ""} (crashed): ${names}`,
+				`ralph: ${orphanedLoops.length} orphaned loop${orphanedLoops.length > 1 ? "s" : ""} (crashed): ${names}`,
 				"warning",
 			);
 		}
@@ -544,14 +529,14 @@ async function handleStart(
 	const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
 
 	ctx.ui.notify(
-		`🚀 Loop "${parsed.name}" started (PID ${pid}, max: ${maxStr} iterations${modelStr})`,
+		`Loop "${parsed.name}" started (PID ${pid}, max: ${maxStr} iterations${modelStr})`,
 		"info",
 	);
 
 	// Set status bar showing the running loop
-	ctx.ui.setStatus(
+	ctx.ui.setWidget(
 		"ralph",
-		ctx.ui.theme.fg("accent", `🔄 ralph: ${parsed.name}`),
+		[ctx.ui.theme.fg("accent", `ralph: ${parsed.name} | running`)],
 	);
 }
 
@@ -600,7 +585,7 @@ async function handleStop(
 	);
 
 	ctx.ui.notify(
-		`⏹ Stopping loop "${name}" after current iteration completes...`,
+		`Stopping loop "${name}" after current iteration completes...`,
 		"info",
 	);
 }
@@ -633,7 +618,7 @@ async function handleStatus(
 		"",
 		`| Field | Value |`,
 		`|-------|-------|`,
-		`| Status | ${statusEmoji(state.status)} ${state.status} |`,
+		`| Status | ${state.status} |`,
 		`| PID | ${state.pid} (${aliveStr}) |`,
 		`| Iteration | ${state.iteration}${state.config.maxIterations > 0 ? ` / ${state.config.maxIterations}` : ""} |`,
 		`| Duration | ${fmtDuration(state.stats.durationMs)} |`,
@@ -690,7 +675,7 @@ async function handleList(
 			const pidStr = alive ? String(entry.pid) : `~~${entry.pid}~~`;
 			const maxStr = entry.maxIterations > 0 ? `/${entry.maxIterations}` : "";
 			lines.push(
-				`| ${entry.name} | ${entry.cwd} | ${statusEmoji(entry.status)} ${entry.status} | ${entry.iteration}${maxStr} | ${pidStr} |`,
+				`| ${entry.name} | ${entry.cwd} | ${entry.status} | ${entry.iteration}${maxStr} | ${pidStr} |`,
 			);
 		}
 
@@ -720,7 +705,7 @@ async function handleList(
 	for (const loop of loops) {
 		if (!loop.state) {
 			lines.push(
-				`| ${loop.name} | ❓ unknown | - | - | - | - |`,
+				`| ${loop.name} | unknown | - | - | - | - |`,
 			);
 			continue;
 		}
@@ -731,7 +716,7 @@ async function handleList(
 		const maxStr = s.config.maxIterations > 0 ? `/${s.config.maxIterations}` : "";
 
 		lines.push(
-			`| ${loop.name} | ${statusEmoji(s.status)} ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} | ${pidStr} |`,
+			`| ${loop.name} | ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} | ${pidStr} |`,
 		);
 	}
 
@@ -774,7 +759,7 @@ async function handleKill(
 	try {
 		process.kill(state.pid, "SIGTERM");
 		ctx.ui.notify(
-			`☠️ Sent SIGTERM to loop "${name}" (PID ${state.pid}). Waiting for graceful shutdown...`,
+			`Sent SIGTERM to loop "${name}" (PID ${state.pid}). Waiting for graceful shutdown...`,
 			"info",
 		);
 	} catch (err) {
@@ -829,7 +814,7 @@ async function handleClean(
 	pruneStaleRegistryEntries();
 
 	ctx.ui.notify(
-		`🧹 Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
+		`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
 		"info",
 	);
 }
