@@ -204,10 +204,29 @@ function createModelPickerSubmenu(
 	// Match current model flexibly: the agent frontmatter may store the model
 	// as "openai/gpt-5.2-codex" but the registry may have it under provider
 	// "openai-codex" with id "gpt-5.2-codex" (fullId "openai-codex/gpt-5.2-codex").
-	// So we match by fullId, by id, or by extracting the id part after "/" from currentModel.
-	const currentModelId = currentModel.includes("/") ? currentModel.split("/").slice(1).join("/") : currentModel;
+	// When the current model has a provider prefix, we must also match the
+	// provider to avoid checking all providers that share the same model ID.
+	const hasProvider = currentModel.includes("/");
+	const currentProvider = hasProvider ? currentModel.split("/")[0]! : "";
+	const currentModelId = hasProvider ? currentModel.split("/").slice(1).join("/") : currentModel;
+
+	function providersMatch(registryProvider: string, configProvider: string): boolean {
+		// Exact match or prefix match in either direction to handle
+		// shorthand (e.g. "openai" matching "openai-codex")
+		return registryProvider === configProvider
+			|| registryProvider.startsWith(configProvider)
+			|| configProvider.startsWith(registryProvider);
+	}
+
 	function isCurrentModel(m: ModelInfo): boolean {
-		return m.fullId === currentModel || m.id === currentModel || m.id === currentModelId;
+		// Exact fullId match (best case, e.g. model was set from the picker)
+		if (m.fullId === currentModel) return true;
+		// When current model has a provider prefix, require both ID and provider to match
+		if (hasProvider) {
+			return m.id === currentModelId && providersMatch(m.provider, currentProvider);
+		}
+		// No provider prefix — match on ID alone
+		return m.id === currentModel;
 	}
 
 	// Sort: current model first, then by provider
