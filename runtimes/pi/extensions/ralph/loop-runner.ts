@@ -56,7 +56,6 @@ const iterationsDir = join(ralphDir, "iterations");
 mkdirSync(inboxDir, { recursive: true });
 mkdirSync(iterationsDir, { recursive: true });
 
-// ── State ──────────────────────────────────────────────────────────
 
 const startedAt = new Date();
 const cumulativeStats: CumulativeStats = {
@@ -93,12 +92,10 @@ function writeState() {
 	renameSync(tmp, statePath);
 }
 
-// ── PID ────────────────────────────────────────────────────────────
 
 const pidPath = join(ralphDir, "pid");
 writeFileSync(pidPath, String(process.pid));
 
-// ── Registry ───────────────────────────────────────────────────────
 
 const regDir = registryDir();
 mkdirSync(regDir, { recursive: true });
@@ -130,11 +127,9 @@ function removeRegistry() {
 const heartbeatInterval = setInterval(() => writeRegistry(), 30_000);
 heartbeatInterval.unref();
 
-// ── Events ─────────────────────────────────────────────────────────
 
 const eventsStream = createWriteStream(join(ralphDir, "events.jsonl"), { flags: "a" });
 
-// ── Per-Iteration Telemetry ────────────────────────────────────────
 
 let iterStartTime = 0;
 let iterTokensIn = 0;
@@ -185,7 +180,6 @@ function saveIterationStats() {
 	cumulativeStats.cost += iterCost;
 }
 
-// ── Inbox ──────────────────────────────────────────────────────────
 
 let stopRequested = false;
 let pendingFollowup: string | undefined;
@@ -232,7 +226,6 @@ const inboxPollInterval = setInterval(() => {
 }, 500);
 inboxPollInterval.unref();
 
-// ── RPC ────────────────────────────────────────────────────────────
 
 let rpcProcess: ReturnType<typeof spawn> | null = null;
 
@@ -364,7 +357,6 @@ async function runLoop() {
 	shutdown(0);
 }
 
-// ── Cleanup ────────────────────────────────────────────────────────
 
 let shuttingDown = false;
 
