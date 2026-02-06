@@ -375,8 +375,8 @@ written correctly).
 The pi extension that provides commands and manages loop lifecycle. No TUI
 rendering yet — just spawning, stopping, and basic status.
 
-- [ ] Extension skeleton (export default function, register commands)
-- [ ] `/ralph start <name> [options]` command
+- [x] Extension skeleton (export default function, register commands)
+- [x] `/ralph start <name> [options]` command
   - Create `.ralph/<name>/` directory structure
   - Create default task.md (or accept a path to an existing file)
   - Spawn loop runner as detached process (`child_process.spawn` with
@@ -384,31 +384,31 @@ rendering yet — just spawning, stopping, and basic status.
   - Pass through options: max iterations, model, provider, thinking level,
     reflect interval, extensions/skills to load in the RPC process
   - Auto-attach after start
-- [ ] `/ralph stop [name]` command
+- [x] `/ralph stop [name]` command
   - Write `stop.json` to inbox
   - Update status display
   - If no name given, stop the currently attached loop
-- [ ] `/ralph status [name]` command
+- [x] `/ralph status [name]` command
   - Read state.json, show iteration/status/cost summary
   - If name given, show detailed stats for that loop
   - If no name, list all loops in `.ralph/`
-- [ ] `/ralph list` command
+- [x] `/ralph list` command
   - Default: enumerate `.ralph/*/state.json` for current project
   - `--all`: read `~/.ralph/registry.json` to show loops across all projects
   - Show: name, cwd, status, iteration, cost, PID alive/dead
-- [ ] `/ralph kill <name>` command
+- [x] `/ralph kill <name>` command
   - Send SIGTERM to the loop runner PID
   - Clean up state (mark as stopped)
   - For when stop.json isn't being consumed (process is stuck)
-- [ ] `/ralph clean` command
+- [x] `/ralph clean` command
   - Remove completed/stopped loop directories
   - Or archive them somewhere
-- [ ] Process health checking
+- [x] Process health checking
   - On extension load / session_start: scan `~/.ralph/registry.json`
   - Verify PIDs are alive, prune stale entries from registry
   - Also scan local `.ralph/` for loops not in registry (crashed without cleanup)
   - Notify user of running loops (current project) and orphaned loops
-- [ ] Options/config to pass through to the RPC process
+- [x] Options/config to pass through to the RPC process
   - `--model`, `--provider`, `--thinking`
   - Extensions and skills to load in the background process
   - Reflect prompt and interval
