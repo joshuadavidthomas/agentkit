@@ -36,8 +36,8 @@ import type {
 	LoopState,
 	LoopStatus,
 	RegistryEntry,
-} from "./types.js";
-import { registryDir, registryFilename } from "./types.js";
+} from "./types.ts";
+import { registryDir, registryFilename } from "./types.ts";
 
 // ── Parse Args ─────────────────────────────────────────────────────
 
