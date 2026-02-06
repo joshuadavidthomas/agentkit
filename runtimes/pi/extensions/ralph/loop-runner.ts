@@ -1,17 +1,11 @@
-#!/usr/bin/env node
 /**
- * Ralph Loop Runner — Standalone Process
+ * Ralph Loop Runner
  *
- * Manages the RPC iteration loop. Spawned detached by the extension,
- * survives the foreground pi session. Communicates via filesystem:
- * - events.jsonl (append-only event log)
- * - state.json (current loop state)
- * - inbox/ (command files from the extension)
- * - iterations/ (per-iteration stats)
- * - ~/.ralph/registry/ (global process registry)
+ * Standalone detached process that drives the RPC iteration loop.
+ * Communicates with the extension via filesystem:
+ *   events.jsonl, state.json, inbox/, iterations/, ~/.ralph/registry/
  *
- * Usage: node loop-runner.js <ralph-dir>
- *   where <ralph-dir> is .ralph/<name>/ containing task.md and config
+ * Usage: bun run loop-runner.ts <ralph-dir>
  */
 
 import { spawn } from "node:child_process";
@@ -22,11 +16,10 @@ import {
 	readFileSync,
 	readdirSync,
 	renameSync,
-	rmSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type {
 	CumulativeStats,
@@ -38,8 +31,6 @@ import type {
 	RegistryEntry,
 } from "./types.ts";
 import { registryDir, registryFilename } from "./types.ts";
-
-// ── Parse Args ─────────────────────────────────────────────────────
 
 const ralphDir = process.argv[2];
 if (!ralphDir) {
@@ -60,15 +51,14 @@ if (!existsSync(taskPath)) {
 	process.exit(1);
 }
 
-// ── Directories ────────────────────────────────────────────────────
-
 const inboxDir = join(ralphDir, "inbox");
 const iterationsDir = join(ralphDir, "iterations");
 mkdirSync(inboxDir, { recursive: true });
 mkdirSync(iterationsDir, { recursive: true });
 
-// ── State Management ───────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────
 
+const startedAt = new Date();
 const cumulativeStats: CumulativeStats = {
 	iterations: 0,
 	durationMs: 0,
@@ -95,6 +85,7 @@ function buildState(): LoopState {
 	};
 }
 
+// Atomic write: tmp file + rename to avoid partial reads
 function writeState() {
 	const statePath = join(ralphDir, "state.json");
 	const tmp = statePath + ".tmp";
@@ -102,7 +93,7 @@ function writeState() {
 	renameSync(tmp, statePath);
 }
 
-// ── PID File ───────────────────────────────────────────────────────
+// ── PID ────────────────────────────────────────────────────────────
 
 const pidPath = join(ralphDir, "pid");
 writeFileSync(pidPath, String(process.pid));
@@ -133,25 +124,17 @@ function writeRegistry() {
 }
 
 function removeRegistry() {
-	try {
-		unlinkSync(regFile);
-	} catch {
-		// Already gone
-	}
+	try { unlinkSync(regFile); } catch {}
 }
 
-// Heartbeat: update registry every 30s
-const heartbeatInterval = setInterval(() => {
-	writeRegistry();
-}, 30_000);
+const heartbeatInterval = setInterval(() => writeRegistry(), 30_000);
 heartbeatInterval.unref();
 
-// ── Events Log ─────────────────────────────────────────────────────
+// ── Events ─────────────────────────────────────────────────────────
 
-const eventsPath = join(ralphDir, "events.jsonl");
-const eventsStream = createWriteStream(eventsPath, { flags: "a" });
+const eventsStream = createWriteStream(join(ralphDir, "events.jsonl"), { flags: "a" });
 
-// ── Per-Iteration Tracking ─────────────────────────────────────────
+// ── Per-Iteration Telemetry ────────────────────────────────────────
 
 let iterStartTime = 0;
 let iterTokensIn = 0;
@@ -188,14 +171,12 @@ function saveIterationStats() {
 		endedAt: new Date(now).toISOString(),
 	};
 
-	// Write per-iteration file
 	const iterFile = join(
 		iterationsDir,
 		`${String(currentIteration).padStart(3, "0")}.json`,
 	);
 	writeFileSync(iterFile, JSON.stringify(stats, null, 2) + "\n");
 
-	// Update cumulative
 	cumulativeStats.iterations++;
 	cumulativeStats.durationMs += durationMs;
 	cumulativeStats.turns += iterTurns;
@@ -204,7 +185,7 @@ function saveIterationStats() {
 	cumulativeStats.cost += iterCost;
 }
 
-// ── Inbox Polling ──────────────────────────────────────────────────
+// ── Inbox ──────────────────────────────────────────────────────────
 
 let stopRequested = false;
 let pendingFollowup: string | undefined;
@@ -217,7 +198,6 @@ function pollInbox(): InboxCommand | undefined {
 		return undefined;
 	}
 
-	// Process in priority order: stop > steer > followup
 	const priority = ["stop.json", "steer.json", "followup.json"];
 	files.sort(
 		(a, b) =>
@@ -230,15 +210,9 @@ function pollInbox(): InboxCommand | undefined {
 		try {
 			const content = readFileSync(filePath, "utf-8");
 			unlinkSync(filePath);
-			const parsed = JSON.parse(content);
-			return parsed as InboxCommand;
+			return JSON.parse(content) as InboxCommand;
 		} catch {
-			// Malformed or race condition, skip
-			try {
-				unlinkSync(filePath);
-			} catch {
-				// ignore
-			}
+			try { unlinkSync(filePath); } catch {}
 		}
 	}
 	return undefined;
@@ -250,23 +224,17 @@ const inboxPollInterval = setInterval(() => {
 
 	if (cmd.type === "stop") {
 		stopRequested = true;
-		// If we're between iterations, the loop will pick this up.
-		// If mid-iteration, we'll stop after the current one finishes.
 	} else if (cmd.type === "followup") {
 		pendingFollowup = cmd.message;
 	} else if (cmd.type === "steer") {
-		// Forward steer to the RPC process
-		if (rpcProcess?.stdin?.writable) {
-			rpcSend({ type: "steer", message: cmd.message });
-		}
+		rpcSend({ type: "steer", message: cmd.message });
 	}
 }, 500);
 inboxPollInterval.unref();
 
-// ── RPC Process ────────────────────────────────────────────────────
+// ── RPC ────────────────────────────────────────────────────────────
 
 let rpcProcess: ReturnType<typeof spawn> | null = null;
-const startedAt = new Date();
 
 function rpcSend(command: Record<string, unknown>) {
 	if (rpcProcess?.stdin?.writable) {
@@ -274,33 +242,21 @@ function rpcSend(command: Record<string, unknown>) {
 	}
 }
 
-function readTaskFile(): string {
-	return readFileSync(taskPath, "utf-8").trim();
-}
-
 async function runLoop() {
 	currentStatus = "running";
 	writeState();
 	writeRegistry();
 
-	// Build RPC args
 	const rpcArgs = ["--mode", "rpc", "--no-session"];
-	if (config.model) {
-		rpcArgs.push("--model", config.model);
-	}
-	if (config.provider) {
-		rpcArgs.push("--provider", config.provider);
-	}
-	if (config.thinking) {
-		rpcArgs.push("--thinking", config.thinking);
-	}
+	if (config.model) rpcArgs.push("--model", config.model);
+	if (config.provider) rpcArgs.push("--provider", config.provider);
+	if (config.thinking) rpcArgs.push("--thinking", config.thinking);
 
 	rpcProcess = spawn("pi", rpcArgs, {
 		cwd: config.cwd,
 		stdio: ["pipe", "pipe", "pipe"],
 	});
 
-	// Suppress stderr
 	rpcProcess.stderr?.resume();
 
 	rpcProcess.on("error", (err) => {
@@ -311,12 +267,12 @@ async function runLoop() {
 		shutdown(1);
 	});
 
-	// Read events from stdout
 	const rl = createInterface({ input: rpcProcess.stdout! });
 
 	let resolveAgentEnd: (() => void) | null = null;
 	let rejectAgentEnd: ((err: Error) => void) | null = null;
 
+	// If RPC dies mid-iteration, reject the pending await so the loop can exit
 	rpcProcess.on("exit", (code, signal) => {
 		if (rejectAgentEnd) {
 			rejectAgentEnd(
@@ -326,15 +282,10 @@ async function runLoop() {
 	});
 
 	rl.on("line", (line) => {
-		// Write to event log
 		eventsStream.write(line + "\n");
 
 		let event: Record<string, unknown>;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			return;
-		}
+		try { event = JSON.parse(line); } catch { return; }
 
 		const eventType = event.type as string;
 
@@ -349,19 +300,13 @@ async function runLoop() {
 					iterCacheRead += ((usage.cacheRead as number) ?? 0);
 					iterCacheWrite += ((usage.cacheWrite as number) ?? 0);
 					const cost = usage.cost as Record<string, unknown> | undefined;
-					if (cost) {
-						iterCost += ((cost.total as number) ?? 0);
-					}
+					if (cost) iterCost += ((cost.total as number) ?? 0);
 				}
 			}
 		} else if (eventType === "agent_end") {
 			if (resolveAgentEnd) resolveAgentEnd();
 		}
 	});
-
-	// Wait for the RPC process to be ready, then iterate
-	// The RPC process is ready when we can send prompts.
-	// There's no explicit "ready" event, so we just start sending.
 
 	for (
 		currentIteration = 1;
@@ -372,19 +317,12 @@ async function runLoop() {
 
 		resetIterStats();
 
-		// Read task file fresh each iteration (agent may have updated it)
-		const taskContent = readTaskFile();
+		// Re-read each iteration; the agent may have updated the task file
+		const taskContent = readFileSync(taskPath, "utf-8").trim();
 
-		// Build the prompt
-		let prompt: string;
-		if (pendingFollowup) {
-			prompt = pendingFollowup;
-			pendingFollowup = undefined;
-		} else {
-			prompt = taskContent;
-		}
+		const prompt = pendingFollowup ?? taskContent;
+		pendingFollowup = undefined;
 
-		// Send prompt and wait for agent_end (or RPC crash)
 		const agentEndPromise = new Promise<void>((resolve, reject) => {
 			resolveAgentEnd = resolve;
 			rejectAgentEnd = reject;
@@ -405,42 +343,23 @@ async function runLoop() {
 		resolveAgentEnd = null;
 		rejectAgentEnd = null;
 
-		// Save iteration stats
 		saveIterationStats();
 		writeState();
 		writeRegistry();
 
-		// Check for stop after iteration
 		const cmd = pollInbox();
 		if (cmd?.type === "stop") stopRequested = true;
 		if (stopRequested) break;
+		if (config.maxIterations > 0 && currentIteration >= config.maxIterations) break;
 
-		// Check max iterations
-		if (
-			config.maxIterations > 0 &&
-			currentIteration >= config.maxIterations
-		) {
-			break;
-		}
-
-		// Reset session for next iteration
 		rpcSend({ type: "new_session" });
 	}
 
-	// Done
-	if (stopRequested) {
-		currentStatus = "stopped";
-	} else {
-		currentStatus = "completed";
-	}
-
+	currentStatus = stopRequested ? "stopped" : "completed";
 	writeState();
 	writeRegistry();
 
-	// Kill RPC process
-	if (rpcProcess && !rpcProcess.killed) {
-		rpcProcess.kill("SIGTERM");
-	}
+	if (rpcProcess && !rpcProcess.killed) rpcProcess.kill("SIGTERM");
 
 	shutdown(0);
 }
@@ -463,33 +382,21 @@ function shutdown(code: number) {
 		writeState();
 	}
 
-	// Clean up PID file
-	try {
-		unlinkSync(pidPath);
-	} catch {
-		// ignore
-	}
+	try { unlinkSync(pidPath); } catch {}
 
-	// Remove registry on clean exit (stopped/completed)
-	// Keep it on error so the extension can detect and report
+	// Keep registry on error so the extension can detect and report
 	if (currentStatus === "stopped" || currentStatus === "completed") {
 		removeRegistry();
 	}
 
-	if (rpcProcess && !rpcProcess.killed) {
-		rpcProcess.kill("SIGTERM");
-	}
+	if (rpcProcess && !rpcProcess.killed) rpcProcess.kill("SIGTERM");
 
 	process.exit(code);
 }
 
-// ── Signal Handling ────────────────────────────────────────────────
-
+// Finish current iteration before exiting, force after 10s
 process.on("SIGTERM", () => {
 	stopRequested = true;
-	// If we're mid-iteration, we'll finish it and then stop.
-	// If we're between iterations, the loop check will catch it.
-	// Give it a grace period, then force exit.
 	setTimeout(() => shutdown(0), 10_000);
 });
 
@@ -497,8 +404,6 @@ process.on("SIGINT", () => {
 	stopRequested = true;
 	setTimeout(() => shutdown(0), 10_000);
 });
-
-// ── Start ──────────────────────────────────────────────────────────
 
 runLoop().catch((err) => {
 	loopError = String(err);
