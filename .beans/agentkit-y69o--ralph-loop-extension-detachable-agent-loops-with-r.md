@@ -2,10 +2,10 @@
 # agentkit-y69o
 title: Ralph Loop Extension — detachable agent loops with RPC backend
 status: todo
-type: feature
+type: epic
 priority: normal
 created_at: 2026-02-06T18:06:44Z
-updated_at: 2026-02-06T19:02:44Z
+updated_at: 2026-02-06T21:21:36Z
 ---
 
 A pi extension for long-running iterative agent loops with detach/attach semantics.
