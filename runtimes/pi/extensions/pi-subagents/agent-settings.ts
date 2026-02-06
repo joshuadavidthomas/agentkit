@@ -649,11 +649,12 @@ export class AgentSettingsComponent {
 			} else if (def.type === "model") {
 				const modelValue = displayValue || "(default)";
 				const modelIsUnknown = displayValue !== "" && !this.availableModels.some((m) => m.fullId === displayValue);
+				const warningBadge = modelIsUnknown ? ` ${this.ctx.ui.theme.fg("warning", "⚠")}` : "";
 				items.push({
 					id: def.key,
 					label: def.label,
 					description: def.description,
-					currentValue: modelIsUnknown ? `${modelValue} ⚠` : modelValue,
+					currentValue: `${modelValue}${warningBadge}`,
 					submenu: (_current: string, done: (val?: string) => void) => {
 						// Use raw frontmatter value, not the display value
 						const rawModel = String(this.agentFrontmatter[def.key] ?? "");
