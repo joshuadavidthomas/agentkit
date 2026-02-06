@@ -11,7 +11,7 @@ import {
 	MAX_WIDGET_JOBS,
 	WIDGET_KEY,
 } from "./types.js";
-import { formatTokens, formatUsage, formatDuration, formatToolCall, shortenPath } from "./formatters.js";
+import { formatTokens, formatUsage, formatDuration, formatToolCallParts, shortenPath } from "./formatters.js";
 import { getFinalOutput, getDisplayItems, getOutputTail, getLastActivity } from "./utils.js";
 
 type Theme = ExtensionContext["ui"]["theme"];
@@ -129,13 +129,33 @@ export function renderSubagentResult(
 		c.addChild(new Spacer(1));
 
 		const items = getDisplayItems(r.messages);
-		for (const item of items) {
-			if (item.type === "tool")
-				c.addChild(new Text(theme.fg("muted", formatToolCall(item.name, item.args)), 0, 0));
-		}
-		if (items.length) c.addChild(new Spacer(1));
 
-		if (output) c.addChild(new Markdown(output, 0, 0, mdTheme));
+		// Render items in chronological order: tool calls inline,
+		// intermediate text as dim, final text as full markdown output
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i]!;
+			if (item.type === "tool") {
+				const { label, summary } = formatToolCallParts(item.name, item.args);
+				c.addChild(
+					new Text(
+						`  ${theme.fg("accent", "▸")} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`,
+						0,
+						0,
+					),
+				);
+			} else if (item.type === "text" && item.text.trim()) {
+				// Check if this is the last text item — render as full output
+				const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
+				if (isLastText) {
+					c.addChild(new Spacer(1));
+					c.addChild(new Markdown(item.text, 0, 0, mdTheme));
+				} else {
+					// Intermediate text — show truncated and dim
+					const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
+					c.addChild(new Text(theme.fg("dim", preview + (item.text.length > 120 ? "..." : "")), 0, 0));
+				}
+			}
+		}
 		c.addChild(new Spacer(1));
 		if (r.skills?.length) {
 			c.addChild(new Text(theme.fg("dim", `Skills: ${r.skills.join(", ")}`), 0, 0));
