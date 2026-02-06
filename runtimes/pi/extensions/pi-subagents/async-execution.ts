@@ -89,6 +89,7 @@ function spawnRunner(cfg: object, suffix: string, cwd: string): number | undefin
 		cwd,
 		detached: true,
 		stdio: "ignore",
+		env: { ...process.env, PI_IS_SUBAGENT: "1" },
 	});
 	proc.unref();
 	return proc.pid;

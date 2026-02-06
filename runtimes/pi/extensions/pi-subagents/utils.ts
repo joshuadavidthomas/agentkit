@@ -144,6 +144,69 @@ interface ArtifactMeta {
 }
 
 /**
+ * Result of finding a run in artifact directories
+ */
+export interface ArtifactRunInfo {
+	runId: string;
+	dir: string;
+	agents: string[];
+	exitCodes: number[];
+	timestamp: number;
+	metaFiles: string[];
+}
+
+/**
+ * Find a run by ID prefix in artifact directories
+ */
+export function findRunInArtifacts(artifactsDirs: string[], idPrefix: string): ArtifactRunInfo | null {
+	for (const dir of artifactsDirs) {
+		if (!fs.existsSync(dir)) continue;
+		
+		try {
+			const files = fs.readdirSync(dir).filter(f => f.endsWith("_meta.json"));
+			const matchingMetas: { meta: ArtifactMeta; file: string }[] = [];
+			
+			for (const file of files) {
+				try {
+					const content = fs.readFileSync(path.join(dir, file), "utf-8");
+					const meta = JSON.parse(content) as ArtifactMeta;
+					
+					// Check if this run's ID starts with the prefix
+					if (meta.runId.startsWith(idPrefix)) {
+						matchingMetas.push({ meta, file });
+					}
+				} catch {}
+			}
+			
+			if (matchingMetas.length > 0) {
+				// Group by runId (in case prefix matches multiple runs)
+				const byRunId = new Map<string, typeof matchingMetas>();
+				for (const m of matchingMetas) {
+					const existing = byRunId.get(m.meta.runId) ?? [];
+					existing.push(m);
+					byRunId.set(m.meta.runId, existing);
+				}
+				
+				// Return the first matching run (most recent by timestamp)
+				const runs = Array.from(byRunId.entries()).map(([runId, metas]) => ({
+					runId,
+					dir,
+					agents: metas.map(m => m.meta.agent),
+					exitCodes: metas.map(m => m.meta.exitCode),
+					timestamp: Math.max(...metas.map(m => m.meta.timestamp)),
+					metaFiles: metas.map(m => path.join(dir, m.file)),
+				}));
+				
+				runs.sort((a, b) => b.timestamp - a.timestamp);
+				return runs[0] ?? null;
+			}
+		} catch {}
+	}
+	
+	return null;
+}
+
+/**
  * List runs from artifact metadata files
  */
 export function listRunsFromArtifacts(artifactsDirs: string[], limit: number = 10): RecentRunSummary[] {

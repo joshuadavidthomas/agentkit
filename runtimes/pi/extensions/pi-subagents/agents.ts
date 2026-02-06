@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -30,8 +31,8 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
-function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
-	const frontmatter: Record<string, string> = {};
+function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
+	const frontmatter: Record<string, unknown> = {};
 	const normalized = content.replace(/\r\n/g, "\n");
 
 	if (!normalized.startsWith("---")) {
@@ -46,15 +47,13 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 	const frontmatterBlock = normalized.slice(4, endIndex);
 	const body = normalized.slice(endIndex + 4).trim();
 
-	for (const line of frontmatterBlock.split("\n")) {
-		const match = line.match(/^([\w-]+):\s*(.*)$/);
-		if (match) {
-			let value = match[2].trim();
-			if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-				value = value.slice(1, -1);
-			}
-			frontmatter[match[1]] = value;
+	try {
+		const parsed = parseYaml(frontmatterBlock);
+		if (parsed && typeof parsed === "object") {
+			Object.assign(frontmatter, parsed);
 		}
+	} catch {
+		// Fall back to empty frontmatter on parse error
 	}
 
 	return { frontmatter, body };
@@ -88,14 +87,32 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 
 		const { frontmatter, body } = parseFrontmatter(content);
 
-		if (!frontmatter.name || !frontmatter.description) {
+		// Helper to get string value from frontmatter
+		const getString = (key: string): string | undefined => {
+			const val = frontmatter[key];
+			return typeof val === "string" ? val : undefined;
+		};
+
+		// Helper to get string array from frontmatter (handles both array and comma-separated string)
+		const getStringArray = (key: string): string[] | undefined => {
+			const val = frontmatter[key];
+			if (Array.isArray(val)) {
+				return val.map(String).map((s) => s.trim()).filter(Boolean);
+			}
+			if (typeof val === "string") {
+				return val.split(",").map((s) => s.trim()).filter(Boolean);
+			}
+			return undefined;
+		};
+
+		const name = getString("name");
+		const description = getString("description");
+
+		if (!name || !description) {
 			continue;
 		}
 
-		const rawTools = frontmatter.tools
-			?.split(",")
-			.map((t) => t.trim())
-			.filter(Boolean);
+		const rawTools = getStringArray("tools");
 
 		const mcpDirectTools: string[] = [];
 		const tools: string[] = [];
@@ -109,33 +126,32 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			}
 		}
 
-		// Parse defaultReads as comma-separated list (like tools)
-		const defaultReads = frontmatter.defaultReads
-			?.split(",")
-			.map((f) => f.trim())
-			.filter(Boolean);
+		// Parse defaultReads as comma-separated list or array
+		const defaultReads = getStringArray("defaultReads");
 
-		const skillStr = frontmatter.skill || frontmatter.skills;
-		const skills = skillStr
-			?.split(",")
-			.map((s) => s.trim())
-			.filter(Boolean);
+		const skills = getStringArray("skill") || getStringArray("skills");
+
+		// Helper to get boolean value from frontmatter
+		const getBoolean = (key: string): boolean => {
+			const val = frontmatter[key];
+			return val === true || val === "true";
+		};
 
 		agents.push({
-			name: frontmatter.name,
-			description: frontmatter.description,
+			name,
+			description,
 			tools: tools.length > 0 ? tools : undefined,
 			mcpDirectTools: mcpDirectTools.length > 0 ? mcpDirectTools : undefined,
-			model: frontmatter.model,
+			model: getString("model"),
 			systemPrompt: body,
 			source,
 			filePath,
 			skills: skills && skills.length > 0 ? skills : undefined,
 			// Chain behavior fields
-			output: frontmatter.output,
+			output: getString("output"),
 			defaultReads: defaultReads && defaultReads.length > 0 ? defaultReads : undefined,
-			defaultProgress: frontmatter.defaultProgress === "true",
-			interactive: frontmatter.interactive === "true",
+			defaultProgress: getBoolean("defaultProgress"),
+			interactive: getBoolean("interactive"),
 		});
 	}
 
