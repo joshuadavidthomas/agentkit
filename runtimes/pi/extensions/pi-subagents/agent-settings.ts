@@ -437,8 +437,16 @@ function createToolsToggleSubmenu(
 	const selectedTools = new Set(currentTools);
 	let isFocused = false;
 
+	// Include unknown tools (in currentTools but not in allTools) so they're
+	// visible and toggleable instead of silently inflating the selected count.
+	const knownToolNames = new Set(allTools.map((t) => t.name));
+	const unknownTools: ToolInfo[] = currentTools
+		.filter((name) => !knownToolNames.has(name))
+		.map((name) => ({ name, description: "Unknown tool" }));
+	const allToolsWithUnknown = [...allTools, ...unknownTools];
+
 	// Sort: selected tools first, then alphabetically
-	const sortedTools = [...allTools].sort((a, b) => {
+	const sortedTools = [...allToolsWithUnknown].sort((a, b) => {
 		const aSelected = selectedTools.has(a.name);
 		const bSelected = selectedTools.has(b.name);
 		if (aSelected && !bSelected) return -1;
@@ -484,12 +492,14 @@ function createToolsToggleSubmenu(
 			const tool = filteredTools[i]!;
 			const isCursor = i === cursorIndex;
 			const isSelected = selectedTools.has(tool.name);
+			const isUnknown = !knownToolNames.has(tool.name);
 
 			const prefix = isCursor ? theme.fg("accent", "→ ") : "  ";
 			const checkbox = isSelected ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
 			const nameText = isCursor ? theme.fg("accent", tool.name) : tool.name;
+			const warning = isUnknown ? ` ${theme.fg("warning", "⚠")}` : "";
 
-			listContainer.addChild(new Text(`${prefix}${checkbox} ${nameText}`, 0, 0));
+			listContainer.addChild(new Text(`${prefix}${checkbox} ${nameText}${warning}`, 0, 0));
 		}
 
 		// Scroll indicator
