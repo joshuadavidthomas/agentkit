@@ -762,11 +762,17 @@ export class AgentSettingsComponent {
 			} else if (def.type === "tools") {
 				// Tools field — toggle list submenu
 				const currentToolsList = this.parseToolsList(rawValue);
+				const knownToolNames = new Set(this.availableTools.map((t) => t.name));
+				const toolsDisplay = currentToolsList.length > 0
+					? currentToolsList.map((t) =>
+						knownToolNames.has(t) ? t : `${t} ${this.ctx.ui.theme.fg("warning", "⚠")}`
+					).join(", ")
+					: "(none)";
 				items.push({
 					id: def.key,
 					label: def.label,
 					description: def.description,
-					currentValue: currentToolsList.length > 0 ? currentToolsList.join(", ") : "(none)",
+					currentValue: toolsDisplay,
 					submenu: (_current: string, done: (val?: string) => void) => {
 						return createToolsToggleSubmenu(
 							this.parseToolsList(this.agentFrontmatter[def.key]),
