@@ -506,23 +506,7 @@ async function handleStart(
 			return;
 		}
 
-		const template = `# Task: ${parsed.name}
-
-## Goals
-
-Describe what this loop should accomplish.
-
-## Checklist
-
-- [ ] First task
-- [ ] Second task
-
-## Notes
-
-Any additional context or constraints.
-`;
-
-		const taskContent = await ctx.ui.editor("Write the task for this loop:", template);
+		const taskContent = await ctx.ui.editor("Write the task for this loop:", "");
 		if (!taskContent || !taskContent.trim()) {
 			ctx.ui.notify("No task provided. Loop not started.", "warning");
 			// Clean up created directories
