@@ -502,12 +502,20 @@ async function handleStart(
 	};
 	writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, 2) + "\n");
 
-	// Clear old events and state for fresh start
+	// Clear old events, state, and iteration data for fresh start
+	try { writeFileSync(join(dir, "events.jsonl"), ""); } catch {}
+	try { unlinkSync(join(dir, "state.json")); } catch {}
+	try { unlinkSync(join(dir, "pid")); } catch {}
 	try {
-		writeFileSync(join(dir, "events.jsonl"), "");
-	} catch {
-		// ignore
-	}
+		for (const f of readdirSync(join(dir, "iterations"))) {
+			unlinkSync(join(dir, "iterations", f));
+		}
+	} catch {}
+	try {
+		for (const f of readdirSync(join(dir, "inbox"))) {
+			unlinkSync(join(dir, "inbox", f));
+		}
+	} catch {}
 
 	// Spawn loop runner as detached process (bun runs TypeScript natively)
 	const child = spawn("bun", ["run", LOOP_RUNNER_PATH, dir], {
@@ -551,7 +559,7 @@ function startLoopWidget(ctx: ExtensionCommandContext, name: string, dir: string
 	function updateWidget() {
 		const state = readLoopState(dir);
 		let line: string;
-		if (!state) {
+		if (!state || state.status === "starting" || state.iteration === 0) {
 			line = `ralph: ${name} | starting`;
 		} else {
 			const maxStr = state.config.maxIterations > 0 ? `/${state.config.maxIterations}` : "";
