@@ -972,6 +972,7 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 
 			await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
 				const component = new AgentSettingsComponent(
+					tui,
 					agents,
 					availableModels,
 					availableTools,

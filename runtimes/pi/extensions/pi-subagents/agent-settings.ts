@@ -14,12 +14,15 @@ import {
 	Text,
 	Spacer,
 	Input,
+	Editor,
+	type EditorTheme,
 	SettingsList,
 	type SettingItem,
 	getEditorKeybindings,
 	matchesKey,
 	fuzzyFilter,
 	type Component,
+	type TUI,
 } from "@mariozechner/pi-tui";
 import {
 	getSettingsListTheme,
@@ -179,6 +182,78 @@ function createTextInputSubmenu(
 		set focused(value: boolean) {
 			isFocused = value;
 			input.focused = value;
+		},
+	} as Component;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multiline text editor submenu (for editing long text like descriptions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createEditorSubmenu(
+	tui: TUI,
+	title: string,
+	description: string,
+	initialValue: string,
+	theme: import("@mariozechner/pi-coding-agent").Theme,
+	onSave: (value: string) => void,
+	onCancel: () => void,
+): Component {
+	const container = new Container();
+
+	const editorTheme: EditorTheme = {
+		borderColor: (s: string) => theme.fg("border", s),
+		selectList: {
+			selectedPrefix: (s: string) => theme.fg("accent", s),
+			selectedText: (s: string) => theme.fg("accent", s),
+			description: (s: string) => theme.fg("muted", s),
+			scrollInfo: (s: string) => theme.fg("muted", s),
+			noMatch: (s: string) => theme.fg("muted", s),
+		},
+	};
+
+	const editor = new Editor(tui, editorTheme, { paddingX: 1 });
+	editor.setText(initialValue);
+	editor.disableSubmit = true;
+
+	container.addChild(new Spacer(1));
+	container.addChild(new Text(title, 1, 0));
+	if (description) {
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(description, 1, 0));
+	}
+	container.addChild(new Spacer(1));
+	container.addChild(editor);
+	container.addChild(new Spacer(1));
+	container.addChild(new Text("ctrl+s to save • esc to cancel", 1, 0));
+	container.addChild(new Spacer(1));
+
+	let isFocused = false;
+
+	return {
+		render(width: number) {
+			return container.render(width);
+		},
+		invalidate() {
+			container.invalidate();
+		},
+		handleInput(data: string) {
+			const kb = getEditorKeybindings();
+			if (matchesKey(data, "ctrl+s")) {
+				const value = editor.getText().trim();
+				onSave(value);
+			} else if (kb.matches(data, "selectCancel")) {
+				onCancel();
+			} else {
+				editor.handleInput(data);
+			}
+		},
+		get focused() {
+			return isFocused;
+		},
+		set focused(value: boolean) {
+			isFocused = value;
+			editor.focused = value;
 		},
 	} as Component;
 }
@@ -504,6 +579,7 @@ function createToolsToggleSubmenu(
 export class AgentSettingsComponent {
 	private container: InstanceType<typeof Container>;
 	private settingsList!: InstanceType<typeof SettingsList>;
+	private tui: TUI;
 	private ctx: ExtensionCommandContext;
 	private agents: AgentConfig[];
 	private availableModels: ModelInfo[];
@@ -518,12 +594,14 @@ export class AgentSettingsComponent {
 	private agentBody: string = "";
 
 	constructor(
+		tui: TUI,
 		agents: AgentConfig[],
 		availableModels: ModelInfo[],
 		availableTools: ToolInfo[],
 		ctx: ExtensionCommandContext,
 		callbacks: AgentSettingsCallbacks,
 	) {
+		this.tui = tui;
 		this.ctx = ctx;
 		this.agents = agents;
 		this.availableModels = availableModels;
@@ -703,7 +781,7 @@ export class AgentSettingsComponent {
 					values: ["true", "false"],
 				});
 			} else if (def.key === "description") {
-				// Description field — use multiline editor
+				// Description field — use multiline editor submenu
 				items.push({
 					id: def.key,
 					label: def.label,
@@ -711,17 +789,19 @@ export class AgentSettingsComponent {
 					currentValue: displayValue || "(empty)",
 					submenu: (_current: string, done: (val?: string) => void) => {
 						const prefill = String(this.agentFrontmatter[def.key] ?? "");
-						queueMicrotask(async () => {
-							const result = await this.ctx.ui.editor(def.label, prefill);
-							if (result !== undefined) {
-								this.agentFrontmatter[def.key] = result;
+						return createEditorSubmenu(
+							this.tui,
+							def.label,
+							def.description,
+							prefill,
+							this.ctx.ui.theme,
+							(value: string) => {
+								this.agentFrontmatter[def.key] = value;
 								this.saveCurrentAgent();
-								this.buildDetailView();
-								this.requestRender();
-							}
-						});
-						done();
-						return { render: () => [], invalidate: () => {}, handleInput: () => {} } as unknown as Component;
+								done(value || "(empty)");
+							},
+							() => done(),
+						);
 					},
 				});
 			} else {
