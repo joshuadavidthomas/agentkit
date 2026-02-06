@@ -46,23 +46,22 @@ const __dirname = dirname(__filename);
 const LOOP_RUNNER_PATH = join(__dirname, "loop-runner.ts");
 
 /**
- * Resolve the jiti register hook path for spawning TypeScript subprocesses.
- * Uses import.meta.resolve which works in ESM/jiti context.
+ * Resolve the jiti CLI path for spawning TypeScript subprocesses.
+ * Uses the same pattern as pi-subagents: createRequire + jiti-cli.mjs.
+ * Tries both `jiti` (upstream) and `@mariozechner/jiti` (pi's fork).
  */
-function resolveJitiRegister(): string {
+const require = createRequire(import.meta.url);
+const jitiCliPath: string | undefined = (() => {
 	try {
-		const url = import.meta.resolve("@mariozechner/jiti/register");
-		return fileURLToPath(url);
+		return join(dirname(require.resolve("jiti/package.json")), "lib/jiti-cli.mjs");
 	} catch {
-		// Fallback: look relative to this file's node_modules
-		const fallback = join(
-			__dirname,
-			"../../../../node_modules/@mariozechner/jiti/lib/jiti-register.mjs",
-		);
-		if (existsSync(fallback)) return fallback;
-		throw new Error("Cannot resolve @mariozechner/jiti/register");
+		try {
+			return join(dirname(require.resolve("@mariozechner/jiti/package.json")), "lib/jiti-cli.mjs");
+		} catch {
+			return undefined;
+		}
 	}
-}
+})();
 
 // ── Stub TUI for ToolExecutionComponent ────────────────────────────
 
@@ -559,16 +558,13 @@ Any additional context or constraints.
 	}
 
 	// Resolve jiti for subprocess TypeScript execution
-	let jitiRegisterPath: string;
-	try {
-		jitiRegisterPath = resolveJitiRegister();
-	} catch (err) {
-		ctx.ui.notify(`Failed to resolve jiti: ${err}`, "error");
+	if (!jitiCliPath) {
+		ctx.ui.notify("Cannot find jiti CLI — needed to run TypeScript subprocess", "error");
 		return;
 	}
 
 	// Spawn loop runner as detached process
-	const child = spawn("node", ["--import", jitiRegisterPath, LOOP_RUNNER_PATH, dir], {
+	const child = spawn("node", [jitiCliPath, LOOP_RUNNER_PATH, dir], {
 		cwd,
 		detached: true,
 		stdio: "ignore",
