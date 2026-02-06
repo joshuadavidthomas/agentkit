@@ -40,13 +40,14 @@ import {
 	WIDGET_KEY,
 } from "./types.js";
 import { formatDuration } from "./formatters.js";
-import { readStatus, findByPrefix, getFinalOutput, mapConcurrent, listRecentAsyncRuns, listRunsFromArtifacts } from "./utils.js";
+import { readStatus, findByPrefix, getFinalOutput, mapConcurrent, listRecentAsyncRuns, listRunsFromArtifacts, findRunInArtifacts } from "./utils.js";
 import { runSync } from "./execution.js";
 import { renderWidget, renderSubagentResult } from "./render.js";
 import { SubagentParams, StatusParams } from "./schemas.js";
 import { executeChain } from "./chain-execution.js";
 import { isAsyncAvailable, executeAsyncChain, executeAsyncSingle } from "./async-execution.js";
 import { discoverAvailableSkills, normalizeSkillInput } from "./skills.js";
+import { AgentSettingsComponent, type ModelInfo as SettingsModelInfo } from "./agent-settings.js";
 
 // ExtensionConfig is now imported from ./types.js
 
@@ -61,6 +62,11 @@ function loadConfig(): ExtensionConfig {
 }
 
 export default function registerSubagentExtension(pi: ExtensionAPI): void {
+	// Prevent recursive subagent invocation: if this pi process was spawned
+	// as a subagent, don't register the subagent tools. This avoids cascading
+	// process spawning that leads to OOM crashes.
+	if (process.env.PI_IS_SUBAGENT) return;
+
 	fs.mkdirSync(RESULTS_DIR, { recursive: true });
 	fs.mkdirSync(ASYNC_DIR, { recursive: true });
 
@@ -78,6 +84,17 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 	const cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>(); // Track cleanup timeouts
 	let lastUiContext: ExtensionContext | null = null;
 	let poller: NodeJS.Timeout | null = null;
+
+	// Discover agents at registration time for tool description
+	const registrationAgents = discoverAgents(baseCwd, "both").agents;
+	const agentNames = registrationAgents.map((a) => a.name);
+	// Build agent list with descriptions for progressive disclosure
+	const agentListStr = registrationAgents.length > 0
+		? registrationAgents.map((a) => `  • ${a.name}: ${a.description}`).join("\n")
+		: "  (none configured)";
+	// Pick example agents for description (use first two, or placeholder names)
+	const exampleAgent1 = agentNames[0] ?? "agent1";
+	const exampleAgent2 = agentNames[1] ?? agentNames[0] ?? "agent2";
 
 	const ensurePoller = () => {
 		if (poller) return;
@@ -148,8 +165,11 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		label: "Subagent",
 		description: `Delegate to subagents. Use exactly ONE mode:
 • SINGLE: { agent, task } - one task
-• CHAIN: { chain: [{agent:"scout"}, {agent:"planner"}] } - sequential pipeline
+• CHAIN: { chain: [{agent:"${exampleAgent1}"}, {agent:"${exampleAgent2}"}] } - sequential pipeline
 • PARALLEL: { tasks: [{agent,task}, ...] } - concurrent execution
+
+AVAILABLE AGENTS:
+${agentListStr}
 
 CHAIN TEMPLATE VARIABLES (use in task strings):
 • {task} - The original task/request from the user
@@ -161,7 +181,7 @@ CHAIN DATA FLOW:
 2. Steps can also write files to {chain_dir} (via agent's "output" config)
 3. Later steps can read those files (via agent's "reads" config)
 
-Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", task:"Plan based on {previous}"}] }`,
+Example: { chain: [{agent:"${exampleAgent1}", task:"Analyze {task}"}, {agent:"${exampleAgent2}", task:"Plan based on {previous}"}] }`,
 		parameters: SubagentParams,
 
 		async execute(_id, params, signal, onUpdate, ctx) {
@@ -499,6 +519,19 @@ Example: { chain: [{agent:"scout", task:"Analyze {task}"}, {agent:"planner", tas
 				const downgradeNote = parallelDowngraded ? " (async not supported for parallel)" : "";
 				
 				let text = `${ok}/${results.length} succeeded${downgradeNote}`;
+				
+				// List output files for successful tasks so LLM can read them
+				const successfulWithOutputs = results
+					.map((r, i) => ({ result: r, index: i }))
+					.filter(({ result }) => result.exitCode === 0 && result.artifactPaths?.outputPath);
+				
+				if (successfulWithOutputs.length > 0) {
+					text += "\n\nOutputs (use Read tool to inspect):";
+					for (const { result, index } of successfulWithOutputs) {
+						text += `\n  Task ${index + 1} (${result.agent}): ${result.artifactPaths!.outputPath}`;
+					}
+				}
+				
 				if (failed.length > 0) {
 					text += "\n\nFailed tasks:";
 					for (const f of failed) {
@@ -799,7 +832,20 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 			const resultPath =
 				params.id && !asyncDir ? findByPrefix(RESULTS_DIR, params.id, ".json") : null;
 
-			if (!asyncDir && !resultPath) {
+			// Check artifact directories if not found in async dir or results
+			let artifactInfo: ReturnType<typeof findRunInArtifacts> = null;
+			if (!asyncDir && !resultPath && params.id) {
+				const artifactDirs: string[] = [getArtifactsDir(null)];
+				if (ctx?.sessionManager) {
+					const sessionFile = ctx.sessionManager.getSessionFile();
+					if (sessionFile) {
+						artifactDirs.push(getArtifactsDir(sessionFile));
+					}
+				}
+				artifactInfo = findRunInArtifacts(artifactDirs, params.id);
+			}
+
+			if (!asyncDir && !resultPath && !artifactInfo) {
 				const recentRuns = listRecentAsyncRuns(ASYNC_DIR, 3);
 				const hint = recentRuns.length > 0
 					? `\n\nRecent runs:\n${recentRuns.map(r => `  - ${r.id.slice(0, 8)} (${r.state})`).join("\n")}\n\nOr call with no parameters to list all recent runs.`
@@ -852,6 +898,49 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 				} catch {}
 			}
 
+			// Display artifact-based run info
+			if (artifactInfo) {
+				const hasFailure = artifactInfo.exitCodes.some(c => c !== 0);
+				const state = hasFailure ? "failed" : "complete";
+				const mode = artifactInfo.agents.length > 1 ? "parallel" : "single";
+				const uniqueAgents = [...new Set(artifactInfo.agents)];
+				const agentList = mode === "parallel" 
+					? `${uniqueAgents.join(", ")} (×${artifactInfo.agents.length})`
+					: artifactInfo.agents.join(", ");
+				const timestamp = new Date(artifactInfo.timestamp).toISOString();
+				
+				const lines = [
+					`Run: ${artifactInfo.runId}`,
+					`State: ${state}`,
+					`Mode: ${mode}`,
+					`Agents: ${agentList}`,
+					`Timestamp: ${timestamp}`,
+					`Artifacts: ${artifactInfo.dir}`,
+				];
+				
+				// List output files with sizes (replace _meta.json with _output.md)
+				const outputFiles = artifactInfo.metaFiles
+					.map(f => f.replace(/_meta\.json$/, "_output.md"))
+					.filter(f => fs.existsSync(f))
+					.map(f => {
+						try {
+							const stat = fs.statSync(f);
+							const sizeKB = (stat.size / 1024).toFixed(1);
+							return { path: f, size: `${sizeKB}KB` };
+						} catch {
+							return { path: f, size: "?" };
+						}
+					});
+				if (outputFiles.length > 0) {
+					lines.push("", "Output files (use Read tool to inspect):");
+					for (const { path: filePath, size } of outputFiles) {
+						lines.push(`  ${filePath} (${size})`);
+					}
+				}
+				
+				return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [] } };
+			}
+
 			return {
 				content: [{ type: "text", text: "Status file not found." }],
 				isError: true,
@@ -862,6 +951,36 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 
 	pi.registerTool(tool);
 	pi.registerTool(statusTool);
+
+	// Register /agents command for browsing and editing agent configurations
+	pi.registerCommand("agents", {
+		description: "Browse and edit subagent configurations",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) return;
+
+			const agents = discoverAgents(ctx.cwd, "both").agents;
+			const availableModels: SettingsModelInfo[] = ctx.modelRegistry.getAvailable().map((m) => ({
+				provider: m.provider,
+				id: m.id,
+				fullId: `${m.provider}/${m.id}`,
+			}));
+
+			await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+				const component = new AgentSettingsComponent(
+					agents,
+					availableModels,
+					ctx,
+					{ onClose: () => done(), requestRender: () => tui.requestRender() },
+				);
+
+				return {
+					render(width: number) { return component.render(width); },
+					invalidate() { component.invalidate(); },
+					handleInput(data: string) { component.handleInput(data); tui.requestRender(); },
+				};
+			});
+		},
+	});
 
 	pi.events.on("subagent:started", (data) => {
 		const info = data as {
