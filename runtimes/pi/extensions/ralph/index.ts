@@ -44,53 +44,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const LOOP_RUNNER_PATH = join(__dirname, "loop-runner.ts");
 
-/**
- * Resolve the jiti CLI path for spawning TypeScript subprocesses.
- *
- * Walks up from the extension directory looking for node_modules containing
- * jiti or @mariozechner/jiti. This is more robust than createRequire inside
- * pi's jiti context where import.meta.url may not behave as expected.
- */
-function findJitiCli(): string | undefined {
-	const candidates = [
-		"node_modules/@mariozechner/jiti/lib/jiti-cli.mjs",
-		"node_modules/jiti/lib/jiti-cli.mjs",
-	];
 
-	// Walk up from the extension directory
-	let dir = __dirname;
-	const root = dirname(dir); // stop condition
-	while (dir.length > 1) {
-		for (const candidate of candidates) {
-			const p = join(dir, candidate);
-			if (existsSync(p)) return p;
-		}
-		const parent = dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-
-	// Also check relative to the pi binary itself
-	try {
-		const piPath = process.argv[1]; // pi's main entry
-		if (piPath) {
-			let piDir = dirname(piPath);
-			for (let i = 0; i < 5; i++) {
-				for (const candidate of candidates) {
-					const p = join(piDir, candidate);
-					if (existsSync(p)) return p;
-				}
-				piDir = dirname(piDir);
-			}
-		}
-	} catch {
-		// ignore
-	}
-
-	return undefined;
-}
-
-const jitiCliPath = findJitiCli();
 
 // ── Stub TUI for ToolExecutionComponent ────────────────────────────
 
@@ -570,17 +524,8 @@ async function handleStart(
 		// ignore
 	}
 
-	// Resolve jiti for subprocess TypeScript execution
-	if (!jitiCliPath) {
-		ctx.ui.notify(
-			`Cannot find jiti CLI — needed to run TypeScript subprocess. Searched up from ${__dirname}`,
-			"error",
-		);
-		return;
-	}
-
-	// Spawn loop runner as detached process
-	const child = spawn("node", [jitiCliPath, LOOP_RUNNER_PATH, dir], {
+	// Spawn loop runner as detached process (bun runs TypeScript natively)
+	const child = spawn("bun", ["run", LOOP_RUNNER_PATH, dir], {
 		cwd,
 		detached: true,
 		stdio: "ignore",

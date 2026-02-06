@@ -6,6 +6,7 @@
  *   events.jsonl, state.json, inbox/, iterations/, ~/.ralph/registry/
  *
  * Usage: bun run loop-runner.ts <ralph-dir>
+ * Spawned by the extension via: spawn("bun", ["run", "loop-runner.ts", ralphDir])
  */
 
 import { spawn } from "node:child_process";
