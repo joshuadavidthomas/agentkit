@@ -207,6 +207,8 @@ function createModelPickerSubmenu(
 		return m.fullId === currentModel;
 	}
 
+	const hasCurrentMatch = currentModel !== "" && availableModels.some(isCurrentModel);
+
 	// Sort: current model first, then by provider
 	const sortedModels = [...availableModels].sort((a, b) => {
 		const aIsCurrent = isCurrentModel(a);
@@ -220,9 +222,15 @@ function createModelPickerSubmenu(
 
 	const MAX_VISIBLE = 10;
 
-	// Layout: spacer, search input, spacer, list, spacer
+	// Layout: spacer, search input, warning (if invalid), spacer, list, spacer
 	container.addChild(new Spacer(1));
 	container.addChild(searchInput);
+	if (currentModel && !hasCurrentMatch) {
+		container.addChild(new Text(
+			theme.fg("warning", `  ⚠ Unknown model: ${currentModel}`),
+			0, 0,
+		));
+	}
 	container.addChild(new Spacer(1));
 	container.addChild(listContainer);
 	container.addChild(new Spacer(1));
@@ -639,11 +647,13 @@ export class AgentSettingsComponent {
 					},
 				});
 			} else if (def.type === "model") {
+				const modelValue = displayValue || "(default)";
+				const modelIsUnknown = displayValue !== "" && !this.availableModels.some((m) => m.fullId === displayValue);
 				items.push({
 					id: def.key,
 					label: def.label,
 					description: def.description,
-					currentValue: displayValue || "(default)",
+					currentValue: modelIsUnknown ? `${modelValue} ⚠` : modelValue,
 					submenu: (_current: string, done: (val?: string) => void) => {
 						// Use raw frontmatter value, not the display value
 						const rawModel = String(this.agentFrontmatter[def.key] ?? "");
