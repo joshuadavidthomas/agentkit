@@ -445,18 +445,8 @@ function createToolsToggleSubmenu(
 		.map((name) => ({ name, description: "Unknown tool" }));
 	const allToolsWithUnknown = [...allTools, ...unknownTools];
 
-	// Sort: selected tools first, then alphabetically
-	let sortedTools = [...allToolsWithUnknown];
-	function resortTools(): void {
-		sortedTools = [...allToolsWithUnknown].sort((a, b) => {
-			const aSelected = selectedTools.has(a.name);
-			const bSelected = selectedTools.has(b.name);
-			if (aSelected && !bSelected) return -1;
-			if (!aSelected && bSelected) return 1;
-			return a.name.localeCompare(b.name);
-		});
-	}
-	resortTools();
+	// Sort alphabetically (stable order regardless of selection)
+	const sortedTools = [...allToolsWithUnknown].sort((a, b) => a.name.localeCompare(b.name));
 
 	let cursorIndex = 0;
 	let filteredTools = [...sortedTools];
@@ -554,14 +544,6 @@ function createToolsToggleSubmenu(
 						} else {
 							selectedTools.add(tool.name);
 						}
-						resortTools();
-						const query = searchInput.getValue();
-						filteredTools = query
-							? fuzzyFilter(sortedTools, query, (t) => `${t.name} ${t.description ?? ""}`)
-							: [...sortedTools];
-						// Follow the toggled item to its new position
-						const newIndex = filteredTools.findIndex((t) => t.name === tool.name);
-						cursorIndex = newIndex >= 0 ? newIndex : Math.min(cursorIndex, Math.max(0, filteredTools.length - 1));
 						updateList();
 					}
 				}
