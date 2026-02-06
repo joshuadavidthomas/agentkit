@@ -702,6 +702,28 @@ export class AgentSettingsComponent {
 					currentValue: displayValue,
 					values: ["true", "false"],
 				});
+			} else if (def.key === "description") {
+				// Description field — use multiline editor
+				items.push({
+					id: def.key,
+					label: def.label,
+					description: def.description,
+					currentValue: displayValue || "(empty)",
+					submenu: (_current: string, done: (val?: string) => void) => {
+						const prefill = String(this.agentFrontmatter[def.key] ?? "");
+						queueMicrotask(async () => {
+							const result = await this.ctx.ui.editor(def.label, prefill);
+							if (result !== undefined) {
+								this.agentFrontmatter[def.key] = result;
+								this.saveCurrentAgent();
+								this.buildDetailView();
+								this.requestRender();
+							}
+						});
+						done();
+						return { render: () => [], invalidate: () => {}, handleInput: () => {} } as unknown as Component;
+					},
+				});
 			} else {
 				// Text field — use submenu for editing
 				items.push({
