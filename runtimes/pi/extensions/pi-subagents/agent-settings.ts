@@ -763,12 +763,13 @@ export class AgentSettingsComponent {
 				// Tools field — toggle list submenu
 				const currentToolsList = this.parseToolsList(rawValue);
 				const knownToolNames = new Set(this.availableTools.map((t) => t.name));
+				const sep = this.ctx.ui.theme.fg("muted", ", ");
 				const toolsDisplay = currentToolsList.length > 0
 					? currentToolsList.map((t) =>
 						knownToolNames.has(t)
 							? this.ctx.ui.theme.fg("muted", t)
 							: `${this.ctx.ui.theme.fg("muted", t)} ${this.ctx.ui.theme.fg("warning", "⚠")}`
-					).join(", ")
+					).join(sep)
 					: "(none)";
 				items.push({
 					id: def.key,
