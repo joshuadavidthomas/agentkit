@@ -126,6 +126,7 @@ export function renderSubagentResult(
 		c.addChild(
 			new Text(theme.fg("dim", `Task: ${r.task.slice(0, 150)}${r.task.length > 150 ? "..." : ""}`), 0, 0),
 		);
+		c.addChild(new Spacer(1));
 
 		const items = getDisplayItems(r.messages);
 
@@ -146,7 +147,8 @@ export function renderSubagentResult(
 				// Check if this is the last text item — render as full output
 				const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
 				if (isLastText) {
-					c.addChild(new Spacer(1));
+					// Add spacer only if preceded by tool calls (not at start)
+					if (i > 0) c.addChild(new Spacer(1));
 					c.addChild(new Markdown(item.text, 0, 0, mdTheme));
 				} else {
 					// Intermediate text — show truncated and dim
@@ -168,7 +170,6 @@ export function renderSubagentResult(
 		}
 
 		if (r.artifactPaths) {
-			c.addChild(new Spacer(1));
 			c.addChild(new Text(theme.fg("dim", `Artifacts: ${shortenPath(r.artifactPaths.outputPath)}`), 0, 0));
 		}
 
