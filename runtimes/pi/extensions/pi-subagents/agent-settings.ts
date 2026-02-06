@@ -362,11 +362,11 @@ export class AgentSettingsComponent {
 		this.container.addChild(new DynamicBorder((s: string) => s));
 
 		const items: SettingItem[] = this.agents.map((agent) => {
-			const sourceTag = agent.source === "project" ? " [project]" : " [user]";
+			const sourceTag = agent.source === "project" ? "[project]" : "[user]";
 			return {
 				id: agent.name,
 				label: agent.name,
-				description: `${agent.description}${sourceTag} — ${agent.filePath}`,
+				description: `${sourceTag} ${agent.filePath}\n${agent.description}`,
 				currentValue: agent.model || "default",
 				submenu: (_current: string, done: (val?: string) => void) => {
 					// Schedule the detail view switch on next tick so the SettingsList
