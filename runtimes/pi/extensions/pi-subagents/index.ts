@@ -47,7 +47,7 @@ import { SubagentParams, StatusParams } from "./schemas.js";
 import { executeChain } from "./chain-execution.js";
 import { isAsyncAvailable, executeAsyncChain, executeAsyncSingle } from "./async-execution.js";
 import { discoverAvailableSkills, normalizeSkillInput } from "./skills.js";
-import { AgentSettingsComponent, type ModelInfo as SettingsModelInfo } from "./agent-settings.js";
+import { AgentSettingsComponent, type ModelInfo as SettingsModelInfo, type ToolInfo as SettingsToolInfo } from "./agent-settings.js";
 
 // ExtensionConfig is now imported from ./types.js
 
@@ -964,11 +964,16 @@ Tip: Use the short id prefix (e.g., "a53e") - exact match not required.`,
 				id: m.id,
 				fullId: `${m.provider}/${m.id}`,
 			}));
+			const availableTools = pi.getAllTools().map((t) => ({
+				name: t.name,
+				description: t.description,
+			}));
 
 			await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
 				const component = new AgentSettingsComponent(
 					agents,
 					availableModels,
+					availableTools,
 					ctx,
 					{ onClose: () => done(), requestRender: () => tui.requestRender() },
 				);

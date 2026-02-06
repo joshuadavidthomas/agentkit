@@ -7,6 +7,7 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { execSync } from "node:child_process";
 import {
 	Container,
@@ -38,6 +39,11 @@ export interface ModelInfo {
 	fullId: string;
 }
 
+export interface ToolInfo {
+	name: string;
+	description?: string;
+}
+
 interface AgentSettingsCallbacks {
 	onClose: () => void;
 	requestRender: () => void;
@@ -48,10 +54,10 @@ type View = "list" | "detail";
 // Known frontmatter keys and their types
 // (the order here determines display order in the detail view)
 const FRONTMATTER_KEYS = [
-	{ key: "name", label: "Name", type: "text" as const, description: "Agent identifier (used when calling the agent)" },
+	{ key: "name", label: "Name", type: "text" as const, description: "Agent identifier — also renames the file" },
 	{ key: "description", label: "Description", type: "text" as const, description: "Shown in the subagent tool description" },
 	{ key: "model", label: "Model", type: "model" as const, description: "LLM model to use (e.g., openai/gpt-5.2-codex)" },
-	{ key: "tools", label: "Tools", type: "text" as const, description: "Comma-separated list of tools (read, grep, glob, ls, etc.)" },
+	{ key: "tools", label: "Tools", type: "tools" as const, description: "Tools available to this agent" },
 	{ key: "skills", label: "Skills", type: "text" as const, description: "Comma-separated skill names to inject" },
 	{ key: "output", label: "Output", type: "text" as const, description: "Default output filename for chain writes" },
 	{ key: "defaultReads", label: "Default Reads", type: "text" as const, description: "Default files to read in chains (comma-separated)" },
@@ -215,7 +221,6 @@ function createModelPickerSubmenu(
 	return {
 		render(width: number) {
 			const lines: string[] = [];
-			const innerW = Math.max(width - 4, 20);
 
 			lines.push("");
 			lines.push(` Model Selector`);
@@ -319,6 +324,149 @@ function createModelPickerSubmenu(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tools toggle submenu
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createToolsToggleSubmenu(
+	currentTools: string[],
+	allTools: ToolInfo[],
+	onSave: (tools: string[]) => void,
+	onCancel: () => void,
+): Component {
+	let searchQuery = "";
+	let cursorIndex = 0;
+	const selectedTools = new Set(currentTools);
+	let filteredTools = [...allTools];
+	let isFocused = false;
+
+	const MAX_VISIBLE = 12;
+
+	function filterTools(): void {
+		if (!searchQuery) {
+			filteredTools = [...allTools];
+		} else {
+			filteredTools = fuzzyFilter(
+				allTools,
+				searchQuery,
+				(t) => `${t.name} ${t.description ?? ""}`,
+			);
+		}
+		cursorIndex = Math.min(cursorIndex, Math.max(0, filteredTools.length - 1));
+	}
+
+	return {
+		render(width: number) {
+			const lines: string[] = [];
+
+			lines.push("");
+			lines.push(` Tools (${selectedTools.size} selected)`);
+			lines.push("");
+			const cursor = "\x1b[7m \x1b[27m";
+			lines.push(` Search: ${searchQuery}${cursor}`);
+			lines.push("");
+
+			if (filteredTools.length === 0) {
+				lines.push("  No matching tools");
+			} else {
+				let startIdx = 0;
+				if (filteredTools.length > MAX_VISIBLE) {
+					startIdx = Math.max(0, cursorIndex - Math.floor(MAX_VISIBLE / 2));
+					startIdx = Math.min(startIdx, filteredTools.length - MAX_VISIBLE);
+				}
+				const endIdx = Math.min(startIdx + MAX_VISIBLE, filteredTools.length);
+
+				if (startIdx > 0) {
+					lines.push(`    ↑ ${startIdx} more`);
+				}
+
+				for (let i = startIdx; i < endIdx; i++) {
+					const tool = filteredTools[i]!;
+					const isCursor = i === cursorIndex;
+					const isSelected = selectedTools.has(tool.name);
+
+					const prefix = isCursor ? "→ " : "  ";
+					const checkbox = isSelected ? "[x]" : "[ ]";
+
+					lines.push(` ${prefix}${checkbox} ${tool.name}`);
+				}
+
+				const remaining = filteredTools.length - endIdx;
+				if (remaining > 0) {
+					lines.push(`    ↓ ${remaining} more`);
+				}
+			}
+
+			lines.push("");
+			lines.push(` enter confirm • space toggle • esc cancel • type to filter`);
+			lines.push("");
+
+			return lines;
+		},
+		invalidate() {},
+		handleInput(data: string) {
+			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+				onCancel();
+				return;
+			}
+
+			if (matchesKey(data, "return")) {
+				onSave([...selectedTools]);
+				return;
+			}
+
+			if (data === " ") {
+				if (filteredTools.length > 0) {
+					const tool = filteredTools[cursorIndex];
+					if (tool) {
+						if (selectedTools.has(tool.name)) {
+							selectedTools.delete(tool.name);
+						} else {
+							selectedTools.add(tool.name);
+						}
+					}
+				}
+				return;
+			}
+
+			if (matchesKey(data, "up")) {
+				if (filteredTools.length > 0) {
+					cursorIndex = cursorIndex === 0 ? filteredTools.length - 1 : cursorIndex - 1;
+				}
+				return;
+			}
+
+			if (matchesKey(data, "down")) {
+				if (filteredTools.length > 0) {
+					cursorIndex = cursorIndex === filteredTools.length - 1 ? 0 : cursorIndex + 1;
+				}
+				return;
+			}
+
+			if (matchesKey(data, "backspace")) {
+				if (searchQuery.length > 0) {
+					searchQuery = searchQuery.slice(0, -1);
+					filterTools();
+				}
+				return;
+			}
+
+			// Printable character (but not space — that's toggle)
+			if (data.length === 1 && data.charCodeAt(0) > 32) {
+				searchQuery += data;
+				filterTools();
+				return;
+			}
+		},
+		get focused() {
+			return isFocused;
+		},
+		set focused(value: boolean) {
+			isFocused = value;
+		},
+	} as Component;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Agent Settings Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -328,6 +476,7 @@ export class AgentSettingsComponent {
 	private ctx: ExtensionCommandContext;
 	private agents: AgentConfig[];
 	private availableModels: ModelInfo[];
+	private availableTools: ToolInfo[];
 	private onClose: () => void;
 	private requestRender: () => void;
 
@@ -340,12 +489,14 @@ export class AgentSettingsComponent {
 	constructor(
 		agents: AgentConfig[],
 		availableModels: ModelInfo[],
+		availableTools: ToolInfo[],
 		ctx: ExtensionCommandContext,
 		callbacks: AgentSettingsCallbacks,
 	) {
 		this.ctx = ctx;
 		this.agents = agents;
 		this.availableModels = availableModels;
+		this.availableTools = availableTools;
 		this.onClose = callbacks.onClose;
 		this.requestRender = callbacks.requestRender;
 
@@ -443,7 +594,28 @@ export class AgentSettingsComponent {
 				displayValue = "";
 			}
 
-			if (def.type === "model") {
+			if (def.key === "name") {
+				// Name field — also renames the file
+				items.push({
+					id: def.key,
+					label: def.label,
+					description: def.description,
+					currentValue: displayValue || "(empty)",
+					submenu: (current: string, done: (val?: string) => void) => {
+						return createTextInputSubmenu(
+							def.label,
+							def.description,
+							current === "(empty)" ? "" : current,
+							(value: string) => {
+								if (!value) { done(); return; }
+								this.renameAgent(value);
+								done(value);
+							},
+							() => done(),
+						);
+					},
+				});
+			} else if (def.type === "model") {
 				items.push({
 					id: def.key,
 					label: def.label,
@@ -457,6 +629,28 @@ export class AgentSettingsComponent {
 								this.agentFrontmatter[def.key] = model;
 								this.saveCurrentAgent();
 								done(model);
+							},
+							() => done(),
+						);
+					},
+				});
+			} else if (def.type === "tools") {
+				// Tools field — toggle list submenu
+				const currentToolsList = this.parseToolsList(rawValue);
+				items.push({
+					id: def.key,
+					label: def.label,
+					description: def.description,
+					currentValue: currentToolsList.length > 0 ? currentToolsList.join(", ") : "(none)",
+					submenu: (_current: string, done: (val?: string) => void) => {
+						return createToolsToggleSubmenu(
+							this.parseToolsList(this.agentFrontmatter[def.key]),
+							this.availableTools,
+							(tools: string[]) => {
+								this.agentFrontmatter[def.key] = tools.join(", ");
+								this.saveCurrentAgent();
+								const display = tools.length > 0 ? tools.join(", ") : "(none)";
+								done(display);
 							},
 							() => done(),
 						);
@@ -483,12 +677,7 @@ export class AgentSettingsComponent {
 							def.description,
 							current === "(empty)" ? "" : current,
 							(value: string) => {
-								// For array-like fields, store as comma-separated string
-								if (def.key === "tools" || def.key === "skills" || def.key === "defaultReads") {
-									this.agentFrontmatter[def.key] = value;
-								} else {
-									this.agentFrontmatter[def.key] = value;
-								}
+								this.agentFrontmatter[def.key] = value;
 								this.saveCurrentAgent();
 								done(value || "(empty)");
 							},
@@ -537,21 +726,6 @@ export class AgentSettingsComponent {
 			});
 		}
 
-		// Add "Open in $EDITOR" action at the bottom
-		items.push({
-			id: "_open_editor",
-			label: "Open in $EDITOR",
-			description: `Open ${agent.filePath} in your editor (${process.env.EDITOR || "vi"})`,
-			currentValue: "→",
-			submenu: (_current: string, done: (val?: string) => void) => {
-				queueMicrotask(() => {
-					this.openInEditor(agent.filePath);
-				});
-				done();
-				return { render: () => [], invalidate: () => {}, handleInput: () => {} } as unknown as Component;
-			},
-		});
-
 		this.settingsList = new SettingsList(
 			items,
 			Math.min(items.length + 2, 18),
@@ -571,6 +745,17 @@ export class AgentSettingsComponent {
 		this.container.addChild(new DynamicBorder((s: string) => s));
 	}
 
+	/** Parse a tools value (string or array) into a string array */
+	private parseToolsList(value: unknown): string[] {
+		if (Array.isArray(value)) {
+			return value.map(String).map((s) => s.trim()).filter(Boolean);
+		}
+		if (typeof value === "string") {
+			return value.split(",").map((s) => s.trim()).filter(Boolean);
+		}
+		return [];
+	}
+
 	private handleDetailValueChange(id: string, newValue: string): void {
 		// Handle toggle fields
 		const def = FRONTMATTER_KEYS.find((d) => d.key === id);
@@ -578,6 +763,65 @@ export class AgentSettingsComponent {
 			this.agentFrontmatter[id] = newValue === "true";
 			this.saveCurrentAgent();
 		}
+	}
+
+	/**
+	 * Rename an agent: update frontmatter name, rename the file, and update
+	 * all in-memory references.
+	 */
+	private renameAgent(newName: string): void {
+		if (!this.selectedAgent) return;
+
+		const oldName = this.selectedAgent.name;
+		const oldPath = this.selectedAgent.filePath;
+		const dir = path.dirname(oldPath);
+		const newPath = path.join(dir, `${newName}.md`);
+
+		// Update frontmatter
+		this.agentFrontmatter.name = newName;
+
+		// Save to old path first (in case rename fails)
+		try {
+			saveAgentFile(oldPath, this.agentFrontmatter, this.agentBody);
+		} catch (err) {
+			this.ctx.ui.notify(`Failed to save: ${err}`, "error");
+			return;
+		}
+
+		// Rename the file (skip if paths are the same)
+		if (oldPath !== newPath) {
+			try {
+				if (fs.existsSync(newPath)) {
+					this.ctx.ui.notify(`File already exists: ${newPath}`, "error");
+					// Revert the frontmatter name
+					this.agentFrontmatter.name = oldName;
+					saveAgentFile(oldPath, this.agentFrontmatter, this.agentBody);
+					return;
+				}
+				fs.renameSync(oldPath, newPath);
+			} catch (err) {
+				this.ctx.ui.notify(`Failed to rename file: ${err}`, "error");
+				// Revert the frontmatter name
+				this.agentFrontmatter.name = oldName;
+				saveAgentFile(oldPath, this.agentFrontmatter, this.agentBody);
+				return;
+			}
+		}
+
+		// Update in-memory state
+		this.selectedAgent.name = newName;
+		this.selectedAgent.filePath = newPath;
+
+		// Update the agent in the agents array
+		const agentInList = this.agents.find((a) => a.name === oldName);
+		if (agentInList) {
+			agentInList.name = newName;
+			agentInList.filePath = newPath;
+		}
+
+		// Rebuild detail view to reflect the new name
+		this.buildDetailView();
+		this.requestRender();
 	}
 
 	private saveCurrentAgent(): void {
@@ -629,6 +873,12 @@ export class AgentSettingsComponent {
 	}
 
 	handleInput(data: string): void {
+		// Ctrl+E: open in $EDITOR (only in detail view)
+		if (this.view === "detail" && this.selectedAgent && matchesKey(data, "ctrl+e")) {
+			this.openInEditor(this.selectedAgent.filePath);
+			return;
+		}
+
 		this.settingsList.handleInput?.(data);
 	}
 }
