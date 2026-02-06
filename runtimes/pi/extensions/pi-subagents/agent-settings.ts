@@ -765,7 +765,7 @@ export class AgentSettingsComponent {
 				const knownToolNames = new Set(this.availableTools.map((t) => t.name));
 				const toolsDisplay = currentToolsList.length > 0
 					? currentToolsList.map((t) =>
-						knownToolNames.has(t) ? t : `${t} ${this.ctx.ui.theme.fg("warning", "⚠")}`
+						knownToolNames.has(t) ? t : this.ctx.ui.theme.fg("warning", `${t} ⚠`)
 					).join(", ")
 					: "(none)";
 				items.push({
