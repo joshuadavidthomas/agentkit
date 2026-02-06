@@ -32,7 +32,6 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -47,21 +46,51 @@ const LOOP_RUNNER_PATH = join(__dirname, "loop-runner.ts");
 
 /**
  * Resolve the jiti CLI path for spawning TypeScript subprocesses.
- * Uses the same pattern as pi-subagents: createRequire + jiti-cli.mjs.
- * Tries both `jiti` (upstream) and `@mariozechner/jiti` (pi's fork).
+ *
+ * Walks up from the extension directory looking for node_modules containing
+ * jiti or @mariozechner/jiti. This is more robust than createRequire inside
+ * pi's jiti context where import.meta.url may not behave as expected.
  */
-const require = createRequire(import.meta.url);
-const jitiCliPath: string | undefined = (() => {
-	try {
-		return join(dirname(require.resolve("jiti/package.json")), "lib/jiti-cli.mjs");
-	} catch {
-		try {
-			return join(dirname(require.resolve("@mariozechner/jiti/package.json")), "lib/jiti-cli.mjs");
-		} catch {
-			return undefined;
+function findJitiCli(): string | undefined {
+	const candidates = [
+		"node_modules/@mariozechner/jiti/lib/jiti-cli.mjs",
+		"node_modules/jiti/lib/jiti-cli.mjs",
+	];
+
+	// Walk up from the extension directory
+	let dir = __dirname;
+	const root = dirname(dir); // stop condition
+	while (dir.length > 1) {
+		for (const candidate of candidates) {
+			const p = join(dir, candidate);
+			if (existsSync(p)) return p;
 		}
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
 	}
-})();
+
+	// Also check relative to the pi binary itself
+	try {
+		const piPath = process.argv[1]; // pi's main entry
+		if (piPath) {
+			let piDir = dirname(piPath);
+			for (let i = 0; i < 5; i++) {
+				for (const candidate of candidates) {
+					const p = join(piDir, candidate);
+					if (existsSync(p)) return p;
+				}
+				piDir = dirname(piDir);
+			}
+		}
+	} catch {
+		// ignore
+	}
+
+	return undefined;
+}
+
+const jitiCliPath = findJitiCli();
 
 // ── Stub TUI for ToolExecutionComponent ────────────────────────────
 
@@ -543,7 +572,10 @@ async function handleStart(
 
 	// Resolve jiti for subprocess TypeScript execution
 	if (!jitiCliPath) {
-		ctx.ui.notify("Cannot find jiti CLI — needed to run TypeScript subprocess", "error");
+		ctx.ui.notify(
+			`Cannot find jiti CLI — needed to run TypeScript subprocess. Searched up from ${__dirname}`,
+			"error",
+		);
 		return;
 	}
 
