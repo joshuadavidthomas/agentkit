@@ -71,7 +71,16 @@ export async function runSync(
 	}
 	// Use model override if provided, otherwise use agent's default model
 	const effectiveModel = modelOverride ?? agent.model;
-	if (effectiveModel) args.push("--model", effectiveModel);
+	if (effectiveModel) {
+		const slashIndex = effectiveModel.indexOf("/");
+		if (slashIndex > 0) {
+			// Format is "provider/model-id" — split into separate flags
+			args.push("--provider", effectiveModel.slice(0, slashIndex));
+			args.push("--model", effectiveModel.slice(slashIndex + 1));
+		} else {
+			args.push("--model", effectiveModel);
+		}
+	}
 	if (agent.tools?.length) {
 		const builtinTools: string[] = [];
 		const extensionPaths: string[] = [];
@@ -144,7 +153,7 @@ export async function runSync(
 		}
 	}
 
-	const spawnEnv = { ...process.env };
+	const spawnEnv = { ...process.env, PI_IS_SUBAGENT: "1" };
 	const mcpDirect = agent.mcpDirectTools;
 	if (mcpDirect?.length) {
 		spawnEnv.MCP_DIRECT_TOOLS = mcpDirect.join(",");

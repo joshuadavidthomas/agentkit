@@ -19,4 +19,4 @@ Add a /agents command that opens a settings widget showing all available subagen
 - [x] Implement save-back to agent .md files (re-serialize frontmatter)
 - [x] Add 'open in $EDITOR' action
 - [x] Register /agents command in index.ts
-- [ ] Test the widget works end-to-end
+- [ ] Test the widget works end-to-end (requires interactive pi session)

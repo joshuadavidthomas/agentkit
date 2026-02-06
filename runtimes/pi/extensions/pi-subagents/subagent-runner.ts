@@ -100,7 +100,7 @@ function runPiStreaming(
 ): Promise<{ stdout: string; exitCode: number | null }> {
 	return new Promise((resolve) => {
 		const outputStream = fs.createWriteStream(outputFile, { flags: "w" });
-		const child = spawn("pi", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+		const child = spawn("pi", args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PI_IS_SUBAGENT: "1" } });
 		let stdout = "";
 
 		child.stdout.on("data", (chunk: Buffer) => {
@@ -333,7 +333,15 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			} catch {}
 			args.push("--session-dir", config.sessionDir);
 		}
-		if (step.model) args.push("--model", step.model);
+		if (step.model) {
+			const slashIndex = step.model.indexOf("/");
+			if (slashIndex > 0) {
+				args.push("--provider", step.model.slice(0, slashIndex));
+				args.push("--model", step.model.slice(slashIndex + 1));
+			} else {
+				args.push("--model", step.model);
+			}
+		}
 		if (step.tools?.length) {
 			const builtinTools: string[] = [];
 			const extensionPaths: string[] = [];
