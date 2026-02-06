@@ -254,7 +254,7 @@ function createModelPickerSubmenu(
 				const modelText = theme.fg("accent", model.id);
 				const providerBadge = theme.fg("muted", ` [${model.provider}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${prefix}${modelText} ${providerBadge}${checkmark}`;
+				line = `${prefix}${modelText}${providerBadge}${checkmark}`;
 			} else {
 				const providerBadge = theme.fg("muted", `[${model.provider}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
@@ -638,9 +638,11 @@ export class AgentSettingsComponent {
 					label: def.label,
 					description: def.description,
 					currentValue: displayValue || "(default)",
-					submenu: (current: string, done: (val?: string) => void) => {
+					submenu: (_current: string, done: (val?: string) => void) => {
+						// Use raw frontmatter value, not the display value
+						const rawModel = String(this.agentFrontmatter[def.key] ?? "");
 						return createModelPickerSubmenu(
-							current === "(default)" ? "" : current,
+							rawModel,
 							this.availableModels,
 							this.ctx.ui.theme,
 							(model: string) => {
