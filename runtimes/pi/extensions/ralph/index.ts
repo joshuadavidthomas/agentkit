@@ -2,376 +2,357 @@
  * Ralph Loop Extension — Phase 0 Tracer Bullet
  *
  * Provides `/ralph demo` command that:
- * 1. Spawns loop-runner.ts as a detached process
- * 2. Tails .ralph/test/events.jsonl
- * 3. Renders RPC events in the TUI using pi's native message rendering
- *
- * This proves we can watch a background loop's output from a foreground pi session.
+ * 1. Spawns `pi --mode rpc --no-session` directly as a child process
+ * 2. Sends two prompts with a `new_session` reset between them
+ * 3. Writes all RPC events to `.ralph/test/events.jsonl`
+ * 4. Renders RPC events using pi's built-in ToolExecutionComponent
+ *    and AssistantMessageComponent for native-identical output
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import {
+  AssistantMessageComponent,
+  getMarkdownTheme,
+  ToolExecutionComponent,
+} from "@mariozechner/pi-coding-agent";
+import { Container, Loader, Spacer, TUI } from "@mariozechner/pi-tui";
+import type { Component, Terminal } from "@mariozechner/pi-tui";
 import { spawn } from "node:child_process";
-import { watch, existsSync, statSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
+import { mkdirSync, createWriteStream } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-// This file's directory (where loop-runner.ts lives)
-// jiti provides __dirname when loading extensions
-const RALPH_EXT_DIR = __dirname;
+// Stub TUI for ToolExecutionComponent — it only calls ui.requestRender()
+// for async image conversion, which is a no-op in our static context.
+const stubTerminal: Terminal = {
+  start() { },
+  stop() { },
+  write() { },
+  get columns() { return process.stdout.columns ?? 120; },
+  get rows() { return process.stdout.rows ?? 40; },
+  get kittyProtocolActive() { return false; },
+  moveBy() { },
+  hideCursor() { },
+  showCursor() { },
+  clearLine() { },
+  clearFromCursor() { },
+  clearScreen() { },
+  setTitle() { },
+};
+const stubTui = new TUI(stubTerminal);
 
-export default function (pi: ExtensionAPI) {
-	// ── Message Renderers ────────────────────────────────────────────────
+const PROMPTS = [
+  "Create a file called hello.txt in the current directory containing exactly 'hello world'. Use the write tool.",
+  "Read the file hello.txt in the current directory and tell me what's in it. Use the read tool.",
+];
 
-	// Render iteration boundaries
-	pi.registerMessageRenderer("ralph-iteration", (message, _options, theme) => {
-		const details = message.details as {
-			iteration: number;
-			status: "start" | "end";
-			prompt?: string;
-		};
-		const { iteration, status, prompt } = details;
-
-		let text: string;
-		if (status === "start") {
-			text = theme.fg(
-				"accent",
-				theme.bold(`\n🔄 Ralph — Iteration ${iteration}`),
-			);
-			if (prompt) {
-				text += "\n" + theme.fg("muted", `  Prompt: ${prompt}`);
-			}
-		} else {
-			text = theme.fg("success", `✓ Iteration ${iteration} complete`);
-		}
-
-		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
-		box.addChild(new Text(text!, 0, 0));
-		return box;
-	});
-
-	// Render tool executions from the loop
-	pi.registerMessageRenderer("ralph-tool", (message, { expanded }, theme) => {
-		const details = message.details as {
-			toolName: string;
-			args: Record<string, unknown>;
-			result?: { content?: Array<{ type: string; text?: string }>; details?: unknown };
-			isError?: boolean;
-		};
-
-		const { toolName, args, result, isError } = details;
-
-		// Tool call header
-		let text = theme.fg("toolTitle", theme.bold(`  ${toolName} `));
-
-		// Show args summary
-		if (toolName === "bash" && args.command) {
-			text += theme.fg("muted", String(args.command));
-		} else if ((toolName === "read" || toolName === "write") && args.path) {
-			text += theme.fg("muted", String(args.path));
-		} else if (toolName === "edit" && args.path) {
-			text += theme.fg("muted", String(args.path));
-		} else {
-			const argStr = Object.entries(args)
-				.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-				.join(" ");
-			if (argStr) text += theme.fg("dim", argStr);
-		}
-
-		// Result
-		if (result) {
-			const resultText = result.content
-				?.filter((c) => c.type === "text" && c.text)
-				.map((c) => c.text)
-				.join("\n");
-
-			if (resultText) {
-				const statusIcon = isError
-					? theme.fg("error", "✗")
-					: theme.fg("success", "✓");
-				text += `\n  ${statusIcon} `;
-
-				if (expanded) {
-					text += theme.fg("dim", resultText);
-				} else {
-					// Show first line, truncated
-					const firstLine = resultText.split("\n")[0];
-					const truncated =
-						firstLine.length > 120
-							? firstLine.slice(0, 120) + "…"
-							: firstLine;
-					text += theme.fg("dim", truncated);
-					if (resultText.includes("\n")) {
-						const lineCount = resultText.split("\n").length;
-						text += theme.fg("dim", ` (+${lineCount - 1} more lines)`);
-					}
-				}
-			}
-		}
-
-		const box = new Box(1, 0, (t) => theme.bg("customMessageBg", t));
-		box.addChild(new Text(text, 0, 0));
-		return box;
-	});
-
-	// Render assistant text from the loop
-	pi.registerMessageRenderer("ralph-assistant", (message, _options, theme) => {
-		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
-		box.addChild(new Text(String(message.content), 0, 0));
-		return box;
-	});
-
-	// Render loop status messages
-	pi.registerMessageRenderer("ralph-status", (message, _options, theme) => {
-		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
-		const text = theme.fg("accent", `🔄 ${message.content}`);
-		box.addChild(new Text(text, 0, 0));
-		return box;
-	});
-
-	// ── /ralph demo Command ──────────────────────────────────────────────
-
-	pi.registerCommand("ralph", {
-		description: "Ralph loop extension. Usage: /ralph demo",
-		handler: async (args, ctx) => {
-			const subcommand = args.trim().split(/\s+/)[0];
-
-			if (subcommand !== "demo") {
-				ctx.ui.notify(
-					"Usage: /ralph demo — Run the Phase 0 tracer bullet",
-					"info",
-				);
-				return;
-			}
-
-			await runDemo(pi, ctx);
-		},
-	});
+class LabeledBorder implements Component {
+  constructor(
+    private label: string,
+    private color: (s: string) => string,
+  ) { }
+  invalidate() { }
+  render(width: number): string[] {
+    const padded = ` ${this.label} `;
+    const left = 3;
+    const right = Math.max(1, width - left - padded.length);
+    return [
+      this.color("─".repeat(left) + padded + "─".repeat(right)),
+    ];
+  }
 }
 
-async function runDemo(
-	pi: ExtensionAPI,
-	ctx: import("@mariozechner/pi-coding-agent").ExtensionCommandContext,
+let demoRunning = false;
+
+function renderAsAssistantMessage(text: string): AssistantMessageComponent {
+  return new AssistantMessageComponent(
+    {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      api: "messages",
+      provider: "anthropic",
+      model: "unknown",
+      usage: { input: 0, output: 0 },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+    true,
+    getMarkdownTheme(),
+  );
+}
+
+export default function (pi: ExtensionAPI) {
+  pi.registerMessageRenderer("ralph_iteration", (message, _options, theme) => {
+    const { status } = message.details as {
+      iteration: number;
+      status: "start" | "end";
+    };
+    const color = (s: string) => theme.fg("borderMuted", s);
+    return new LabeledBorder(String(message.content), color);
+  });
+
+  pi.registerMessageRenderer("ralph_tool", (message) => {
+    const { toolName, args, result, isError, cwd } = message.details as {
+      toolName: string;
+      args: Record<string, unknown>;
+      result?: { content: Array<{ type: string; text?: string }> };
+      isError?: boolean;
+      cwd?: string;
+    };
+
+    const comp = new ToolExecutionComponent(
+      toolName, args, { showImages: false }, undefined, stubTui, cwd,
+    );
+    comp.setArgsComplete();
+
+    if (result) {
+      comp.updateResult({ ...result, isError: isError ?? false }, false);
+    }
+
+    return comp;
+  });
+
+  pi.registerMessageRenderer("ralph_assistant", (message) => {
+    return renderAsAssistantMessage(String(message.content));
+  });
+
+  pi.registerMessageRenderer("ralph_status", (message, _options, theme) => {
+    const color = (s: string) => theme.fg("borderMuted", s);
+    return new LabeledBorder(String(message.content), color);
+  });
+
+  pi.registerCommand("ralph", {
+    description: "Ralph loop extension. Usage: /ralph demo",
+    handler: async (args, ctx) => {
+      const subcommand = args.trim().split(/\s+/)[0];
+
+      if (subcommand !== "demo") {
+        ctx.ui.notify("Usage: /ralph demo", "info");
+        return;
+      }
+
+      if (demoRunning) {
+        ctx.ui.notify("Demo is already running", "warning");
+        return;
+      }
+
+      runDemo(pi, ctx);
+    },
+  });
+}
+
+function runDemo(
+  pi: ExtensionAPI,
+  ctx: import("@mariozechner/pi-coding-agent").ExtensionCommandContext,
 ) {
-	const cwd = ctx.cwd;
-	const ralphDir = join(cwd, ".ralph", "test");
-	const eventsFile = join(ralphDir, "events.jsonl");
-	const loopRunnerScript = join(RALPH_EXT_DIR, "loop-runner.ts");
+  demoRunning = true;
 
-	// Ensure directory exists
-	mkdirSync(ralphDir, { recursive: true });
+  const cwd = ctx.cwd;
+  const ralphDir = join(cwd, ".ralph", "test");
+  const eventsFile = join(ralphDir, "events.jsonl");
 
-	// Find bun binary — prefer mise shim
-	const bunBin = (() => {
-		const home = process.env.HOME ?? "";
-		if (process.env.BUN_INSTALL) return join(process.env.BUN_INSTALL, "bin", "bun");
-		const shim = join(home, ".local/share/mise/shims/bun");
-		if (existsSync(shim)) return shim;
-		return join(home, ".local/share/mise/installs/bun/1.3.6/bin/bun");
-	})();
+  mkdirSync(ralphDir, { recursive: true });
 
-	ctx.ui.notify("Starting ralph loop runner...", "info");
+  ctx.ui.setWidget("ralph", (tui, theme) => {
+    const container = new Container();
+    container.addChild(new Loader(
+      tui,
+      (s: string) => theme.fg("accent", s),
+      (s: string) => theme.fg("muted", s),
+      "Starting loop runner...",
+    ));
+    container.addChild(new Spacer(1));
+    return container;
+  });
 
-	pi.sendMessage({
-		customType: "ralph-status",
-		content: "Starting loop runner (2 iterations)...",
-		display: true,
-		details: {},
-	});
+  const rpc = spawn("pi", ["--mode", "rpc", "--no-session"], {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
 
-	// Spawn loop runner as a detached process
-	console.log(`[ralph] Spawning loop runner: ${bunBin} run ${loopRunnerScript}`);
+  const eventsStream = createWriteStream(eventsFile, { flags: "w" });
 
-	const loopProcess = spawn(bunBin, ["run", loopRunnerScript], {
-		cwd,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-		env: {
-			...process.env,
-			PI_BIN:
-				process.env.PI_BIN ??
-				join(
-					process.env.HOME ?? "",
-					".local/share/mise/shims/pi",
-				),
-		},
-	});
+  let cleanedUp = false;
+  function cleanup() {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    demoRunning = false;
+    eventsStream.end();
+    ctx.ui.setWidget("ralph", undefined);
+    ctx.ui.setStatus("ralph", undefined);
+  }
 
-	// Note: not calling loopProcess.unref() for Phase 0 demo — we want to
-	// keep watching stdout/stderr. In later phases, detached loops will be
-	// fully unref'd so the foreground pi can exit while the loop runs.
+  rpc.stderr!.resume();
 
-	// Log loop runner stderr
-	if (loopProcess.stderr) {
-		const stderrRl = createInterface({ input: loopProcess.stderr });
-		stderrRl.on("line", (line) => {
-			console.log(`[ralph:runner:stderr] ${line}`);
-		});
-	}
+  rpc.on("error", (err) => {
+    ctx.ui.notify(`Failed to start pi RPC: ${err.message}`, "error");
+    cleanup();
+  });
 
-	// Log loop runner stdout (its own debug logging)
-	if (loopProcess.stdout) {
-		const stdoutRl = createInterface({ input: loopProcess.stdout });
-		stdoutRl.on("line", (line) => {
-			console.log(`[ralph:runner] ${line}`);
-		});
-	}
+  let agentEndCount = 0;
+  let currentAssistantText = "";
+  let iterationCount = 0;
 
-	loopProcess.on("error", (err) => {
-		console.error(`[ralph] Loop runner failed to start:`, err);
-		ctx.ui.notify(`Loop runner error: ${err.message}`, "error");
-	});
+  // Track tool args from start events, keyed by toolCallId
+  const pendingToolArgs = new Map<string, { toolName: string; args: Record<string, unknown> }>();
 
-	loopProcess.on("exit", (code) => {
-		console.log(`[ralph] Loop runner exited with code ${code}`);
-		if (code === 0) {
-			pi.sendMessage({
-				customType: "ralph-status",
-				content: "Loop runner finished successfully! Both iterations complete.",
-				display: true,
-				details: {},
-			});
-		} else {
-			pi.sendMessage({
-				customType: "ralph-status",
-				content: `Loop runner exited with code ${code}`,
-				display: true,
-				details: {},
-			});
-		}
-		cleanup();
-	});
+  // Per-iteration stats
+  let iterStartTime = 0;
+  let iterTokensIn = 0;
+  let iterTokensOut = 0;
+  let iterCost = 0;
+  let iterTurns = 0;
 
-	// Set up widget
-	ctx.ui.setWidget("ralph", ["🔄 ralph: test │ waiting for events..."]);
+  // Cumulative stats
+  let totalCost = 0;
 
-	// ── Tail events.jsonl ──────────────────────────────────────────────
+  function resetIterStats() {
+    iterStartTime = Date.now();
+    iterTokensIn = 0;
+    iterTokensOut = 0;
+    iterCost = 0;
+    iterTurns = 0;
+  }
 
-	let fileOffset = 0;
-	let iterationCount = 0;
-	let currentAssistantText = "";
-	let watcher: ReturnType<typeof watch> | null = null;
-	let pollInterval: ReturnType<typeof setInterval> | null = null;
+  function formatIterStats(): string {
+    const elapsed = ((Date.now() - iterStartTime) / 1000).toFixed(0);
+    const secs = Number(elapsed);
+    const duration = secs >= 60 ? `${Math.floor(secs / 60)}m${secs % 60}s` : `${secs}s`;
+    return `${duration} | ${iterTurns} turns | ${fmtTokens(iterTokensIn)} in ${fmtTokens(iterTokensOut)} out | $${iterCost.toFixed(3)}`;
+  }
 
-	function cleanup() {
-		if (watcher) {
-			watcher.close();
-			watcher = null;
-		}
-		if (pollInterval) {
-			clearInterval(pollInterval);
-			pollInterval = null;
-		}
-		ctx.ui.setWidget("ralph", undefined);
-		ctx.ui.setStatus("ralph", undefined);
-	}
+  function fmtTokens(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return String(n);
+  }
 
-	function processNewEvents() {
-		if (!existsSync(eventsFile)) return;
+  function send(command: Record<string, unknown>) {
+    rpc.stdin!.write(JSON.stringify(command) + "\n");
+  }
 
-		const stat = statSync(eventsFile);
-		if (stat.size <= fileOffset) return;
+  function handleEvent(event: Record<string, unknown>) {
+    const eventType = event.type as string;
 
-		// Read new data from the offset
-		const fd = openSync(eventsFile, "r");
-		const buf = Buffer.alloc(stat.size - fileOffset);
-		readSync(fd, buf, 0, buf.length, fileOffset);
-		closeSync(fd);
-		fileOffset = stat.size;
+    if (eventType === "agent_start") {
+      iterationCount++;
+      currentAssistantText = "";
+      resetIterStats();
 
-		const newData = buf.toString("utf-8");
-		const lines = newData.split("\n").filter((l) => l.trim());
+      ctx.ui.setWidget("ralph", undefined);
+      ctx.ui.setStatus(
+        "ralph",
+        ctx.ui.theme.fg("accent", `ralph: test (${iterationCount}/2)`),
+      );
 
-		for (const line of lines) {
-			let event: Record<string, unknown>;
-			try {
-				event = JSON.parse(line);
-			} catch {
-				continue;
-			}
-			handleEvent(event);
-		}
-	}
+      pi.sendMessage({
+        customType: "ralph_iteration",
+        content: `Iteration ${iterationCount}`,
+        display: true,
+        details: { iteration: iterationCount, status: "start" },
+      });
+    } else if (eventType === "agent_end") {
+      agentEndCount++;
 
-	function handleEvent(event: Record<string, unknown>) {
-		const eventType = event.type as string;
+      totalCost += iterCost;
 
-		if (eventType === "agent_start") {
-			iterationCount++;
-			currentAssistantText = "";
+      pi.sendMessage({
+        customType: "ralph_iteration",
+        content: formatIterStats(),
+        display: true,
+        details: { iteration: iterationCount, status: "end" },
+      });
 
-			ctx.ui.setWidget("ralph", [
-				`🔄 ralph: test │ iteration ${iterationCount}/2 │ running`,
-			]);
+      if (agentEndCount === 1) {
+        send({ type: "new_session" });
+        send({ type: "prompt", message: PROMPTS[1] });
+      } else if (agentEndCount === 2) {
+        ctx.ui.setStatus("ralph", undefined);
+        rpc.kill("SIGTERM");
+      }
+    } else if (eventType === "tool_execution_start") {
+      const toolCallId = event.toolCallId as string;
+      pendingToolArgs.set(toolCallId, {
+        toolName: event.toolName as string,
+        args: (event.args ?? {}) as Record<string, unknown>,
+      });
+    } else if (eventType === "tool_execution_end") {
+      const toolCallId = event.toolCallId as string;
+      const pending = pendingToolArgs.get(toolCallId);
+      pendingToolArgs.delete(toolCallId);
 
-			pi.sendMessage({
-				customType: "ralph-iteration",
-				content: `Iteration ${iterationCount}`,
-				display: true,
-				details: {
-					iteration: iterationCount,
-					status: "start",
-				},
-			});
-		} else if (eventType === "agent_end") {
-			ctx.ui.setWidget("ralph", [
-				`🔄 ralph: test │ iteration ${iterationCount}/2 │ complete`,
-			]);
-		} else if (eventType === "tool_execution_end") {
-			const toolName = event.toolName as string;
-			const args = (event.args ?? {}) as Record<string, unknown>;
-			const result = event.result as {
-				content?: Array<{ type: string; text?: string }>;
-				details?: unknown;
-			} | undefined;
-			const isError = event.isError as boolean;
+      pi.sendMessage({
+        customType: "ralph_tool",
+        content: event.toolName as string,
+        display: true,
+        details: {
+          toolName: event.toolName as string,
+          args: pending?.args ?? {},
+          result: event.result,
+          isError: event.isError as boolean,
+          cwd,
+        },
+      });
+    } else if (eventType === "message_update") {
+      const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
+      if (ame?.type === "text_delta") {
+        currentAssistantText += ame.delta as string;
+      }
+    } else if (eventType === "message_end") {
+      const msg = event.message as Record<string, unknown> | undefined;
 
-			pi.sendMessage({
-				customType: "ralph-tool",
-				content: `${toolName}`,
-				display: true,
-				details: { toolName, args, result, isError },
-			});
-		} else if (eventType === "message_update") {
-			const ame = event.assistantMessageEvent as Record<string, unknown> | undefined;
-			if (ame?.type === "text_delta") {
-				currentAssistantText += ame.delta as string;
-			}
-		} else if (eventType === "message_end") {
-			if (currentAssistantText.trim()) {
-				pi.sendMessage({
-					customType: "ralph-assistant",
-					content: currentAssistantText.trim(),
-					display: true,
-					details: {},
-				});
-				currentAssistantText = "";
-			}
-		} else if (eventType === "response") {
-			const cmd = event.command as string;
-			if (cmd === "new_session") {
-				pi.sendMessage({
-					customType: "ralph-status",
-					content: "Context reset — starting fresh iteration",
-					display: true,
-					details: {},
-				});
-			}
-		}
-	}
+      // Accumulate usage from assistant messages
+      if (msg?.role === "assistant") {
+        iterTurns++;
+        const usage = msg.usage as Record<string, unknown> | undefined;
+        if (usage) {
+          iterTokensIn += (usage.input as number) ?? 0;
+          iterTokensOut += (usage.output as number) ?? 0;
+          const cost = usage.cost as Record<string, unknown> | undefined;
+          if (cost) {
+            iterCost += (cost.total as number) ?? 0;
+          }
+        }
+      }
 
-	// Poll for new events (more reliable than fs.watch for append-only files)
-	pollInterval = setInterval(processNewEvents, 200);
+      if (currentAssistantText.trim()) {
+        pi.sendMessage({
+          customType: "ralph_assistant",
+          content: currentAssistantText.trim(),
+          display: true,
+          details: {},
+        });
+        currentAssistantText = "";
+      }
+    }
+  }
 
-	// Also use fs.watch as a fast-path trigger
-	try {
-		// Watch the directory since the file might not exist yet
-		watcher = watch(ralphDir, (eventType, filename) => {
-			if (filename === "events.jsonl") {
-				processNewEvents();
-			}
-		});
-	} catch {
-		// fs.watch may not work on all platforms; polling is the fallback
-	}
+  const rl = createInterface({ input: rpc.stdout! });
+
+  rl.on("line", (line) => {
+    if (cleanedUp) return;
+
+    eventsStream.write(line + "\n");
+
+    try {
+      handleEvent(JSON.parse(line));
+    } catch {
+      // Ignore malformed lines
+    }
+  });
+
+  rpc.on("exit", (code) => {
+    if (agentEndCount < 2) {
+      pi.sendMessage({
+        customType: "ralph_status",
+        content: `RPC process exited unexpectedly (code ${code})`,
+        display: true,
+        details: {},
+      });
+    }
+
+    cleanup();
+  });
+
+  send({ type: "prompt", message: PROMPTS[0] });
 }

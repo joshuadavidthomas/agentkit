@@ -61,19 +61,18 @@ Two decoupled processes communicating via the filesystem:
 │  Attached mode:                                           │
 │    → tails events.jsonl, renders events in TUI            │
 │    → widget above editor: loop name, iteration, status    │
-│    → custom editor via setEditorComponent():              │
+│    → input event hook intercepts editor submissions:       │
 │        Enter     → write steer command to inbox/          │
-│        Alt+Enter → write followup command to inbox/       │
-│    → Escape     → abort current iteration                 │
+│        (normal pi editor, no custom component needed)     │
 │                                                           │
 │  /ralph detach (or just quit pi)                          │
-│    → stop tailing, restore default editor                 │
+│    → stop tailing, remove input hook                      │
 │    → loop runner keeps going                              │
 │                                                           │
 │  /ralph attach "name"                                     │
 │    → verify PID is alive                                  │
 │    → start tailing events.jsonl                           │
-│    → install custom editor, show widget                   │
+│    → register input hook, show widget                     │
 │                                                           │
 │  /ralph stop "name"                                       │
 │    → write stop.json to inbox/                            │
@@ -238,18 +237,33 @@ support `updateResult(result, isPartial: true)`. Need to verify that
 `registerMessageRenderer` re-calls the renderer on message update, or find
 another way to pipe streaming updates into the component instance.
 
-### Custom Editor (Attached Mode)
+### Input Routing (Attached Mode)
 
-When attached, `ctx.ui.setEditorComponent()` installs a custom editor that:
+When attached, the extension registers a `pi.on("input", ...)` handler that
+intercepts editor submissions and routes them to the loop instead of the
+foreground agent. No custom editor component needed — pi's native editor
+stays in place, and the `input` event provides three return actions:
 
-- Extends `CustomEditor` to inherit app keybindings (Escape, Ctrl+D, etc.)
-- On **Enter**: writes `steer.json` to the loop's inbox. The loop runner
-  forwards it as an RPC `steer` command, interrupting the current iteration.
-- On **Alt+Enter**: writes `followup.json` to the loop's inbox. The loop runner
-  forwards it as an RPC `follow_up` command, queued for after the current
-  iteration finishes.
-- Shows placeholder text indicating the mode: "Steering ralph loop: <name>"
-- On detach: restores the default editor via `setEditorComponent(undefined)`
+- **`{ action: "handled" }`** — swallow the input; the extension wrote it
+  to the loop's inbox as a steer/followup command
+- **`{ action: "continue" }`** — pass through to the foreground agent
+  (used when not attached to a loop)
+- **`{ action: "transform", text }`** — modify input before it reaches
+  the agent (available but unlikely to be needed)
+
+```typescript
+pi.on("input", (event, ctx) => {
+  if (!attachedLoop) return { action: "continue" };
+  writeFileSync(
+    join(loopDir, "inbox/steer.json"),
+    JSON.stringify({ message: event.text }),
+  );
+  return { action: "handled" };
+});
+```
+
+On detach: the handler simply checks `attachedLoop` and returns `"continue"`,
+restoring normal behavior without needing to unregister anything.
 
 ### Widget (Above Editor)
 
@@ -288,44 +302,29 @@ No steering, no custom editor, no registry, no state management, no
 telemetry. Just: **does the loop run, and can I watch it from another
 pi session?**
 
-**Part A — Loop Runner script (`loop-runner.ts`)**
+**Implemented as a single extension (`index.ts`)** — Parts A and B merged.
+The extension spawns `pi --mode rpc --no-session` directly (no separate
+loop-runner script), manages the RPC communication inline, and renders
+events using pi's built-in components.
 
-Standalone script, run with `bun run loop-runner.ts`:
-
-- [ ] Spawn `pi --mode rpc --no-session` as a child process
-- [ ] Send a prompt via RPC stdin: `{"type": "prompt", "message": "Create a
-  file called hello.txt containing 'hello world'"}`
-- [ ] Read RPC stdout line by line, write each event to
-  `.ralph/test/events.jsonl`
-- [ ] On `agent_end` event → send `{"type": "new_session"}`
-- [ ] Send prompt #2: `{"type": "prompt", "message": "Read hello.txt and tell
-  me what's in it"}`
-- [ ] On second `agent_end` → exit
+- [x] Spawn `pi --mode rpc --no-session` as a child process
+- [x] Send prompts via RPC stdin, read events from stdout
+- [x] Write all events to `.ralph/test/events.jsonl`
+- [x] On `agent_end` → send `new_session` → send next prompt
+- [x] On second `agent_end` → kill RPC process
+- [x] Track tool args from `tool_execution_start`, pair with `tool_execution_end`
+- [x] Render tool calls via `ToolExecutionComponent` (native pi rendering)
+- [x] Render assistant text via `AssistantMessageComponent` with `getMarkdownTheme()`
+- [x] Iteration boundaries as labeled `─── Iteration N ───` borders
+- [x] Per-iteration telemetry (duration, turns, tokens in/out, cost) in end border
+- [x] Spinner widget (`Loader`) while RPC process boots
+- [x] Status bar entry during iteration (`ralph: test (N/2)`)
+- [x] Re-run guard (`demoRunning` flag)
+- [x] Centralized cleanup (idempotent, handles all exit paths)
 
 **What this proves**: The RPC iteration loop works. `new_session` clears
-context (iteration 2 must re-read the file — it doesn't remember writing it).
-Events are captured to a file.
-
-**Part B — Minimal viewer extension (`index.ts`)**
-
-A pi extension with one command:
-
-- [ ] `/ralph demo` command that:
-  - Spawns `loop-runner.ts` as a detached process
-  - Tails `.ralph/test/events.jsonl`
-  - On `tool_execution_end` events → `pi.sendMessage()` with a renderer that
-    instantiates `ToolExecutionComponent` from pi's built-in components
-  - On `message_end` events → `pi.sendMessage()` with a renderer that
-    instantiates `AssistantMessageComponent`
-
-**What this proves**: We can watch a background loop's output rendered with
-native pi TUI components from a foreground pi session. The rendering looks
-identical to a normal pi interaction.
-
-**Success criteria**: Run `/ralph demo`, watch two iterations stream through
-the TUI with proper tool call rendering and assistant message formatting, then
-the loop exits. The whole thing should take ~30 minutes to build and validate
-all core assumptions.
+context. Events render identically to native pi output using pi's own
+components. Per-iteration telemetry is available from the event stream.
 
 ### Phase 1: Loop Runner (Core Engine)
 
@@ -453,27 +452,26 @@ most complex phase — translating RPC JSON events into pi's TUI.
   - If a loop was attached when pi last exited, offer to reattach
   - Store "last attached" in a local preference file
 
-### Phase 4: TUI — Custom Editor (Steering)
+### Phase 4: Input Routing (Steering)
 
-Wire up the editor so typed messages route to the loop instead of the
-foreground pi's agent.
+Wire up input interception so typed messages route to the loop instead of
+the foreground pi's agent. Uses pi's `input` event hook — no custom editor
+component needed.
 
-- [ ] Implement custom editor class extending `CustomEditor`
-  - Override `handleInput()` to intercept Enter and Alt+Enter
-  - Enter → write `steer.json` to inbox
-  - Alt+Enter → write `followup.json` to inbox
-  - Show submitted message in TUI as a "sent" confirmation
-  - Escape → write `abort.json` to inbox (abort current iteration)
-  - All other keys → `super.handleInput(data)` for normal editing
-- [ ] Install custom editor on attach, restore on detach
-  - `ctx.ui.setEditorComponent(factory)` on attach
-  - `ctx.ui.setEditorComponent(undefined)` on detach
-- [ ] Editor placeholder/prompt
-  - Show "Steering: <loop-name>" or similar in the editor border/placeholder
-  - Distinguish steer vs follow-up mode visually (if possible)
+- [ ] Register `pi.on("input", ...)` handler
+  - When attached: return `{ action: "handled" }`, write message to
+    `inbox/steer.json` for the loop runner to forward as an RPC `steer`
+    command
+  - When not attached: return `{ action: "continue" }` for normal behavior
+- [ ] Show submitted message in TUI as a "sent" confirmation
+  - Use `pi.sendMessage()` with a renderer (e.g. `ralph-steer`) to echo
+    what was sent, so the user sees their input in the message history
 - [ ] Handle edge case: message sent while between iterations
   - If agent isn't running (between `agent_end` and next `prompt`),
     a steer becomes a follow-up automatically (nothing to interrupt)
+- [ ] Status bar or widget indication that input is being routed to the loop
+  - So the user knows their editor submissions go to ralph, not the
+    foreground agent
 
 ### Phase 5: Reflection + Task File Management
 
