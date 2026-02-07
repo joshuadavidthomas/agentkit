@@ -1,9 +1,9 @@
 /**
  * Ralph Loop Extension
  *
- * Provides an in-session iterative agent loop with fresh context per iteration.
- * Spawns `pi --mode rpc --no-session` as a child process and drives iterations
- * directly, rendering events live in the TUI.
+ * Drives iterative agent loops with fresh context per iteration.
+ * Uses pi's native rendering — sendUserMessage + newSession + waitForIdle.
+ * No RPC process, no custom event rendering. Just iteration borders + telemetry.
  *
  * Commands: /ralph start, stop, status, list, kill, clean
  */
@@ -12,52 +12,26 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
-import {
-	AssistantMessageComponent,
-	getMarkdownTheme,
-	ToolExecutionComponent,
-} from "@mariozechner/pi-coding-agent";
-import { Container, TUI } from "@mariozechner/pi-tui";
-import type { Component, Terminal } from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
 import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { LoopEngine } from "./loop-engine.ts";
-import type { IterationStats, LoopConfig, LoopState } from "./types.ts";
+import type {
+	CumulativeStats,
+	IterationStats,
+	LoopConfig,
+	LoopState,
+} from "./types.ts";
 import { loopDir } from "./types.ts";
 
-// ── Stub TUI for ToolExecutionComponent ────────────────────────────
-
-const stubTerminal: Terminal = {
-	start() {},
-	stop() {},
-	write() {},
-	get columns() {
-		return process.stdout.columns ?? 120;
-	},
-	get rows() {
-		return process.stdout.rows ?? 40;
-	},
-	get kittyProtocolActive() {
-		return false;
-	},
-	moveBy() {},
-	hideCursor() {},
-	showCursor() {},
-	clearLine() {},
-	clearFromCursor() {},
-	clearScreen() {},
-	setTitle() {},
-};
-const stubTui = new TUI(stubTerminal);
-
-// ── TUI Helpers ────────────────────────────────────────────────────
+// ── TUI Components ─────────────────────────────────────────────────
 
 class LabeledBorder implements Component {
 	constructor(
@@ -71,30 +45,6 @@ class LabeledBorder implements Component {
 		const right = Math.max(1, width - left - padded.length);
 		return [this.color("─".repeat(left) + padded + "─".repeat(right))];
 	}
-}
-
-function renderAsAssistantMessage(text: string): AssistantMessageComponent {
-	return new AssistantMessageComponent(
-		{
-			role: "assistant",
-			content: [{ type: "text", text }],
-			api: "messages",
-			provider: "anthropic",
-			model: "unknown",
-			usage: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens: 0,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			},
-			stopReason: "stop",
-			timestamp: Date.now(),
-		},
-		true,
-		getMarkdownTheme(),
-	);
 }
 
 // ── Formatting ─────────────────────────────────────────────────────
@@ -121,26 +71,21 @@ function fmtTokens(n: number): string {
 }
 
 function fmtIterStats(stats: IterationStats): string {
-	const duration =
-		stats.durationMs >= 60_000
-			? `${Math.floor(stats.durationMs / 60_000)}m${Math.round((stats.durationMs % 60_000) / 1000)}s`
-			: `${Math.round(stats.durationMs / 1000)}s`;
-	return `${duration} │ ${stats.turns} turns │ ${fmtTokens(stats.tokensIn)} in ${fmtTokens(stats.tokensOut)} out │ ${fmtCost(stats.cost)}`;
+	return `${fmtDuration(stats.durationMs)} │ ${stats.turns} turns │ ${fmtTokens(stats.tokensIn)} in ${fmtTokens(stats.tokensOut)} out │ ${fmtCost(stats.cost)}`;
 }
 
 // ── State Helpers ──────────────────────────────────────────────────
 
-/** Read state.json from a ralph loop directory, or null if missing/invalid */
 function readLoopState(dir: string): LoopState | null {
-	const statePath = join(dir, "state.json");
 	try {
-		return JSON.parse(readFileSync(statePath, "utf-8")) as LoopState;
+		return JSON.parse(
+			readFileSync(join(dir, "state.json"), "utf-8"),
+		) as LoopState;
 	} catch {
 		return null;
 	}
 }
 
-/** List all local .ralph/<name>/ loop directories in the given project cwd */
 function listLocalLoops(
 	cwd: string,
 ): Array<{ name: string; dir: string; state: LoopState | null }> {
@@ -157,16 +102,16 @@ function listLocalLoops(
 			if (!entry.isDirectory()) continue;
 			const dir = join(ralphRoot, entry.name);
 			if (!existsSync(join(dir, "config.json"))) continue;
-			results.push({
-				name: entry.name,
-				dir,
-				state: readLoopState(dir),
-			});
+			results.push({ name: entry.name, dir, state: readLoopState(dir) });
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return results;
+}
+
+function writeState(dir: string, state: LoopState): void {
+	const tmp = join(dir, "state.json.tmp");
+	writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n");
+	renameSync(tmp, join(dir, "state.json"));
 }
 
 // ── Argument Parsing ───────────────────────────────────────────────
@@ -186,84 +131,116 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		return "Missing loop name. Usage: /ralph start <name> [options]";
 	}
 
-	const result: ParsedStartArgs = {
-		name: tokens[0],
-		maxIterations: 50,
-	};
+	const result: ParsedStartArgs = { name: tokens[0], maxIterations: 50 };
 
 	if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(result.name)) {
-		return `Invalid loop name "${result.name}". Use alphanumeric characters, dots, hyphens, and underscores.`;
+		return `Invalid loop name "${result.name}". Use alphanumeric, dots, hyphens, underscores.`;
 	}
 
 	let i = 1;
 	while (i < tokens.length) {
-		const token = tokens[i];
-
-		if (
-			(token === "--max-iterations" || token === "-n") &&
-			i + 1 < tokens.length
-		) {
+		const t = tokens[i];
+		if ((t === "--max-iterations" || t === "-n") && i + 1 < tokens.length) {
 			const val = parseInt(tokens[i + 1], 10);
-			if (isNaN(val) || val < 0) {
-				return `Invalid max-iterations: "${tokens[i + 1]}". Must be a non-negative integer (0 = unlimited).`;
-			}
+			if (isNaN(val) || val < 0)
+				return `Invalid max-iterations: "${tokens[i + 1]}"`;
 			result.maxIterations = val;
 			i += 2;
-		} else if (
-			(token === "--model" || token === "-m") &&
-			i + 1 < tokens.length
-		) {
+		} else if ((t === "--model" || t === "-m") && i + 1 < tokens.length) {
 			result.model = tokens[i + 1];
 			i += 2;
-		} else if (token === "--provider" && i + 1 < tokens.length) {
+		} else if (t === "--provider" && i + 1 < tokens.length) {
 			result.provider = tokens[i + 1];
 			i += 2;
-		} else if (token === "--thinking" && i + 1 < tokens.length) {
+		} else if (t === "--thinking" && i + 1 < tokens.length) {
 			result.thinking = tokens[i + 1];
 			i += 2;
-		} else if (token === "--task" && i + 1 < tokens.length) {
+		} else if (t === "--task" && i + 1 < tokens.length) {
 			result.taskFile = tokens[i + 1];
 			i += 2;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task`;
+			return `Unknown option: "${t}"`;
 		}
 	}
-
 	return result;
 }
 
 // ── Active Loop State ──────────────────────────────────────────────
 
-let activeLoop: {
-	name: string;
-	dir: string;
-	engine: LoopEngine;
-} | null = null;
+let loopActive = false;
+let stopRequested = false;
+let currentIteration = 0;
+let loopName = "";
+let loopDirPath = "";
 
-// Rendering state for the active loop's event stream
-let currentAssistantText = "";
-const pendingToolArgs = new Map<
-	string,
-	{ toolName: string; args: Record<string, unknown> }
->();
-// Completed tool calls buffered until the next assistant message_end
-const completedTools: Array<{
-	toolName: string;
-	args: Record<string, unknown>;
-	result: unknown;
-	isError: boolean;
-}> = [];
+// Per-iteration telemetry (accumulated via event listeners)
+let iterStartTime = 0;
+let iterTokensIn = 0;
+let iterTokensOut = 0;
+let iterCacheRead = 0;
+let iterCacheWrite = 0;
+let iterCost = 0;
+let iterTurns = 0;
 
-function resetRenderingState(): void {
-	currentAssistantText = "";
-	pendingToolArgs.clear();
-	completedTools.length = 0;
+// Cumulative stats
+const cumulativeStats: CumulativeStats = {
+	iterations: 0,
+	durationMs: 0,
+	turns: 0,
+	tokensIn: 0,
+	tokensOut: 0,
+	cost: 0,
+};
+
+function resetIterStats(): void {
+	iterStartTime = Date.now();
+	iterTokensIn = 0;
+	iterTokensOut = 0;
+	iterCacheRead = 0;
+	iterCacheWrite = 0;
+	iterCost = 0;
+	iterTurns = 0;
+}
+
+function resetCumulativeStats(): void {
+	cumulativeStats.iterations = 0;
+	cumulativeStats.durationMs = 0;
+	cumulativeStats.turns = 0;
+	cumulativeStats.tokensIn = 0;
+	cumulativeStats.tokensOut = 0;
+	cumulativeStats.cost = 0;
+}
+
+function collectIterationStats(): IterationStats {
+	const durationMs = Date.now() - iterStartTime;
+	const stats: IterationStats = {
+		iteration: currentIteration,
+		durationMs,
+		turns: iterTurns,
+		tokensIn: iterTokensIn,
+		tokensOut: iterTokensOut,
+		cacheRead: iterCacheRead,
+		cacheWrite: iterCacheWrite,
+		cost: iterCost,
+		startedAt: new Date(iterStartTime).toISOString(),
+		endedAt: new Date().toISOString(),
+	};
+
+	// Update cumulative
+	cumulativeStats.iterations++;
+	cumulativeStats.durationMs += durationMs;
+	cumulativeStats.turns += iterTurns;
+	cumulativeStats.tokensIn += iterTokensIn;
+	cumulativeStats.tokensOut += iterTokensOut;
+	cumulativeStats.cost += iterCost;
+
+	return stats;
 }
 
 // ── Extension Entry Point ──────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-	// ── Message Renderers ───────────────────────────────────────────
+	// ── Iteration Border Renderer ───────────────────────────────────
 
 	pi.registerMessageRenderer(
 		"ralph_iteration",
@@ -273,161 +250,39 @@ export default function (pi: ExtensionAPI) {
 		},
 	);
 
-	pi.registerMessageRenderer("ralph_turn", (message) => {
-		const { tools, text, cwd } = message.details as {
-			tools: Array<{
-				toolName: string;
-				args: Record<string, unknown>;
-				result: unknown;
-				isError: boolean;
-			}>;
-			text: string;
-			cwd: string;
-		};
+	// ── Telemetry via Events ────────────────────────────────────────
 
-		const container = new Container();
-
-		// Render tool calls
-		for (const tool of tools) {
-			const comp = new ToolExecutionComponent(
-				tool.toolName,
-				tool.args,
-				{ showImages: false },
-				undefined,
-				stubTui,
-				cwd,
-			);
-			comp.setArgsComplete();
-			if (tool.result) {
-				comp.updateResult(
-					{
-						...(tool.result as { content: Array<{ type: string; text?: string }> }),
-						isError: tool.isError,
-					},
-					false,
-				);
-			}
-			container.addChild(comp);
+	pi.on("turn_end", async (event) => {
+		if (!loopActive) return;
+		iterTurns++;
+		const msg = event.message as unknown as Record<string, unknown>;
+		const usage = msg?.usage as Record<string, unknown> | undefined;
+		if (usage) {
+			iterTokensIn += (usage.input as number) ?? 0;
+			iterTokensOut += (usage.output as number) ?? 0;
+			iterCacheRead += (usage.cacheRead as number) ?? 0;
+			iterCacheWrite += (usage.cacheWrite as number) ?? 0;
+			const cost = usage.cost as Record<string, unknown> | undefined;
+			if (cost) iterCost += (cost.total as number) ?? 0;
 		}
-
-		// Render assistant text
-		if (text) {
-			container.addChild(renderAsAssistantMessage(text));
-		}
-
-		return container;
 	});
 
-	pi.registerMessageRenderer(
-		"ralph_status",
-		(message, _options, theme) => {
-			const color = (s: string) => theme.fg("borderMuted", s);
-			return new LabeledBorder(String(message.content), color);
-		},
-	);
+	// ── Widget ──────────────────────────────────────────────────────
 
-	// ── Event Rendering ─────────────────────────────────────────────
-
-	function handleRpcEvent(
-		event: Record<string, unknown>,
-		cwd: string,
-	): void {
-		const eventType = event.type as string;
-
-		if (eventType === "tool_execution_start") {
-			const toolCallId = event.toolCallId as string;
-			pendingToolArgs.set(toolCallId, {
-				toolName: event.toolName as string,
-				args: (event.args ?? {}) as Record<string, unknown>,
-			});
-		} else if (eventType === "tool_execution_end") {
-			// Buffer completed tool calls — render with the next assistant message
-			const toolCallId = event.toolCallId as string;
-			const pending = pendingToolArgs.get(toolCallId);
-			pendingToolArgs.delete(toolCallId);
-
-			completedTools.push({
-				toolName: event.toolName as string,
-				args: pending?.args ?? {},
-				result: event.result,
-				isError: (event.isError as boolean) ?? false,
-			});
-		} else if (eventType === "message_update") {
-			const ame = event.assistantMessageEvent as
-				| Record<string, unknown>
-				| undefined;
-			if (ame?.type === "text_delta") {
-				currentAssistantText += ame.delta as string;
-			}
-		} else if (eventType === "message_end") {
-			const msg = event.message as
-				| Record<string, unknown>
-				| undefined;
-
-			// Render a complete turn: buffered tool calls + assistant text
-			// Fires on assistant message_end (stopReason=stop or toolUse)
-			if (msg?.role === "assistant") {
-				const hasTools = completedTools.length > 0;
-				const hasText = currentAssistantText.trim().length > 0;
-
-				if (hasTools || hasText) {
-					pi.sendMessage({
-						customType: "ralph_turn",
-						content: currentAssistantText.trim() || "(tool calls)",
-						display: true,
-						details: {
-							tools: hasTools ? [...completedTools] : [],
-							text: hasText ? currentAssistantText.trim() : "",
-							cwd,
-						},
-					});
-					completedTools.length = 0;
-					currentAssistantText = "";
-				}
-			}
-		}
-	}
-
-	// ── Widget Management ───────────────────────────────────────────
-
-	function updateWidget(ctx: ExtensionCommandContext): void {
-		if (!activeLoop) {
-			ctx.ui.setWidget("ralph", undefined);
-			ctx.ui.setStatus("ralph", undefined);
-			return;
-		}
-
-		const state = activeLoop.engine.getState();
-		const name = activeLoop.name;
-
-		// Status bar (compact)
+	function updateWidget(ctx: ExtensionCommandContext, config: LoopConfig): void {
 		const maxStr =
-			state.config.maxIterations > 0
-				? `/${state.config.maxIterations}`
+			config.maxIterations > 0
+				? `/${config.maxIterations}`
 				: "";
-		ctx.ui.setStatus(
-			"ralph",
-			ctx.ui.theme.fg(
-				"accent",
-				`ralph: ${name} (${state.iteration}${maxStr})`,
-			),
-		);
-
-		// Widget (above editor)
-		let line: string;
-		if (state.status === "starting" || state.iteration === 0) {
-			line = `ralph: ${name} │ starting`;
-		} else {
-			const cost =
-				state.stats.cost > 0
-					? ` │ ${fmtCost(state.stats.cost)}`
-					: "";
-			const duration =
-				state.stats.durationMs > 0
-					? ` │ ${fmtDuration(state.stats.durationMs)}`
-					: "";
-			line = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
-		}
+		const cost =
+			cumulativeStats.cost > 0
+				? ` │ ${fmtCost(cumulativeStats.cost)}`
+				: "";
+		const duration =
+			cumulativeStats.durationMs > 0
+				? ` │ ${fmtDuration(cumulativeStats.durationMs)}`
+				: "";
+		const line = `ralph: ${config.name} │ iter ${currentIteration}${maxStr}${duration}${cost}`;
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
@@ -435,20 +290,15 @@ export default function (pi: ExtensionAPI) {
 			},
 			invalidate() {},
 		}));
+		ctx.ui.setStatus(
+			"ralph",
+			ctx.ui.theme.fg("accent", `ralph: ${config.name} (${currentIteration}${maxStr})`),
+		);
 	}
 
-	function clearWidgetAfterDelay(ctx: ExtensionCommandContext): void {
-		setTimeout(() => {
-			if (
-				!activeLoop ||
-				activeLoop.engine.currentStatus === "completed" ||
-				activeLoop.engine.currentStatus === "stopped" ||
-				activeLoop.engine.currentStatus === "error"
-			) {
-				ctx.ui.setWidget("ralph", undefined);
-				ctx.ui.setStatus("ralph", undefined);
-			}
-		}, 5000);
+	function clearWidget(ctx: ExtensionCommandContext): void {
+		ctx.ui.setWidget("ralph", undefined);
+		ctx.ui.setStatus("ralph", undefined);
 	}
 
 	// ── Command Registration ────────────────────────────────────────
@@ -459,32 +309,22 @@ export default function (pi: ExtensionAPI) {
 		getArgumentCompletions: (prefix) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
-				const subcommands = [
-					"start",
-					"stop",
-					"status",
-					"list",
-					"kill",
-					"clean",
-				];
-				return subcommands
+				const subs = ["start", "stop", "status", "list", "kill", "clean"];
+				return subs
 					.filter((s) => s.startsWith(parts[0] || ""))
 					.map((s) => ({ value: s, label: s }));
 			}
-			// For stop/status/kill, complete with loop names
-			const sub = parts[0];
-			if (["stop", "status", "kill"].includes(sub)) {
+			if (["stop", "status", "kill"].includes(parts[0])) {
 				const namePrefix = parts[1] || "";
 				const loops = listLocalLoops(process.cwd());
 				const names = loops
 					.map((l) => l.name)
 					.filter((n) => n.startsWith(namePrefix));
-				if (activeLoop && activeLoop.name.startsWith(namePrefix)) {
-					if (!names.includes(activeLoop.name))
-						names.unshift(activeLoop.name);
+				if (loopActive && loopName.startsWith(namePrefix)) {
+					if (!names.includes(loopName)) names.unshift(loopName);
 				}
 				return names.map((n) => ({
-					value: `${sub} ${n}`,
+					value: `${parts[0]} ${n}`,
 					label: n,
 				}));
 			}
@@ -492,10 +332,10 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			const parts = args.trim().split(/\s+/);
-			const subcommand = parts[0] || "";
+			const sub = parts[0] || "";
 			const subArgs = parts.slice(1).join(" ");
 
-			switch (subcommand) {
+			switch (sub) {
 				case "start":
 					return handleStart(pi, ctx, subArgs);
 				case "stop":
@@ -517,7 +357,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ── Command Handlers ────────────────────────────────────────────
+	// ── Loop ────────────────────────────────────────────────────────
 
 	async function handleStart(
 		pi: ExtensionAPI,
@@ -530,10 +370,9 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// Only one active loop at a time (for now)
-		if (activeLoop) {
+		if (loopActive) {
 			ctx.ui.notify(
-				`Loop "${activeLoop.name}" is already running. Stop it first with /ralph stop`,
+				`Loop "${loopName}" is already running. /ralph stop first.`,
 				"warning",
 			);
 			return;
@@ -541,25 +380,6 @@ export default function (pi: ExtensionAPI) {
 
 		const cwd = ctx.cwd;
 		const dir = loopDir(cwd, parsed.name);
-
-		// Check if loop already exists on disk and is running
-		const existingState = readLoopState(dir);
-		if (
-			existingState &&
-			existingState.status === "running" &&
-			existingState.pid > 0
-		) {
-			try {
-				process.kill(existingState.pid, 0);
-				ctx.ui.notify(
-					`Loop "${parsed.name}" appears to still be running (PID ${existingState.pid})`,
-					"warning",
-				);
-				return;
-			} catch {
-				// PID is dead, safe to reuse
-			}
-		}
 
 		// Create directory structure
 		mkdirSync(join(dir, "iterations"), { recursive: true });
@@ -569,37 +389,25 @@ export default function (pi: ExtensionAPI) {
 		if (parsed.taskFile) {
 			const sourcePath = resolve(cwd, parsed.taskFile);
 			if (!existsSync(sourcePath)) {
-				ctx.ui.notify(
-					`Task file not found: ${sourcePath}`,
-					"error",
-				);
+				ctx.ui.notify(`Task file not found: ${sourcePath}`, "error");
 				return;
 			}
-			const content = readFileSync(sourcePath, "utf-8");
-			writeFileSync(taskFilePath, content);
+			writeFileSync(taskFilePath, readFileSync(sourcePath, "utf-8"));
 		} else if (!existsSync(taskFilePath)) {
 			if (!ctx.hasUI) {
-				ctx.ui.notify(
-					"No UI available. Use --task to specify a task file.",
-					"error",
-				);
+				ctx.ui.notify("No UI. Use --task to specify a task file.", "error");
 				return;
 			}
-
 			const taskContent = await ctx.ui.editor(
 				"Write the task for this loop:",
 				"",
 			);
-			if (!taskContent || !taskContent.trim()) {
-				ctx.ui.notify(
-					"No task provided. Loop not started.",
-					"warning",
-				);
+			if (!taskContent?.trim()) {
+				ctx.ui.notify("No task provided.", "warning");
 				return;
 			}
 			writeFileSync(taskFilePath, taskContent);
 		}
-		// else: task.md already exists from a previous run — reuse it
 
 		// Build config
 		const config: LoopConfig = {
@@ -612,120 +420,197 @@ export default function (pi: ExtensionAPI) {
 			thinking: parsed.thinking,
 			reflectEvery: 0,
 		};
+		writeFileSync(
+			join(dir, "config.json"),
+			JSON.stringify(config, null, 2) + "\n",
+		);
 
-		// Create engine with rendering callbacks
-		const engine = new LoopEngine(dir, config, {
-			onEvent: (event) => handleRpcEvent(event, cwd),
+		// Clear old iteration artifacts
+		try {
+			for (const f of readdirSync(join(dir, "iterations"))) {
+				rmSync(join(dir, "iterations", f));
+			}
+		} catch {}
 
-			onIterationStart: (iteration) => {
-				resetRenderingState();
-				pi.sendMessage({
-					customType: "ralph_iteration",
-					content: `Iteration ${iteration}`,
-					display: true,
-					details: {
-						iteration,
-						status: "start",
-					},
-				});
-				updateWidget(ctx);
-			},
+		// Initialize loop state
+		loopActive = true;
+		stopRequested = false;
+		loopName = parsed.name;
+		loopDirPath = dir;
+		resetCumulativeStats();
 
-			onIterationEnd: (iteration, stats) => {
-				pi.sendMessage({
-					customType: "ralph_iteration",
-					content: fmtIterStats(stats),
-					display: true,
-					details: {
-						iteration,
-						status: "end",
-					},
-				});
-				updateWidget(ctx);
-			},
-
-			onStatusChange: (status, error) => {
-				updateWidget(ctx);
-				if (status === "completed") {
-					const state = engine.getState();
-					ctx.ui.notify(
-						`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
-						"info",
-					);
-					clearWidgetAfterDelay(ctx);
-				} else if (status === "stopped") {
-					ctx.ui.notify(
-						`Loop "${parsed.name}" stopped`,
-						"info",
-					);
-					clearWidgetAfterDelay(ctx);
-				} else if (status === "error") {
-					ctx.ui.notify(
-						`Loop "${parsed.name}" error: ${error}`,
-						"error",
-					);
-					clearWidgetAfterDelay(ctx);
-				}
-			},
-		});
-
-		// Track as active
-		activeLoop = { name: parsed.name, dir, engine };
-		resetRenderingState();
-
-		// Show confirmation
+		const startedAt = new Date();
 		const maxStr =
 			parsed.maxIterations === 0
 				? "unlimited"
 				: String(parsed.maxIterations);
-		const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
 		ctx.ui.notify(
-			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr})`,
+			`Loop "${parsed.name}" started (max: ${maxStr} iterations)`,
 			"info",
 		);
-		updateWidget(ctx);
 
-		// Fire and forget — the loop runs until completion/stop/error
-		engine
-			.start()
-			.catch((err) => {
-				ctx.ui.notify(
-					`Loop "${parsed.name}" failed: ${err.message}`,
-					"error",
+		// ── Iteration Loop ──────────────────────────────────────────
+
+		try {
+			for (
+				currentIteration = 1;
+				config.maxIterations === 0 ||
+				currentIteration <= config.maxIterations;
+				currentIteration++
+			) {
+				if (stopRequested) break;
+
+				resetIterStats();
+				updateWidget(ctx, config);
+
+				// Re-read task each iteration (agent may have updated it)
+				const taskContent = readFileSync(taskFilePath, "utf-8").trim();
+
+				// Fresh session for this iteration
+				const { cancelled } = await ctx.newSession({
+					async setup(sm) {
+						sm.appendMessage({
+							role: "user",
+							content: [{ type: "text", text: taskContent }],
+							timestamp: Date.now(),
+						});
+					},
+				});
+
+				if (cancelled || stopRequested) break;
+
+				// Iteration header (in the new session, before agent starts)
+				pi.sendMessage({
+					customType: "ralph_iteration",
+					content: `Iteration ${currentIteration}${config.maxIterations > 0 ? `/${config.maxIterations}` : ""}`,
+					display: true,
+					details: {},
+				});
+
+				// Agent responds with native rendering — tool calls,
+				// assistant text, thinking, everything rendered by pi
+				await ctx.waitForIdle();
+
+				if (stopRequested) break;
+
+				// Collect stats for this iteration
+				const iterStats = collectIterationStats();
+
+				// Write per-iteration stats
+				writeFileSync(
+					join(
+						dir,
+						"iterations",
+						`${String(currentIteration).padStart(3, "0")}.json`,
+					),
+					JSON.stringify(iterStats, null, 2) + "\n",
 				);
-			})
-			.finally(() => {
-				// Only clear activeLoop if this engine is still the active one
-				if (activeLoop?.engine === engine) {
-					activeLoop = null;
-				}
+
+				// Iteration footer with stats
+				pi.sendMessage({
+					customType: "ralph_iteration",
+					content: fmtIterStats(iterStats),
+					display: true,
+					details: {},
+				});
+
+				// Write loop state
+				writeState(dir, {
+					status: "running",
+					config,
+					iteration: currentIteration,
+					stats: { ...cumulativeStats },
+					startedAt: startedAt.toISOString(),
+					updatedAt: new Date().toISOString(),
+					pid: process.pid,
+				});
+
+				updateWidget(ctx, config);
+
+				// Check stop conditions
+				if (stopRequested) break;
+				if (
+					config.maxIterations > 0 &&
+					currentIteration >= config.maxIterations
+				)
+					break;
+			}
+
+			// Final state
+			const finalStatus = stopRequested ? "stopped" : "completed";
+			writeState(dir, {
+				status: finalStatus,
+				config,
+				iteration: currentIteration,
+				stats: { ...cumulativeStats },
+				startedAt: startedAt.toISOString(),
+				updatedAt: new Date().toISOString(),
+				pid: process.pid,
 			});
+
+			// Summary
+			pi.sendMessage({
+				customType: "ralph_iteration",
+				content: `${finalStatus === "completed" ? "Completed" : "Stopped"} after ${cumulativeStats.iterations} iterations │ ${fmtDuration(cumulativeStats.durationMs)} │ ${fmtCost(cumulativeStats.cost)}`,
+				display: true,
+				details: {},
+			});
+
+			ctx.ui.notify(
+				`Loop "${parsed.name}" ${finalStatus} (${cumulativeStats.iterations} iterations, ${fmtCost(cumulativeStats.cost)})`,
+				"info",
+			);
+		} catch (err) {
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			writeState(dir, {
+				status: "error",
+				config,
+				iteration: currentIteration,
+				stats: { ...cumulativeStats },
+				startedAt: startedAt.toISOString(),
+				updatedAt: new Date().toISOString(),
+				error: errorMsg,
+				pid: process.pid,
+			});
+			ctx.ui.notify(`Loop "${parsed.name}" error: ${errorMsg}`, "error");
+		} finally {
+			loopActive = false;
+			setTimeout(() => clearWidget(ctx), 3000);
+		}
 	}
 
-	function handleStop(ctx: ExtensionCommandContext, argsStr: string) {
-		const name = argsStr.trim() || activeLoop?.name;
+	// ── Other Commands ──────────────────────────────────────────────
 
+	function handleStop(ctx: ExtensionCommandContext, argsStr: string) {
+		const name = argsStr.trim() || (loopActive ? loopName : "");
 		if (!name) {
 			ctx.ui.notify("No active loop. Usage: /ralph stop <name>", "error");
 			return;
 		}
-
-		if (!activeLoop || activeLoop.name !== name) {
+		if (!loopActive || loopName !== name) {
 			ctx.ui.notify(`No active loop named "${name}"`, "error");
 			return;
 		}
-
-		const status = activeLoop.engine.currentStatus;
-		if (status === "stopped" || status === "completed") {
-			ctx.ui.notify(`Loop "${name}" is already ${status}`, "info");
-			return;
-		}
-
-		activeLoop.engine.stop();
+		stopRequested = true;
 		ctx.ui.notify(
-			`Stopping loop "${name}" after current iteration completes...`,
+			`Stopping "${name}" after current iteration...`,
 			"info",
 		);
+	}
+
+	function handleKill(ctx: ExtensionCommandContext, argsStr: string) {
+		const name = argsStr.trim() || (loopActive ? loopName : "");
+		if (!name) {
+			ctx.ui.notify("No active loop. Usage: /ralph kill <name>", "error");
+			return;
+		}
+		if (!loopActive || loopName !== name) {
+			ctx.ui.notify(`No active loop named "${name}"`, "error");
+			return;
+		}
+		stopRequested = true;
+		ctx.abort();
+		ctx.ui.notify(`Killed "${name}"`, "info");
 	}
 
 	function handleStatus(
@@ -734,18 +619,24 @@ export default function (pi: ExtensionAPI) {
 		argsStr: string,
 	) {
 		const name = argsStr.trim();
+		if (!name) return handleList(pi, ctx);
 
-		if (!name) {
-			return handleList(pi, ctx);
-		}
-
-		// Check active loop first, then disk
 		let state: LoopState | null = null;
-		if (activeLoop && activeLoop.name === name) {
-			state = activeLoop.engine.getState();
+		if (loopActive && loopName === name) {
+			// Build live state
+			state = {
+				status: "running",
+				config: JSON.parse(
+					readFileSync(join(loopDirPath, "config.json"), "utf-8"),
+				),
+				iteration: currentIteration,
+				stats: { ...cumulativeStats },
+				startedAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				pid: process.pid,
+			};
 		} else {
-			const dir = loopDir(ctx.cwd, name);
-			state = readLoopState(dir);
+			state = readLoopState(loopDir(ctx.cwd, name));
 		}
 
 		if (!state) {
@@ -765,56 +656,48 @@ export default function (pi: ExtensionAPI) {
 			`| Tokens In | ${fmtTokens(state.stats.tokensIn)} |`,
 			`| Tokens Out | ${fmtTokens(state.stats.tokensOut)} |`,
 			`| Turns | ${state.stats.turns} |`,
-			`| Started | ${new Date(state.startedAt).toLocaleString()} |`,
-			`| Updated | ${new Date(state.updatedAt).toLocaleString()} |`,
 		];
+		if (state.error) lines.push(`| Error | ${state.error} |`);
 
-		if (state.config.model) {
-			lines.push(`| Model | ${state.config.model} |`);
-		}
-		if (state.error) {
-			lines.push(`| Error | ${state.error} |`);
-		}
-
-		pi.sendMessage({
-			customType: "ralph_assistant",
-			content: lines.join("\n"),
-			display: true,
-			details: {},
-		});
+		ctx.ui.notify(lines.join("\n"), "info");
 	}
 
 	function handleList(pi: ExtensionAPI, ctx: ExtensionCommandContext) {
 		const diskLoops = listLocalLoops(ctx.cwd);
-
-		// Merge active loop with disk loops
-		const loopEntries: Array<{
+		const entries: Array<{
 			name: string;
 			state: LoopState;
 			active: boolean;
 		}> = [];
 
-		// Add active loop first
-		if (activeLoop) {
-			loopEntries.push({
-				name: activeLoop.name,
-				state: activeLoop.engine.getState(),
+		if (loopActive) {
+			entries.push({
+				name: loopName,
+				state: {
+					status: "running",
+					config: JSON.parse(
+						readFileSync(
+							join(loopDirPath, "config.json"),
+							"utf-8",
+						),
+					),
+					iteration: currentIteration,
+					stats: { ...cumulativeStats },
+					startedAt: "",
+					updatedAt: "",
+					pid: process.pid,
+				},
 				active: true,
 			});
 		}
 
-		// Add disk loops (skip if already shown as active)
 		for (const dl of diskLoops) {
-			if (activeLoop && dl.name === activeLoop.name) continue;
+			if (loopActive && dl.name === loopName) continue;
 			if (!dl.state) continue;
-			loopEntries.push({
-				name: dl.name,
-				state: dl.state,
-				active: false,
-			});
+			entries.push({ name: dl.name, state: dl.state, active: false });
 		}
 
-		if (loopEntries.length === 0) {
+		if (entries.length === 0) {
 			ctx.ui.notify(
 				"No loops found. Use /ralph start <name> to create one.",
 				"info",
@@ -823,64 +706,31 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const lines = [
-			"**Ralph Loops**",
-			"",
 			"| Name | Status | Iteration | Duration | Cost |",
 			"|------|--------|-----------|----------|------|",
 		];
 
-		for (const entry of loopEntries) {
-			const s = entry.state;
+		for (const e of entries) {
+			const s = e.state;
 			const maxStr =
 				s.config.maxIterations > 0
 					? `/${s.config.maxIterations}`
 					: "";
-			const marker = entry.active ? " ●" : "";
-
+			const marker = e.active ? " ●" : "";
 			lines.push(
-				`| ${entry.name}${marker} | ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} |`,
+				`| ${e.name}${marker} | ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} |`,
 			);
 		}
 
-		pi.sendMessage({
-			customType: "ralph_assistant",
-			content: lines.join("\n"),
-			display: true,
-			details: {},
-		});
-	}
-
-	function handleKill(ctx: ExtensionCommandContext, argsStr: string) {
-		const name = argsStr.trim() || activeLoop?.name;
-
-		if (!name) {
-			ctx.ui.notify(
-				"No active loop. Usage: /ralph kill <name>",
-				"error",
-			);
-			return;
-		}
-
-		if (!activeLoop || activeLoop.name !== name) {
-			ctx.ui.notify(`No active loop named "${name}"`, "error");
-			return;
-		}
-
-		activeLoop.engine.kill();
-		ctx.ui.notify(`Killed loop "${name}"`, "info");
+		ctx.ui.notify(lines.join("\n"), "info");
 	}
 
 	async function handleClean(ctx: ExtensionCommandContext) {
 		const loops = listLocalLoops(ctx.cwd);
 		const cleanable = loops.filter((l) => {
+			if (loopActive && l.name === loopName) return false;
 			if (!l.state) return true;
-			// Don't clean the active loop
-			if (activeLoop && l.name === activeLoop.name) return false;
-			return (
-				l.state.status === "completed" ||
-				l.state.status === "stopped" ||
-				l.state.status === "error"
-			);
+			return ["completed", "stopped", "error"].includes(l.state.status);
 		});
 
 		if (cleanable.length === 0) {
@@ -889,11 +739,10 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const names = cleanable.map((l) => l.name).join(", ");
-
 		if (ctx.hasUI) {
 			const ok = await ctx.ui.confirm(
 				"Clean loops?",
-				`Remove ${cleanable.length} loop${cleanable.length > 1 ? "s" : ""}: ${names}`,
+				`Remove: ${names}`,
 			);
 			if (!ok) return;
 		}
@@ -903,14 +752,8 @@ export default function (pi: ExtensionAPI) {
 			try {
 				rmSync(loop.dir, { recursive: true, force: true });
 				cleaned++;
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
-
-		ctx.ui.notify(
-			`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
-			"info",
-		);
+		ctx.ui.notify(`Cleaned ${cleaned} loop(s): ${names}`, "info");
 	}
 }
