@@ -262,8 +262,7 @@ let activeLoop: {
 	ctx: ExtensionCommandContext;
 } | null = null;
 
-// Pending messages shown as sticky widget above editor
-let pendingNudgeText: string | null = null;
+// Pending follow-up shown as sticky widget above editor until consumed
 let pendingFollowupText: string | null = null;
 
 // Rendering state for the active loop's event stream
@@ -348,10 +347,6 @@ export default function (pi: ExtensionAPI) {
 			display: true,
 			details: {},
 		});
-
-		// Show as sticky widget until iteration ends
-		pendingNudgeText = text;
-		updateWidget(activeLoop.ctx);
 
 		activeLoop.engine.nudge(text);
 		return { action: "handled" as const };
@@ -463,18 +458,14 @@ export default function (pi: ExtensionAPI) {
 			statusLine = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
 		}
 
-		// Capture pending messages for the render closure
-		const nudge = pendingNudgeText;
+		// Capture pending follow-up for the render closure
 		const followup = pendingFollowupText;
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
 				const lines: string[] = [];
 
-				// Pending messages above status (matches pi's native styling)
-				if (nudge) {
-					lines.push(theme.fg("dim", ` Steering: ${nudge}`));
-				}
+				// Pending follow-up above status (matches pi's native styling)
 				if (followup) {
 					lines.push(theme.fg("dim", ` Follow-up: ${followup}`));
 				}
@@ -673,9 +664,7 @@ export default function (pi: ExtensionAPI) {
 				// in the stream now that it's being consumed
 				const consumedFollowup = pendingFollowupText;
 
-				// Clear pending messages — follow-up was consumed, nudge from
-				// previous iteration is no longer relevant
-				pendingNudgeText = null;
+				// Clear pending follow-up — it was consumed
 				pendingFollowupText = null;
 
 				pi.sendMessage({
@@ -720,7 +709,6 @@ export default function (pi: ExtensionAPI) {
 					status === "stopped" ||
 					status === "error"
 				) {
-					pendingNudgeText = null;
 					pendingFollowupText = null;
 				}
 				updateWidget(ctx);
@@ -749,7 +737,6 @@ export default function (pi: ExtensionAPI) {
 
 		// Track as active
 		activeLoop = { name: parsed.name, dir, engine, ctx };
-		pendingNudgeText = null;
 		pendingFollowupText = null;
 		resetRenderingState();
 
