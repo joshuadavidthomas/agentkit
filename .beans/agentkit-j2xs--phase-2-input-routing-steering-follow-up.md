@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-02-07T15:38:57Z
-updated_at: 2026-02-07T15:55:16Z
+updated_at: 2026-02-07T16:20:21Z
 parent: agentkit-y69o
 ---
 
@@ -15,24 +15,24 @@ Wire up input interception so typed messages route to the RPC loop process.
 
 Two distinct paths:
 
-**Enter (steer)** — interrupts RPC agent after current tool:
+**Enter (nudge)** — steer RPC agent mid-iteration (non-interrupting via continuation prompt):
 - `pi.on("input")` intercepts → returns `{ action: "handled" }`
-- Forwards text to RPC as `{ type: "steer", message }`
-- Shows "Steer: ..." border in TUI
+- Forwards text to RPC as `{ type: "steer", message: wrappedText }`
+- Wrapped with "address this, then continue your original task"
+- Agent finishes current tool, addresses nudge, resumes remaining work
 
-**Ctrl+Shift+Enter (follow-up)** — queued for next iteration:
-- `pi.registerShortcut("ctrl+shift+enter")` fires
+**Alt+N (queue for next iteration)**:
+- `pi.registerShortcut("alt+n")` fires
 - Reads editor via `ctx.ui.getEditorText()`, clears via `ctx.ui.setEditorText("")`
-- Queues via `engine.followUp(text)` — becomes next iteration prompt
-- Shows "Queued for next iteration: ..." border in TUI
+- Queues via `engine.queueForNextIteration(text)` — becomes next iteration prompt
 
 When no loop active, both fall through to normal pi behavior.
 
 ## Checklist
 
-- [x] Register `pi.on("input", ...)` — when loop active, return handled + forward as RPC steer
-- [x] Register `pi.registerShortcut("ctrl+shift+enter", ...)` — when loop active, read editor, clear, queue follow-up
+- [x] Register `pi.on("input", ...)` — when loop active, return handled + forward as RPC steer with continuation prompt
+- [x] Register shortcut for queue-for-next-iteration (alt+n)
 - [x] When no loop active: input returns continue, shortcut is no-op
-- [x] Visual feedback: ralph_steer and ralph_followup message renderers echo what was sent
-- [ ] Test: steer mid-iteration interrupts agent after current tool
-- [ ] Test: follow-up queues and becomes next iteration prompt
+- [x] Test: nudge mid-iteration — agent addresses message and continues task
+- [x] Test: queue for next iteration
+- [ ] Sticky pending message display — nudge/follow-up messages currently appear inline in chat scroll and disappear. Should be sticky above editor (like native pi's pending message display) until consumed. Replace inline sendMessage with widget-based display.

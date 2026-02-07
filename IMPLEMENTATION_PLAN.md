@@ -275,11 +275,17 @@ register), but the handler replicates native behavior when no loop is active:
   - When no loop active: `getEditorText()` → `setEditorText("")` →
     `pi.sendUserMessage(text, { deliverAs: "followUp" })` (replicates native behavior
     since registerShortcut always captures the keypress)
-- [ ] Show submitted message in TUI as visual confirmation
-  - `pi.sendMessage()` with a `ralph_steer` or `ralph_followup` renderer
-  - Echo what was sent so the user sees their message in the chat flow
-- [ ] Widget indication that input is being routed to the loop
-  - Visual cue so the user knows their editor submissions go to ralph
+- [ ] Sticky pending message display (not inline in chat scroll)
+  - Currently nudge/follow-up messages appear as inline borders in the
+    chat stream and scroll away. In native pi, queued steer/follow-up
+    messages stay sticky at the bottom (above the editor) until consumed.
+  - Use `ctx.ui.setWidget()` or a similar mechanism to show pending
+    messages in a persistent location, not via `pi.sendMessage()`.
+  - Nudge messages should show until the agent processes them.
+  - Follow-up (queued for next iteration) should show until the next
+    iteration starts.
+  - Remove the inline `ralph_nudge` / `ralph_followup` sendMessage calls
+    and replace with sticky widget updates.
 
 ### Phase 3: Reflection + Task File Management
 
