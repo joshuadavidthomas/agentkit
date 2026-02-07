@@ -210,16 +210,20 @@ export class LoopEngine {
 		this.writeState();
 	}
 
-	/** Send a steer command to interrupt the agent mid-iteration. */
-	steer(message: string): void {
+	/**
+	 * Send a message to the RPC agent within the current iteration.
+	 * Delivered as a follow-up: the agent finishes its current work,
+	 * then processes the message and continues. agent_end only fires
+	 * when the agent is truly done (including processing this message).
+	 */
+	nudge(message: string): void {
 		if (this.status === "running" && this.resolveAgentEnd) {
-			// Only steer if we're mid-iteration (waiting for agent_end)
-			this.rpcSend({ type: "steer", message });
+			this.rpcSend({ type: "follow_up", message });
 		}
 	}
 
 	/** Queue a message as the next iteration's prompt (instead of task.md). */
-	followUp(message: string): void {
+	queueForNextIteration(message: string): void {
 		this.pendingFollowup = message;
 	}
 

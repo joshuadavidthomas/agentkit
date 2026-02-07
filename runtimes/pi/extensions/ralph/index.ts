@@ -331,13 +331,13 @@ export default function (pi: ExtensionAPI) {
 
 		// Show what was sent
 		pi.sendMessage({
-			customType: "ralph_steer",
+			customType: "ralph_nudge",
 			content: text,
 			display: true,
 			details: {},
 		});
 
-		activeLoop.engine.steer(text);
+		activeLoop.engine.nudge(text);
 		return { action: "handled" as const };
 	});
 
@@ -360,14 +360,14 @@ export default function (pi: ExtensionAPI) {
 				details: {},
 			});
 
-			activeLoop.engine.followUp(text);
+			activeLoop.engine.queueForNextIteration(text);
 		},
 	});
 
 	// Renderers for steer/follow-up echo messages
-	pi.registerMessageRenderer("ralph_steer", (message, _options, theme) => {
+	pi.registerMessageRenderer("ralph_nudge", (message, _options, theme) => {
 		const color = (s: string) => theme.fg("accent", s);
-		return new LabeledBorder(`Steer: ${message.content}`, color);
+		return new LabeledBorder(`» ${message.content}`, color);
 	});
 
 	pi.registerMessageRenderer(
