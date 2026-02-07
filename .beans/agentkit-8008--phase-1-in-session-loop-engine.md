@@ -5,32 +5,44 @@ status: completed
 type: feature
 priority: high
 created_at: 2026-02-07T04:18:20Z
-updated_at: 2026-02-07T06:18:44Z
+updated_at: 2026-02-07T04:31:37Z
 parent: agentkit-y69o
 ---
 
-Implement the core loop engine running inside the extension process.
+Implement the core loop engine running inside the extension process. Merges loop-runner logic with direct TUI rendering.
 
-## Architecture (v3 — native pi agent loop)
+## Architecture
 
-No RPC process. The extension drives iterations using pi own APIs:
-- ctx.newSession() for fresh context per iteration
-- pi.sendUserMessage() triggers agent turns (native rendering)
-- ctx.waitForIdle() waits for completion
-- pi.on("turn_end") tracks telemetry
-
-All rendering is native pi — tool calls, assistant text, streaming, thinking.
-We just add iteration borders and telemetry.
+- LoopEngine class that spawns pi --mode rpc --no-session as a child process
+- Drives iteration loop directly (no detached process)
+- Events rendered live in TUI via pi.sendMessage() + registered renderers
+- State/events/iterations written to filesystem for observability
 
 ## Checklist
 
-- [x] Create LoopEngine class with RPC (v1 — superseded)
-- [x] Refactor to use pi native APIs (v3 — no RPC)
-  - newSession + sendUserMessage + waitForIdle iteration loop
-  - turn_end event for telemetry tracking
-  - Iteration header/footer as ralph_iteration custom messages
-  - Widget + status bar (event-driven)
-  - State/iterations written to filesystem
-  - /ralph start, stop, kill, status, list, clean commands
-- [x] Retire loop-engine.ts and loop-runner.ts (moved to .bak)
+- [x] Create LoopEngine class in loop-engine.ts
+  - Spawn RPC process, manage lifecycle
+  - Iteration loop: read task.md → prompt → await agent_end → new_session → repeat
+  - Methods: start(), stop(), steer(msg), followUp(msg), kill(), getState()
+  - Event callbacks (onEvent, onIterationStart, onIterationEnd, onStatusChange)
+  - Telemetry extraction from message_end events
+  - Per-iteration stats → iterations/NNN.json
+  - Cumulative stats → state.json (atomic write)
+  - Config written to config.json on start
+  - Events appended to events.jsonl
+  - Graceful stop between iterations
+  - RPC crash detection and error reporting
+- [x] Refactor index.ts to use LoopEngine
+  - /ralph start creates LoopEngine (not detached process)
+  - /ralph stop signals engine to stop
+  - /ralph kill force-kills the RPC process
+  - /ralph status reads from engine state or state.json on disk
+  - /ralph list merges active loop with disk loops
+  - /ralph clean removes completed/stopped loop dirs
+  - Event rendering via onEvent callback (reuses Phase 0 renderers)
+  - Widget: name, iteration/max, status, duration, cost (event-driven, not polling)
+  - Status bar: compact summary
+  - Command argument completion for loop names
+- [x] Simplify types.ts (remove registry, inbox, slug helpers)
+- [x] Retire standalone loop-runner.ts (moved to .bak)
 - [ ] Test: start a loop, watch it iterate, stop it, check state.json
