@@ -211,14 +211,19 @@ export class LoopEngine {
 	}
 
 	/**
-	 * Send a message to the RPC agent within the current iteration.
-	 * Delivered as a follow-up: the agent finishes its current work,
-	 * then processes the message and continues. agent_end only fires
-	 * when the agent is truly done (including processing this message).
+	 * Steer the RPC agent mid-iteration with a user message.
+	 * Delivered after the current tool finishes. The message is wrapped
+	 * with instructions to address the user's input and then continue
+	 * with the original task.
 	 */
 	nudge(message: string): void {
 		if (this.status === "running" && this.resolveAgentEnd) {
-			this.rpcSend({ type: "follow_up", message });
+			const wrapped = [
+				"The user has a message for you. Address it briefly, then continue with your original task where you left off.",
+				"",
+				`User: ${message}`,
+			].join("\n");
+			this.rpcSend({ type: "steer", message: wrapped });
 		}
 	}
 
