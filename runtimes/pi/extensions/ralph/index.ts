@@ -59,6 +59,26 @@ const stubTui = new TUI(stubTerminal);
 
 // ── TUI Helpers ────────────────────────────────────────────────────
 
+/**
+ * Strips exactly one leading empty line from a component's render output.
+ * Used to remove the internal Spacer(1) from ToolExecutionComponent and
+ * AssistantMessageComponent — the CustomMessageComponent wrapper already
+ * provides one, so the inner one creates double spacing.
+ */
+class StripLeadingSpacer implements Component {
+	constructor(private inner: Component) {}
+	invalidate() {
+		this.inner.invalidate();
+	}
+	render(width: number): string[] {
+		const lines = this.inner.render(width);
+		if (lines.length > 0 && lines[0].trim() === "") {
+			return lines.slice(1);
+		}
+		return lines;
+	}
+}
+
 class LabeledBorder implements Component {
 	constructor(
 		private label: string,
@@ -291,11 +311,13 @@ export default function (pi: ExtensionAPI) {
 			);
 		}
 
-		return comp;
+		return new StripLeadingSpacer(comp);
 	});
 
 	pi.registerMessageRenderer("ralph_assistant", (message) => {
-		return renderAsAssistantMessage(String(message.content));
+		return new StripLeadingSpacer(
+			renderAsAssistantMessage(String(message.content)),
+		);
 	});
 
 	// ── Event Rendering ─────────────────────────────────────────────
