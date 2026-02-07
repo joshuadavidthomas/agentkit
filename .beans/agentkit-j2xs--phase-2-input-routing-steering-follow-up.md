@@ -1,11 +1,11 @@
 ---
 # agentkit-j2xs
 title: 'Phase 2: Input Routing (Steering + Follow-up)'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-02-07T15:38:57Z
-updated_at: 2026-02-07T16:20:21Z
+updated_at: 2026-02-07T16:28:54Z
 parent: agentkit-y69o
 ---
 
@@ -35,4 +35,4 @@ When no loop active, both fall through to normal pi behavior.
 - [x] When no loop active: input returns continue, shortcut is no-op
 - [x] Test: nudge mid-iteration — agent addresses message and continues task
 - [x] Test: queue for next iteration
-- [ ] Sticky pending message display — nudge/follow-up messages currently appear inline in chat scroll and disappear. Should be sticky above editor (like native pi's pending message display) until consumed. Replace inline sendMessage with widget-based display.
+- [x] Sticky pending message display — nudge/follow-up messages now shown as sticky lines in the ralph widget above the editor. Nudge (`» msg`) visible until iteration ends; follow-up (`⏳ Next: msg`) visible until next iteration consumes it. Removed inline `ralph_nudge` / `ralph_followup` sendMessage calls.

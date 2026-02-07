@@ -17,8 +17,8 @@ See IMPLEMENTATION_PLAN.md for the full architecture and phased plan.
 ## Checklist
 
 - [x] Phase 0: Tracer Bullet (proved RPC loop, event rendering, telemetry)
-- [ ] Phase 1: In-Session Loop Engine (core loop, TUI rendering, widget, telemetry, commands)
-- [ ] Phase 2: Input Routing (steering mid-iteration, follow-up between iterations)
+- [x] Phase 1: In-Session Loop Engine (core loop, TUI rendering, widget, telemetry, commands)
+- [x] Phase 2: Input Routing (steering mid-iteration, follow-up between iterations)
 - [ ] Phase 3: Reflection + Task File Management (working memory, reflection scheduling, completion detection)
 - [ ] Phase 4: SKILL.md + Agent Self-Start (ralph_start tool)
 - [ ] Phase 5: Polish + Edge Cases (error recovery, log rotation, config)

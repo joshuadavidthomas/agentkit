@@ -258,7 +258,12 @@ let activeLoop: {
 	name: string;
 	dir: string;
 	engine: LoopEngine;
+	ctx: ExtensionCommandContext;
 } | null = null;
+
+// Pending messages shown as sticky widget above editor
+let pendingNudgeText: string | null = null;
+let pendingFollowupText: string | null = null;
 
 // Rendering state for the active loop's event stream
 let currentAssistantText = "";
@@ -329,19 +334,15 @@ export default function (pi: ExtensionAPI) {
 		const text = event.text.trim();
 		if (!text) return { action: "handled" as const };
 
-		// Show what was sent
-		pi.sendMessage({
-			customType: "ralph_nudge",
-			content: text,
-			display: true,
-			details: {},
-		});
+		// Show as sticky widget until iteration ends
+		pendingNudgeText = text;
+		updateWidget(activeLoop.ctx);
 
 		activeLoop.engine.nudge(text);
 		return { action: "handled" as const };
 	});
 
-	// Ctrl+Shift+Enter → queue for next iteration
+	// Alt+N → queue for next iteration
 	pi.registerShortcut("alt+n", {
 		description: "Ralph: queue message for next iteration",
 		handler: (ctx) => {
@@ -352,34 +353,13 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.setEditorText("");
 
-			// Show what was queued
-			pi.sendMessage({
-				customType: "ralph_followup",
-				content: text,
-				display: true,
-				details: {},
-			});
+			// Show as sticky widget until next iteration consumes it
+			pendingFollowupText = text;
+			updateWidget(activeLoop.ctx);
 
 			activeLoop.engine.queueForNextIteration(text);
 		},
 	});
-
-	// Renderers for steer/follow-up echo messages
-	pi.registerMessageRenderer("ralph_nudge", (message, _options, theme) => {
-		const color = (s: string) => theme.fg("accent", s);
-		return new LabeledBorder(`» ${message.content}`, color);
-	});
-
-	pi.registerMessageRenderer(
-		"ralph_followup",
-		(message, _options, theme) => {
-			const color = (s: string) => theme.fg("accent", s);
-			return new LabeledBorder(
-				`Queued for next iteration: ${message.content}`,
-				color,
-			);
-		},
-	);
 
 	// ── Event Rendering ─────────────────────────────────────────────
 
@@ -452,10 +432,10 @@ export default function (pi: ExtensionAPI) {
 				? `/${state.config.maxIterations}`
 				: "";
 
-		// Widget (above editor)
-		let line: string;
+		// Status line
+		let statusLine: string;
 		if (state.status === "starting" || state.iteration === 0) {
-			line = `ralph: ${name} │ starting`;
+			statusLine = `ralph: ${name} │ starting`;
 		} else {
 			const cost =
 				state.stats.cost > 0
@@ -465,12 +445,25 @@ export default function (pi: ExtensionAPI) {
 				state.stats.durationMs > 0
 					? ` │ ${fmtDuration(state.stats.durationMs)}`
 					: "";
-			line = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
+			statusLine = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
 		}
+
+		// Capture pending messages for the render closure
+		const nudge = pendingNudgeText;
+		const followup = pendingFollowupText;
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
-				return [theme.fg("accent", line)];
+				const lines = [theme.fg("accent", statusLine)];
+				if (nudge) {
+					lines.push(theme.fg("accent", `» ${nudge}`));
+				}
+				if (followup) {
+					lines.push(
+						theme.fg("accent", `⏳ Next: ${followup}`),
+					);
+				}
+				return lines;
 			},
 			invalidate() {},
 		}));
@@ -657,6 +650,10 @@ export default function (pi: ExtensionAPI) {
 
 			onIterationStart: (iteration) => {
 				resetRenderingState();
+				// Clear pending messages — follow-up was consumed, nudge from
+				// previous iteration is no longer relevant
+				pendingNudgeText = null;
+				pendingFollowupText = null;
 				pi.sendMessage({
 					customType: "ralph_iteration",
 					content: `Iteration ${iteration}`,
@@ -683,6 +680,15 @@ export default function (pi: ExtensionAPI) {
 			},
 
 			onStatusChange: (status, error) => {
+				// Clear pending messages on terminal states
+				if (
+					status === "completed" ||
+					status === "stopped" ||
+					status === "error"
+				) {
+					pendingNudgeText = null;
+					pendingFollowupText = null;
+				}
 				updateWidget(ctx);
 				if (status === "completed") {
 					const state = engine.getState();
@@ -708,7 +714,9 @@ export default function (pi: ExtensionAPI) {
 		});
 
 		// Track as active
-		activeLoop = { name: parsed.name, dir, engine };
+		activeLoop = { name: parsed.name, dir, engine, ctx };
+		pendingNudgeText = null;
+		pendingFollowupText = null;
 		resetRenderingState();
 
 		// Show confirmation

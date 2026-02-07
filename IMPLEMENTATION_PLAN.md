@@ -254,38 +254,28 @@ Two distinct paths, matching pi's native steer vs follow-up semantics:
 - Forwards text to RPC process as `{ type: "steer", message: text }`
 - The RPC agent receives it after current tool execution, skips remaining tools
 
-**Alt+Enter → follow-up** (queue for next iteration):
-- `pi.registerShortcut("alt+enter", ...)` fires before pi's built-in handler
+**Alt+N → follow-up** (queue for next iteration):
+- `pi.registerShortcut("alt+n", ...)` fires
 - Reads editor text via `ctx.ui.getEditorText()`
 - Clears editor via `ctx.ui.setEditorText("")`
 - Queues text via `activeLoop.engine.followUp(text)` — used as next iteration's
   prompt instead of task.md
-- Pi's built-in `handleFollowUp()` never runs (shortcut consumed the keypress)
 
 **When no loop is active** — the input handler returns `{ action: "continue" }`
-(normal pi behavior). The alt+enter shortcut always fires (can't conditionally
-register), but the handler replicates native behavior when no loop is active:
-`getEditorText()` → `setEditorText("")` → `pi.sendUserMessage(text, { deliverAs: "followUp" })`.
+(normal pi behavior). The alt+n shortcut is a no-op when no loop is active.
 
-- [ ] Register `pi.on("input", ...)` handler
+- [x] Register `pi.on("input", ...)` handler
   - When loop active: return `{ action: "handled" }`, forward to RPC as steer
   - When no loop active: return `{ action: "continue" }` for normal behavior
-- [ ] Register `pi.registerShortcut("alt+enter", ...)` handler
+- [x] Register `pi.registerShortcut("alt+n", ...)` handler
   - When loop active: `getEditorText()` → `setEditorText("")` → queue follow-up
-  - When no loop active: `getEditorText()` → `setEditorText("")` →
-    `pi.sendUserMessage(text, { deliverAs: "followUp" })` (replicates native behavior
-    since registerShortcut always captures the keypress)
-- [ ] Sticky pending message display (not inline in chat scroll)
-  - Currently nudge/follow-up messages appear as inline borders in the
-    chat stream and scroll away. In native pi, queued steer/follow-up
-    messages stay sticky at the bottom (above the editor) until consumed.
-  - Use `ctx.ui.setWidget()` or a similar mechanism to show pending
-    messages in a persistent location, not via `pi.sendMessage()`.
-  - Nudge messages should show until the agent processes them.
-  - Follow-up (queued for next iteration) should show until the next
-    iteration starts.
-  - Remove the inline `ralph_nudge` / `ralph_followup` sendMessage calls
-    and replace with sticky widget updates.
+  - When no loop active: no-op
+- [x] Sticky pending message display (not inline in chat scroll)
+  - Nudge/follow-up messages shown as sticky lines in the ralph widget
+    above the editor, not as inline `pi.sendMessage()` chat borders.
+  - Nudge (`» message`) shown until iteration ends or new iteration starts.
+  - Follow-up (`⏳ Next: message`) shown until next iteration consumes it.
+  - Cleared on terminal states (completed, stopped, error).
 
 ### Phase 3: Reflection + Task File Management
 
