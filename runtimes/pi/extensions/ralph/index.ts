@@ -1,50 +1,36 @@
 /**
- * Ralph Loop Extension — Phase 2: Extension Shell
+ * Ralph Loop Extension
  *
- * Provides commands for loop lifecycle management:
- *   /ralph start, stop, status, list, kill, clean, demo
+ * Provides an in-session iterative agent loop with fresh context per iteration.
+ * Spawns `pi --mode rpc --no-session` as a child process and drives iterations
+ * directly, rendering events live in the TUI.
  *
- * Spawns loop runners as detached processes, communicates via filesystem.
+ * Commands: /ralph start, stop, status, list, kill, clean
  */
 
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
-	ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import {
 	AssistantMessageComponent,
 	getMarkdownTheme,
 	ToolExecutionComponent,
 } from "@mariozechner/pi-coding-agent";
-import { Container, Loader, Spacer, TUI } from "@mariozechner/pi-tui";
+import { TUI } from "@mariozechner/pi-tui";
 import type { Component, Terminal } from "@mariozechner/pi-tui";
-import { spawn } from "node:child_process";
 import {
-	createWriteStream,
 	existsSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
-	renameSync,
 	rmSync,
-	statSync,
-	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
-import type { LoopConfig, LoopState, RegistryEntry } from "./types.ts";
-import { loopDir, registryDir, registryFilename } from "./types.ts";
-
-// ── Resolve paths ──────────────────────────────────────────────────
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const LOOP_RUNNER_PATH = join(__dirname, "loop-runner.ts");
-
-
+import { join, resolve } from "node:path";
+import { LoopEngine } from "./loop-engine.ts";
+import type { IterationStats, LoopConfig, LoopState } from "./types.ts";
+import { loopDir } from "./types.ts";
 
 // ── Stub TUI for ToolExecutionComponent ────────────────────────────
 
@@ -71,7 +57,7 @@ const stubTerminal: Terminal = {
 };
 const stubTui = new TUI(stubTerminal);
 
-// ── Helpers ────────────────────────────────────────────────────────
+// ── TUI Helpers ────────────────────────────────────────────────────
 
 class LabeledBorder implements Component {
 	constructor(
@@ -111,14 +97,7 @@ function renderAsAssistantMessage(text: string): AssistantMessageComponent {
 	);
 }
 
-function isPidAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
-}
+// ── Formatting ─────────────────────────────────────────────────────
 
 function fmtDuration(ms: number): string {
 	const secs = Math.round(ms / 1000);
@@ -141,6 +120,16 @@ function fmtTokens(n: number): string {
 	return String(n);
 }
 
+function fmtIterStats(stats: IterationStats): string {
+	const duration =
+		stats.durationMs >= 60_000
+			? `${Math.floor(stats.durationMs / 60_000)}m${Math.round((stats.durationMs % 60_000) / 1000)}s`
+			: `${Math.round(stats.durationMs / 1000)}s`;
+	return `${duration} │ ${stats.turns} turns │ ${fmtTokens(stats.tokensIn)} in ${fmtTokens(stats.tokensOut)} out │ ${fmtCost(stats.cost)}`;
+}
+
+// ── State Helpers ──────────────────────────────────────────────────
+
 /** Read state.json from a ralph loop directory, or null if missing/invalid */
 function readLoopState(dir: string): LoopState | null {
 	const statePath = join(dir, "state.json");
@@ -151,26 +140,22 @@ function readLoopState(dir: string): LoopState | null {
 	}
 }
 
-/** Read a registry entry, or null if missing/invalid */
-function readRegistryEntry(path: string): RegistryEntry | null {
-	try {
-		return JSON.parse(readFileSync(path, "utf-8")) as RegistryEntry;
-	} catch {
-		return null;
-	}
-}
-
 /** List all local .ralph/<name>/ loop directories in the given project cwd */
-function listLocalLoops(cwd: string): Array<{ name: string; dir: string; state: LoopState | null }> {
+function listLocalLoops(
+	cwd: string,
+): Array<{ name: string; dir: string; state: LoopState | null }> {
 	const ralphRoot = join(cwd, ".ralph");
 	if (!existsSync(ralphRoot)) return [];
 
-	const results: Array<{ name: string; dir: string; state: LoopState | null }> = [];
+	const results: Array<{
+		name: string;
+		dir: string;
+		state: LoopState | null;
+	}> = [];
 	try {
 		for (const entry of readdirSync(ralphRoot, { withFileTypes: true })) {
 			if (!entry.isDirectory()) continue;
 			const dir = join(ralphRoot, entry.name);
-			// Must have state.json or config.json to be a loop dir
 			if (!existsSync(join(dir, "config.json"))) continue;
 			results.push({
 				name: entry.name,
@@ -182,52 +167,6 @@ function listLocalLoops(cwd: string): Array<{ name: string; dir: string; state: 
 		// ignore
 	}
 	return results;
-}
-
-/** List all registry entries (global, all projects) */
-function listRegistryEntries(): Array<{ file: string; entry: RegistryEntry }> {
-	const regDir = registryDir();
-	if (!existsSync(regDir)) return [];
-
-	const results: Array<{ file: string; entry: RegistryEntry }> = [];
-	try {
-		for (const file of readdirSync(regDir)) {
-			if (!file.endsWith(".json")) continue;
-			const entry = readRegistryEntry(join(regDir, file));
-			if (entry) results.push({ file, entry });
-		}
-	} catch {
-		// ignore
-	}
-	return results;
-}
-
-/** Clean stale registry entries (PID dead). Returns count of cleaned entries. */
-function pruneStaleRegistryEntries(): number {
-	const regDir = registryDir();
-	if (!existsSync(regDir)) return 0;
-
-	let pruned = 0;
-	try {
-		for (const file of readdirSync(regDir)) {
-			if (!file.endsWith(".json")) continue;
-			const filePath = join(regDir, file);
-			const entry = readRegistryEntry(filePath);
-			if (!entry) continue;
-
-			if (!isPidAlive(entry.pid)) {
-				try {
-					unlinkSync(filePath);
-					pruned++;
-				} catch {
-					// ignore
-				}
-			}
-		}
-	} catch {
-		// ignore
-	}
-	return pruned;
 }
 
 // ── Argument Parsing ───────────────────────────────────────────────
@@ -252,7 +191,6 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		maxIterations: 50,
 	};
 
-	// Validate name
 	if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(result.name)) {
 		return `Invalid loop name "${result.name}". Use alphanumeric characters, dots, hyphens, and underscores.`;
 	}
@@ -261,14 +199,20 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 	while (i < tokens.length) {
 		const token = tokens[i];
 
-		if ((token === "--max-iterations" || token === "-n") && i + 1 < tokens.length) {
+		if (
+			(token === "--max-iterations" || token === "-n") &&
+			i + 1 < tokens.length
+		) {
 			const val = parseInt(tokens[i + 1], 10);
 			if (isNaN(val) || val < 0) {
 				return `Invalid max-iterations: "${tokens[i + 1]}". Must be a non-negative integer (0 = unlimited).`;
 			}
 			result.maxIterations = val;
 			i += 2;
-		} else if ((token === "--model" || token === "-m") && i + 1 < tokens.length) {
+		} else if (
+			(token === "--model" || token === "-m") &&
+			i + 1 < tokens.length
+		) {
 			result.model = tokens[i + 1];
 			i += 2;
 		} else if (token === "--provider" && i + 1 < tokens.length) {
@@ -288,19 +232,38 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 	return result;
 }
 
-// ── Status Line Formatting ─────────────────────────────────────────
+// ── Active Loop State ──────────────────────────────────────────────
 
+let activeLoop: {
+	name: string;
+	dir: string;
+	engine: LoopEngine;
+} | null = null;
 
+// Rendering state for the active loop's event stream
+let currentAssistantText = "";
+const pendingToolArgs = new Map<
+	string,
+	{ toolName: string; args: Record<string, unknown> }
+>();
+
+function resetRenderingState(): void {
+	currentAssistantText = "";
+	pendingToolArgs.clear();
+}
 
 // ── Extension Entry Point ──────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-	// ── Message Renderers (from Phase 0) ────────────────────────────
+	// ── Message Renderers ───────────────────────────────────────────
 
-	pi.registerMessageRenderer("ralph_iteration", (message, _options, theme) => {
-		const color = (s: string) => theme.fg("borderMuted", s);
-		return new LabeledBorder(String(message.content), color);
-	});
+	pi.registerMessageRenderer(
+		"ralph_iteration",
+		(message, _options, theme) => {
+			const color = (s: string) => theme.fg("borderMuted", s);
+			return new LabeledBorder(String(message.content), color);
+		},
+	);
 
 	pi.registerMessageRenderer("ralph_tool", (message) => {
 		const { toolName, args, result, isError, cwd } = message.details as {
@@ -322,7 +285,10 @@ export default function (pi: ExtensionAPI) {
 		comp.setArgsComplete();
 
 		if (result) {
-			comp.updateResult({ ...result, isError: isError ?? false }, false);
+			comp.updateResult(
+				{ ...result, isError: isError ?? false },
+				false,
+			);
 		}
 
 		return comp;
@@ -332,689 +298,23 @@ export default function (pi: ExtensionAPI) {
 		return renderAsAssistantMessage(String(message.content));
 	});
 
-	pi.registerMessageRenderer("ralph_status", (message, _options, theme) => {
-		const color = (s: string) => theme.fg("borderMuted", s);
-		return new LabeledBorder(String(message.content), color);
-	});
-
-	// ── Command Registration ────────────────────────────────────────
-
-	pi.registerCommand("ralph", {
-		description:
-			"Ralph loop extension. Subcommands: start, stop, status, list, kill, clean, demo",
-		getArgumentCompletions: (prefix) => {
-			const subcommands = [
-				"start",
-				"stop",
-				"status",
-				"list",
-				"kill",
-				"clean",
-				"demo",
-			];
-			// If prefix has a space, we're past the subcommand
-			if (prefix.includes(" ")) return null;
-			return subcommands
-				.filter((s) => s.startsWith(prefix))
-				.map((s) => ({ value: s, label: s }));
+	pi.registerMessageRenderer(
+		"ralph_status",
+		(message, _options, theme) => {
+			const color = (s: string) => theme.fg("borderMuted", s);
+			return new LabeledBorder(String(message.content), color);
 		},
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/);
-			const subcommand = parts[0] || "";
-			const subArgs = parts.slice(1).join(" ");
-
-			switch (subcommand) {
-				case "start":
-					return handleStart(pi, ctx, subArgs);
-				case "stop":
-					return handleStop(pi, ctx, subArgs);
-				case "status":
-					return handleStatus(pi, ctx, subArgs);
-				case "list":
-					return handleList(pi, ctx, subArgs);
-				case "kill":
-					return handleKill(pi, ctx, subArgs);
-				case "clean":
-					return handleClean(pi, ctx, subArgs);
-				case "demo":
-					return runDemo(pi, ctx);
-				default:
-					ctx.ui.notify(
-						"Usage: /ralph <start|stop|status|list|kill|clean|demo> [args]",
-						"info",
-					);
-			}
-		},
-	});
-
-	// ── Health Check on Session Start ───────────────────────────────
-
-	pi.on("session_start", async (_event, ctx) => {
-		// Prune dead registry entries
-		const pruned = pruneStaleRegistryEntries();
-
-		// Notify about running loops in the current project
-		const localLoops = listLocalLoops(ctx.cwd);
-		const runningLoops = localLoops.filter((l) => {
-			if (!l.state) return false;
-			if (l.state.status !== "running" && l.state.status !== "starting") return false;
-			return isPidAlive(l.state.pid);
-		});
-
-		if (runningLoops.length > 0) {
-			const names = runningLoops.map((l) => l.name).join(", ");
-			ctx.ui.notify(
-				`ralph: ${runningLoops.length} loop${runningLoops.length > 1 ? "s" : ""} running: ${names}`,
-				"info",
-			);
-		}
-
-		// Check for orphaned loops (state says running but PID is dead)
-		const orphanedLoops = localLoops.filter((l) => {
-			if (!l.state) return false;
-			if (l.state.status !== "running" && l.state.status !== "starting") return false;
-			return !isPidAlive(l.state.pid);
-		});
-
-		if (orphanedLoops.length > 0) {
-			const names = orphanedLoops.map((l) => l.name).join(", ");
-			ctx.ui.notify(
-				`ralph: ${orphanedLoops.length} orphaned loop${orphanedLoops.length > 1 ? "s" : ""} (crashed): ${names}`,
-				"warning",
-			);
-		}
-	});
-}
-
-// ── Command Handlers ───────────────────────────────────────────────
-
-async function handleStart(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	argsStr: string,
-) {
-	const parsed = parseStartArgs(argsStr);
-	if (typeof parsed === "string") {
-		ctx.ui.notify(parsed, "error");
-		return;
-	}
-
-	const cwd = ctx.cwd;
-	const dir = loopDir(cwd, parsed.name);
-
-	// Check if loop already exists and is running
-	const existingState = readLoopState(dir);
-	if (existingState && existingState.status === "running" && isPidAlive(existingState.pid)) {
-		ctx.ui.notify(
-			`Loop "${parsed.name}" is already running (PID ${existingState.pid}, iteration ${existingState.iteration})`,
-			"warning",
-		);
-		return;
-	}
-
-	// Create directory structure
-	mkdirSync(join(dir, "inbox"), { recursive: true });
-	mkdirSync(join(dir, "iterations"), { recursive: true });
-
-	// Handle task file
-	const taskFilePath = join(dir, "task.md");
-	if (parsed.taskFile) {
-		// Copy from provided path
-		const sourcePath = resolve(cwd, parsed.taskFile);
-		if (!existsSync(sourcePath)) {
-			ctx.ui.notify(`Task file not found: ${sourcePath}`, "error");
-			return;
-		}
-		const content = readFileSync(sourcePath, "utf-8");
-		writeFileSync(taskFilePath, content);
-	} else if (!existsSync(taskFilePath)) {
-		// Open editor for user to write the task
-		if (!ctx.hasUI) {
-			ctx.ui.notify("No UI available. Use --task to specify a task file.", "error");
-			return;
-		}
-
-		const taskContent = await ctx.ui.editor("Write the task for this loop:", "");
-		if (!taskContent || !taskContent.trim()) {
-			ctx.ui.notify("No task provided. Loop not started.", "warning");
-			// Clean up created directories
-			try {
-				rmSync(dir, { recursive: true, force: true });
-			} catch {
-				// ignore
-			}
-			return;
-		}
-		writeFileSync(taskFilePath, taskContent);
-	}
-	// else: task file already exists from a previous run — reuse it
-
-	// Write config.json
-	const config: LoopConfig = {
-		name: parsed.name,
-		cwd,
-		taskFile: "task.md",
-		maxIterations: parsed.maxIterations,
-		model: parsed.model,
-		provider: parsed.provider,
-		thinking: parsed.thinking,
-		reflectEvery: 0,
-	};
-	writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, 2) + "\n");
-
-	// Clear old events, state, and iteration data for fresh start
-	try { writeFileSync(join(dir, "events.jsonl"), ""); } catch {}
-	try { unlinkSync(join(dir, "state.json")); } catch {}
-	try { unlinkSync(join(dir, "pid")); } catch {}
-	try {
-		for (const f of readdirSync(join(dir, "iterations"))) {
-			unlinkSync(join(dir, "iterations", f));
-		}
-	} catch {}
-	try {
-		for (const f of readdirSync(join(dir, "inbox"))) {
-			unlinkSync(join(dir, "inbox", f));
-		}
-	} catch {}
-
-	// Spawn loop runner as detached process (bun runs TypeScript natively)
-	const child = spawn("bun", ["run", LOOP_RUNNER_PATH, dir], {
-		cwd,
-		detached: true,
-		stdio: "ignore",
-	});
-
-	child.unref();
-
-	const pid = child.pid;
-	if (!pid) {
-		ctx.ui.notify("Failed to spawn loop runner process", "error");
-		return;
-	}
-
-	// Show confirmation
-	const maxStr = parsed.maxIterations === 0 ? "unlimited" : String(parsed.maxIterations);
-	const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
-
-	ctx.ui.notify(
-		`Loop "${parsed.name}" started (PID ${pid}, max: ${maxStr} iterations${modelStr})`,
-		"info",
 	);
 
-	// Live widget tracking loop progress
-	startLoopWidget(ctx, parsed.name, dir);
-}
-
-let widgetInterval: ReturnType<typeof setInterval> | null = null;
-
-function startLoopWidget(ctx: ExtensionCommandContext, name: string, dir: string) {
-	// Clear any existing widget polling
-	if (widgetInterval) {
-		clearInterval(widgetInterval);
-		widgetInterval = null;
-	}
-
-	let lastLine = "";
-
-	function updateWidget() {
-		const state = readLoopState(dir);
-		let line: string;
-		if (!state || state.status === "starting" || state.iteration === 0) {
-			line = `ralph: ${name} | starting`;
-		} else {
-			const maxStr = state.config.maxIterations > 0 ? `/${state.config.maxIterations}` : "";
-			const cost = state.stats.cost > 0 ? ` | ${fmtCost(state.stats.cost)}` : "";
-			const duration = state.stats.durationMs > 0 ? ` | ${fmtDuration(state.stats.durationMs)}` : "";
-			line = `ralph: ${name} | ${state.status} | iter ${state.iteration}${maxStr}${duration}${cost}`;
-		}
-
-		// Only re-render if changed
-		if (line !== lastLine) {
-			lastLine = line;
-			ctx.ui.setWidget("ralph", (_tui, theme) => ({
-				render(width: number): string[] {
-					return [theme.fg("accent", line)];
-				},
-				invalidate() {},
-			}));
-		}
-
-		// Stop polling if loop is done
-		if (state && (state.status === "completed" || state.status === "stopped" || state.status === "error")) {
-			if (widgetInterval) {
-				clearInterval(widgetInterval);
-				widgetInterval = null;
-			}
-			// Clear widget after a few seconds
-			setTimeout(() => {
-				ctx.ui.setWidget("ralph", undefined);
-			}, 5000);
-		}
-	}
-
-	updateWidget();
-	widgetInterval = setInterval(updateWidget, 1000);
-}
-
-async function handleStop(
-	_pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	argsStr: string,
-) {
-	const name = argsStr.trim();
-
-	if (!name) {
-		ctx.ui.notify(
-			"Usage: /ralph stop <name>",
-			"error",
-		);
-		return;
-	}
-
-	const dir = loopDir(ctx.cwd, name);
-	const state = readLoopState(dir);
-
-	if (!state) {
-		ctx.ui.notify(`No loop found: "${name}"`, "error");
-		return;
-	}
-
-	if (state.status === "stopped" || state.status === "completed") {
-		ctx.ui.notify(`Loop "${name}" is already ${state.status}`, "info");
-		return;
-	}
-
-	if (!isPidAlive(state.pid)) {
-		ctx.ui.notify(
-			`Loop "${name}" process is not running (PID ${state.pid} is dead). State: ${state.status}`,
-			"warning",
-		);
-		return;
-	}
-
-	// Write stop command to inbox
-	const inboxDir = join(dir, "inbox");
-	mkdirSync(inboxDir, { recursive: true });
-	writeFileSync(
-		join(inboxDir, "stop.json"),
-		JSON.stringify({ type: "stop" }) + "\n",
-	);
-
-	ctx.ui.notify(
-		`Stopping loop "${name}" after current iteration completes...`,
-		"info",
-	);
-}
-
-async function handleStatus(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	argsStr: string,
-) {
-	const name = argsStr.trim();
-
-	if (!name) {
-		// Show summary of all local loops
-		return handleList(pi, ctx, "");
-	}
-
-	const dir = loopDir(ctx.cwd, name);
-	const state = readLoopState(dir);
-
-	if (!state) {
-		ctx.ui.notify(`No loop found: "${name}"`, "error");
-		return;
-	}
-
-	const alive = isPidAlive(state.pid);
-	const aliveStr = alive ? "alive" : "dead";
-
-	const lines = [
-		`**Loop: ${name}**`,
-		"",
-		`| Field | Value |`,
-		`|-------|-------|`,
-		`| Status | ${state.status} |`,
-		`| PID | ${state.pid} (${aliveStr}) |`,
-		`| Iteration | ${state.iteration}${state.config.maxIterations > 0 ? ` / ${state.config.maxIterations}` : ""} |`,
-		`| Duration | ${fmtDuration(state.stats.durationMs)} |`,
-		`| Cost | ${fmtCost(state.stats.cost)} |`,
-		`| Tokens In | ${fmtTokens(state.stats.tokensIn)} |`,
-		`| Tokens Out | ${fmtTokens(state.stats.tokensOut)} |`,
-		`| Turns | ${state.stats.turns} |`,
-		`| Started | ${new Date(state.startedAt).toLocaleString()} |`,
-		`| Updated | ${new Date(state.updatedAt).toLocaleString()} |`,
-	];
-
-	if (state.config.model) {
-		lines.push(`| Model | ${state.config.model} |`);
-	}
-	if (state.config.provider) {
-		lines.push(`| Provider | ${state.config.provider} |`);
-	}
-	if (state.error) {
-		lines.push(`| Error | ${state.error} |`);
-	}
-
-	pi.sendMessage({
-		customType: "ralph_assistant",
-		content: lines.join("\n"),
-		display: true,
-		details: {},
-	});
-}
-
-async function handleList(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	argsStr: string,
-) {
-	const showAll = argsStr.trim() === "--all";
-
-	if (showAll) {
-		// Show all loops across all projects via registry
-		const entries = listRegistryEntries();
-		if (entries.length === 0) {
-			ctx.ui.notify("No active loops found in registry", "info");
-			return;
-		}
-
-		const lines = [
-			"**All Ralph Loops (Registry)**",
-			"",
-			"| Name | Project | Status | Iteration | PID |",
-			"|------|---------|--------|-----------|-----|",
-		];
-
-		for (const { entry } of entries) {
-			const alive = isPidAlive(entry.pid);
-			const pidStr = alive ? String(entry.pid) : `~~${entry.pid}~~`;
-			const maxStr = entry.maxIterations > 0 ? `/${entry.maxIterations}` : "";
-			lines.push(
-				`| ${entry.name} | ${entry.cwd} | ${entry.status} | ${entry.iteration}${maxStr} | ${pidStr} |`,
-			);
-		}
-
-		pi.sendMessage({
-			customType: "ralph_assistant",
-			content: lines.join("\n"),
-			display: true,
-			details: {},
-		});
-		return;
-	}
-
-	// Local loops only
-	const loops = listLocalLoops(ctx.cwd);
-	if (loops.length === 0) {
-		ctx.ui.notify("No loops found in this project. Use /ralph start <name> to create one.", "info");
-		return;
-	}
-
-	const lines = [
-		"**Ralph Loops**",
-		"",
-		"| Name | Status | Iteration | Duration | Cost | PID |",
-		"|------|--------|-----------|----------|------|-----|",
-	];
-
-	for (const loop of loops) {
-		if (!loop.state) {
-			lines.push(
-				`| ${loop.name} | unknown | - | - | - | - |`,
-			);
-			continue;
-		}
-
-		const s = loop.state;
-		const alive = isPidAlive(s.pid);
-		const pidStr = alive ? String(s.pid) : `~~${s.pid}~~`;
-		const maxStr = s.config.maxIterations > 0 ? `/${s.config.maxIterations}` : "";
-
-		lines.push(
-			`| ${loop.name} | ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} | ${pidStr} |`,
-		);
-	}
-
-	pi.sendMessage({
-		customType: "ralph_assistant",
-		content: lines.join("\n"),
-		display: true,
-		details: {},
-	});
-}
-
-async function handleKill(
-	_pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	argsStr: string,
-) {
-	const name = argsStr.trim();
-	if (!name) {
-		ctx.ui.notify("Usage: /ralph kill <name>", "error");
-		return;
-	}
-
-	const dir = loopDir(ctx.cwd, name);
-	const state = readLoopState(dir);
-
-	if (!state) {
-		ctx.ui.notify(`No loop found: "${name}"`, "error");
-		return;
-	}
-
-	if (!isPidAlive(state.pid)) {
-		ctx.ui.notify(
-			`Loop "${name}" process is already dead (PID ${state.pid}). Status: ${state.status}`,
-			"info",
-		);
-		return;
-	}
-
-	// Send SIGTERM
-	try {
-		process.kill(state.pid, "SIGTERM");
-		ctx.ui.notify(
-			`Sent SIGTERM to loop "${name}" (PID ${state.pid}). Waiting for graceful shutdown...`,
-			"info",
-		);
-	} catch (err) {
-		ctx.ui.notify(
-			`Failed to kill loop "${name}" (PID ${state.pid}): ${err}`,
-			"error",
-		);
-	}
-}
-
-async function handleClean(
-	_pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	_argsStr: string,
-) {
-	const loops = listLocalLoops(ctx.cwd);
-	const cleanable = loops.filter((l) => {
-		if (!l.state) return true; // No state = broken, clean it
-		return (
-			l.state.status === "completed" ||
-			l.state.status === "stopped" ||
-			(l.state.status === "error" && !isPidAlive(l.state.pid))
-		);
-	});
-
-	if (cleanable.length === 0) {
-		ctx.ui.notify("No loops to clean up", "info");
-		return;
-	}
-
-	const names = cleanable.map((l) => l.name).join(", ");
-
-	if (ctx.hasUI) {
-		const ok = await ctx.ui.confirm(
-			"Clean loops?",
-			`Remove ${cleanable.length} loop${cleanable.length > 1 ? "s" : ""}: ${names}`,
-		);
-		if (!ok) return;
-	}
-
-	let cleaned = 0;
-	for (const loop of cleanable) {
-		try {
-			rmSync(loop.dir, { recursive: true, force: true });
-			cleaned++;
-		} catch {
-			// ignore individual failures
-		}
-	}
-
-	// Also prune registry
-	pruneStaleRegistryEntries();
-
-	ctx.ui.notify(
-		`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
-		"info",
-	);
-}
-
-// ── Phase 0 Demo ───────────────────────────────────────────────────
-
-const DEMO_PROMPTS = [
-	"Create a file called hello.txt in the current directory containing exactly 'hello world'. Use the write tool.",
-	"Read the file hello.txt in the current directory and tell me what's in it. Use the read tool.",
-];
-
-let demoRunning = false;
-
-function runDemo(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-) {
-	if (demoRunning) {
-		ctx.ui.notify("Demo is already running", "warning");
-		return;
-	}
-
-	demoRunning = true;
-
-	const cwd = ctx.cwd;
-	const ralphDir = join(cwd, ".ralph", "test");
-	mkdirSync(ralphDir, { recursive: true });
-
-	ctx.ui.setWidget("ralph", (tui, theme) => {
-		const container = new Container();
-		container.addChild(
-			new Loader(
-				tui,
-				(s: string) => theme.fg("accent", s),
-				(s: string) => theme.fg("muted", s),
-				"Starting loop runner...",
-			),
-		);
-		container.addChild(new Spacer(1));
-		return container;
-	});
-
-	const rpc = spawn("pi", ["--mode", "rpc", "--no-session"], {
-		cwd,
-		stdio: ["pipe", "pipe", "pipe"],
-	});
-
-	const eventsStream = createWriteStream(join(ralphDir, "events.jsonl"), {
-		flags: "w",
-	});
-
-	let cleanedUp = false;
-	function cleanup() {
-		if (cleanedUp) return;
-		cleanedUp = true;
-		demoRunning = false;
-		eventsStream.end();
-		ctx.ui.setWidget("ralph", undefined);
-		ctx.ui.setStatus("ralph", undefined);
-	}
-
-	rpc.stderr!.resume();
-
-	rpc.on("error", (err) => {
-		ctx.ui.notify(`Failed to start pi RPC: ${err.message}`, "error");
-		cleanup();
-	});
-
-	let agentEndCount = 0;
-	let currentAssistantText = "";
-	let iterationCount = 0;
-	const pendingToolArgs = new Map<
-		string,
-		{ toolName: string; args: Record<string, unknown> }
-	>();
-
-	let iterStartTime = 0;
-	let iterTokensIn = 0;
-	let iterTokensOut = 0;
-	let iterCost = 0;
-	let iterTurns = 0;
-
-	function resetIterStats() {
-		iterStartTime = Date.now();
-		iterTokensIn = 0;
-		iterTokensOut = 0;
-		iterCost = 0;
-		iterTurns = 0;
-	}
-
-	function formatIterStats(): string {
-		const secs = Math.round((Date.now() - iterStartTime) / 1000);
-		const duration =
-			secs >= 60
-				? `${Math.floor(secs / 60)}m${secs % 60}s`
-				: `${secs}s`;
-		return `${duration} | ${iterTurns} turns | ${fmtTokens(iterTokensIn)} in ${fmtTokens(iterTokensOut)} out | $${iterCost.toFixed(3)}`;
-	}
-
-	function send(command: Record<string, unknown>) {
-		rpc.stdin!.write(JSON.stringify(command) + "\n");
-	}
-
-	function handleEvent(event: Record<string, unknown>) {
+	// ── Event Rendering ─────────────────────────────────────────────
+
+	function handleRpcEvent(
+		event: Record<string, unknown>,
+		cwd: string,
+	): void {
 		const eventType = event.type as string;
 
-		if (eventType === "agent_start") {
-			iterationCount++;
-			currentAssistantText = "";
-			resetIterStats();
-
-			ctx.ui.setWidget("ralph", undefined);
-			ctx.ui.setStatus(
-				"ralph",
-				ctx.ui.theme.fg(
-					"accent",
-					`ralph: test (${iterationCount}/2)`,
-				),
-			);
-
-			pi.sendMessage({
-				customType: "ralph_iteration",
-				content: `Iteration ${iterationCount}`,
-				display: true,
-				details: { iteration: iterationCount, status: "start" },
-			});
-		} else if (eventType === "agent_end") {
-			agentEndCount++;
-
-			pi.sendMessage({
-				customType: "ralph_iteration",
-				content: formatIterStats(),
-				display: true,
-				details: { iteration: iterationCount, status: "end" },
-			});
-
-			if (agentEndCount === 1) {
-				send({ type: "new_session" });
-				send({ type: "prompt", message: DEMO_PROMPTS[1] });
-			} else if (agentEndCount === 2) {
-				ctx.ui.setStatus("ralph", undefined);
-				rpc.kill("SIGTERM");
-			}
-		} else if (eventType === "tool_execution_start") {
+		if (eventType === "tool_execution_start") {
 			const toolCallId = event.toolCallId as string;
 			pendingToolArgs.set(toolCallId, {
 				toolName: event.toolName as string,
@@ -1049,22 +349,7 @@ function runDemo(
 				| Record<string, unknown>
 				| undefined;
 
-			if (msg?.role === "assistant") {
-				iterTurns++;
-				const usage = msg.usage as
-					| Record<string, unknown>
-					| undefined;
-				if (usage) {
-					iterTokensIn += ((usage.input as number) ?? 0);
-					iterTokensOut += ((usage.output as number) ?? 0);
-					const cost = usage.cost as
-						| Record<string, unknown>
-						| undefined;
-					if (cost) iterCost += ((cost.total as number) ?? 0);
-				}
-			}
-
-			if (currentAssistantText.trim()) {
+			if (msg?.role === "assistant" && currentAssistantText.trim()) {
 				pi.sendMessage({
 					customType: "ralph_assistant",
 					content: currentAssistantText.trim(),
@@ -1076,29 +361,529 @@ function runDemo(
 		}
 	}
 
-	const rl = createInterface({ input: rpc.stdout! });
+	// ── Widget Management ───────────────────────────────────────────
 
-	rl.on("line", (line) => {
-		if (cleanedUp) return;
-		eventsStream.write(line + "\n");
-		try {
-			handleEvent(JSON.parse(line));
-		} catch {
-			// ignore parse errors
+	function updateWidget(ctx: ExtensionCommandContext): void {
+		if (!activeLoop) {
+			ctx.ui.setWidget("ralph", undefined);
+			ctx.ui.setStatus("ralph", undefined);
+			return;
 		}
+
+		const state = activeLoop.engine.getState();
+		const name = activeLoop.name;
+
+		// Status bar (compact)
+		const maxStr =
+			state.config.maxIterations > 0
+				? `/${state.config.maxIterations}`
+				: "";
+		ctx.ui.setStatus(
+			"ralph",
+			ctx.ui.theme.fg(
+				"accent",
+				`ralph: ${name} (${state.iteration}${maxStr})`,
+			),
+		);
+
+		// Widget (above editor)
+		let line: string;
+		if (state.status === "starting" || state.iteration === 0) {
+			line = `ralph: ${name} │ starting`;
+		} else {
+			const cost =
+				state.stats.cost > 0
+					? ` │ ${fmtCost(state.stats.cost)}`
+					: "";
+			const duration =
+				state.stats.durationMs > 0
+					? ` │ ${fmtDuration(state.stats.durationMs)}`
+					: "";
+			line = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
+		}
+
+		ctx.ui.setWidget("ralph", (_tui, theme) => ({
+			render(width: number): string[] {
+				return [theme.fg("accent", line)];
+			},
+			invalidate() {},
+		}));
+	}
+
+	function clearWidgetAfterDelay(ctx: ExtensionCommandContext): void {
+		setTimeout(() => {
+			if (
+				!activeLoop ||
+				activeLoop.engine.currentStatus === "completed" ||
+				activeLoop.engine.currentStatus === "stopped" ||
+				activeLoop.engine.currentStatus === "error"
+			) {
+				ctx.ui.setWidget("ralph", undefined);
+				ctx.ui.setStatus("ralph", undefined);
+			}
+		}, 5000);
+	}
+
+	// ── Command Registration ────────────────────────────────────────
+
+	pi.registerCommand("ralph", {
+		description:
+			"Ralph loop extension. Subcommands: start, stop, status, list, kill, clean",
+		getArgumentCompletions: (prefix) => {
+			const parts = prefix.split(/\s+/);
+			if (parts.length <= 1) {
+				const subcommands = [
+					"start",
+					"stop",
+					"status",
+					"list",
+					"kill",
+					"clean",
+				];
+				return subcommands
+					.filter((s) => s.startsWith(parts[0] || ""))
+					.map((s) => ({ value: s, label: s }));
+			}
+			// For stop/status/kill, complete with loop names
+			const sub = parts[0];
+			if (["stop", "status", "kill"].includes(sub)) {
+				const namePrefix = parts[1] || "";
+				const loops = listLocalLoops(process.cwd());
+				const names = loops
+					.map((l) => l.name)
+					.filter((n) => n.startsWith(namePrefix));
+				if (activeLoop && activeLoop.name.startsWith(namePrefix)) {
+					if (!names.includes(activeLoop.name))
+						names.unshift(activeLoop.name);
+				}
+				return names.map((n) => ({
+					value: `${sub} ${n}`,
+					label: n,
+				}));
+			}
+			return null;
+		},
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/);
+			const subcommand = parts[0] || "";
+			const subArgs = parts.slice(1).join(" ");
+
+			switch (subcommand) {
+				case "start":
+					return handleStart(pi, ctx, subArgs);
+				case "stop":
+					return handleStop(ctx, subArgs);
+				case "status":
+					return handleStatus(pi, ctx, subArgs);
+				case "list":
+					return handleList(pi, ctx);
+				case "kill":
+					return handleKill(ctx, subArgs);
+				case "clean":
+					return handleClean(ctx);
+				default:
+					ctx.ui.notify(
+						"Usage: /ralph <start|stop|status|list|kill|clean> [args]",
+						"info",
+					);
+			}
+		},
 	});
 
-	rpc.on("exit", (code) => {
-		if (agentEndCount < 2) {
-			pi.sendMessage({
-				customType: "ralph_status",
-				content: `RPC process exited unexpectedly (code ${code})`,
-				display: true,
-				details: {},
+	// ── Command Handlers ────────────────────────────────────────────
+
+	async function handleStart(
+		pi: ExtensionAPI,
+		ctx: ExtensionCommandContext,
+		argsStr: string,
+	) {
+		const parsed = parseStartArgs(argsStr);
+		if (typeof parsed === "string") {
+			ctx.ui.notify(parsed, "error");
+			return;
+		}
+
+		// Only one active loop at a time (for now)
+		if (activeLoop) {
+			ctx.ui.notify(
+				`Loop "${activeLoop.name}" is already running. Stop it first with /ralph stop`,
+				"warning",
+			);
+			return;
+		}
+
+		const cwd = ctx.cwd;
+		const dir = loopDir(cwd, parsed.name);
+
+		// Check if loop already exists on disk and is running
+		const existingState = readLoopState(dir);
+		if (
+			existingState &&
+			existingState.status === "running" &&
+			existingState.pid > 0
+		) {
+			try {
+				process.kill(existingState.pid, 0);
+				ctx.ui.notify(
+					`Loop "${parsed.name}" appears to still be running (PID ${existingState.pid})`,
+					"warning",
+				);
+				return;
+			} catch {
+				// PID is dead, safe to reuse
+			}
+		}
+
+		// Create directory structure
+		mkdirSync(join(dir, "iterations"), { recursive: true });
+
+		// Handle task file
+		const taskFilePath = join(dir, "task.md");
+		if (parsed.taskFile) {
+			const sourcePath = resolve(cwd, parsed.taskFile);
+			if (!existsSync(sourcePath)) {
+				ctx.ui.notify(
+					`Task file not found: ${sourcePath}`,
+					"error",
+				);
+				return;
+			}
+			const content = readFileSync(sourcePath, "utf-8");
+			writeFileSync(taskFilePath, content);
+		} else if (!existsSync(taskFilePath)) {
+			if (!ctx.hasUI) {
+				ctx.ui.notify(
+					"No UI available. Use --task to specify a task file.",
+					"error",
+				);
+				return;
+			}
+
+			const taskContent = await ctx.ui.editor(
+				"Write the task for this loop:",
+				"",
+			);
+			if (!taskContent || !taskContent.trim()) {
+				ctx.ui.notify(
+					"No task provided. Loop not started.",
+					"warning",
+				);
+				return;
+			}
+			writeFileSync(taskFilePath, taskContent);
+		}
+		// else: task.md already exists from a previous run — reuse it
+
+		// Build config
+		const config: LoopConfig = {
+			name: parsed.name,
+			cwd,
+			taskFile: "task.md",
+			maxIterations: parsed.maxIterations,
+			model: parsed.model,
+			provider: parsed.provider,
+			thinking: parsed.thinking,
+			reflectEvery: 0,
+		};
+
+		// Create engine with rendering callbacks
+		const engine = new LoopEngine(dir, config, {
+			onEvent: (event) => handleRpcEvent(event, cwd),
+
+			onIterationStart: (iteration) => {
+				resetRenderingState();
+				pi.sendMessage({
+					customType: "ralph_iteration",
+					content: `Iteration ${iteration}`,
+					display: true,
+					details: {
+						iteration,
+						status: "start",
+					},
+				});
+				updateWidget(ctx);
+			},
+
+			onIterationEnd: (iteration, stats) => {
+				pi.sendMessage({
+					customType: "ralph_iteration",
+					content: fmtIterStats(stats),
+					display: true,
+					details: {
+						iteration,
+						status: "end",
+					},
+				});
+				updateWidget(ctx);
+			},
+
+			onStatusChange: (status, error) => {
+				updateWidget(ctx);
+				if (status === "completed") {
+					const state = engine.getState();
+					ctx.ui.notify(
+						`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
+						"info",
+					);
+					clearWidgetAfterDelay(ctx);
+				} else if (status === "stopped") {
+					ctx.ui.notify(
+						`Loop "${parsed.name}" stopped`,
+						"info",
+					);
+					clearWidgetAfterDelay(ctx);
+				} else if (status === "error") {
+					ctx.ui.notify(
+						`Loop "${parsed.name}" error: ${error}`,
+						"error",
+					);
+					clearWidgetAfterDelay(ctx);
+				}
+			},
+		});
+
+		// Track as active
+		activeLoop = { name: parsed.name, dir, engine };
+		resetRenderingState();
+
+		// Show confirmation
+		const maxStr =
+			parsed.maxIterations === 0
+				? "unlimited"
+				: String(parsed.maxIterations);
+		const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
+		ctx.ui.notify(
+			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr})`,
+			"info",
+		);
+		updateWidget(ctx);
+
+		// Fire and forget — the loop runs until completion/stop/error
+		engine
+			.start()
+			.catch((err) => {
+				ctx.ui.notify(
+					`Loop "${parsed.name}" failed: ${err.message}`,
+					"error",
+				);
+			})
+			.finally(() => {
+				// Only clear activeLoop if this engine is still the active one
+				if (activeLoop?.engine === engine) {
+					activeLoop = null;
+				}
+			});
+	}
+
+	function handleStop(ctx: ExtensionCommandContext, argsStr: string) {
+		const name = argsStr.trim() || activeLoop?.name;
+
+		if (!name) {
+			ctx.ui.notify("No active loop. Usage: /ralph stop <name>", "error");
+			return;
+		}
+
+		if (!activeLoop || activeLoop.name !== name) {
+			ctx.ui.notify(`No active loop named "${name}"`, "error");
+			return;
+		}
+
+		const status = activeLoop.engine.currentStatus;
+		if (status === "stopped" || status === "completed") {
+			ctx.ui.notify(`Loop "${name}" is already ${status}`, "info");
+			return;
+		}
+
+		activeLoop.engine.stop();
+		ctx.ui.notify(
+			`Stopping loop "${name}" after current iteration completes...`,
+			"info",
+		);
+	}
+
+	function handleStatus(
+		pi: ExtensionAPI,
+		ctx: ExtensionCommandContext,
+		argsStr: string,
+	) {
+		const name = argsStr.trim();
+
+		if (!name) {
+			return handleList(pi, ctx);
+		}
+
+		// Check active loop first, then disk
+		let state: LoopState | null = null;
+		if (activeLoop && activeLoop.name === name) {
+			state = activeLoop.engine.getState();
+		} else {
+			const dir = loopDir(ctx.cwd, name);
+			state = readLoopState(dir);
+		}
+
+		if (!state) {
+			ctx.ui.notify(`No loop found: "${name}"`, "error");
+			return;
+		}
+
+		const lines = [
+			`**Loop: ${name}**`,
+			"",
+			"| Field | Value |",
+			"|-------|-------|",
+			`| Status | ${state.status} |`,
+			`| Iteration | ${state.iteration}${state.config.maxIterations > 0 ? ` / ${state.config.maxIterations}` : ""} |`,
+			`| Duration | ${fmtDuration(state.stats.durationMs)} |`,
+			`| Cost | ${fmtCost(state.stats.cost)} |`,
+			`| Tokens In | ${fmtTokens(state.stats.tokensIn)} |`,
+			`| Tokens Out | ${fmtTokens(state.stats.tokensOut)} |`,
+			`| Turns | ${state.stats.turns} |`,
+			`| Started | ${new Date(state.startedAt).toLocaleString()} |`,
+			`| Updated | ${new Date(state.updatedAt).toLocaleString()} |`,
+		];
+
+		if (state.config.model) {
+			lines.push(`| Model | ${state.config.model} |`);
+		}
+		if (state.error) {
+			lines.push(`| Error | ${state.error} |`);
+		}
+
+		pi.sendMessage({
+			customType: "ralph_assistant",
+			content: lines.join("\n"),
+			display: true,
+			details: {},
+		});
+	}
+
+	function handleList(pi: ExtensionAPI, ctx: ExtensionCommandContext) {
+		const diskLoops = listLocalLoops(ctx.cwd);
+
+		// Merge active loop with disk loops
+		const loopEntries: Array<{
+			name: string;
+			state: LoopState;
+			active: boolean;
+		}> = [];
+
+		// Add active loop first
+		if (activeLoop) {
+			loopEntries.push({
+				name: activeLoop.name,
+				state: activeLoop.engine.getState(),
+				active: true,
 			});
 		}
-		cleanup();
-	});
 
-	send({ type: "prompt", message: DEMO_PROMPTS[0] });
+		// Add disk loops (skip if already shown as active)
+		for (const dl of diskLoops) {
+			if (activeLoop && dl.name === activeLoop.name) continue;
+			if (!dl.state) continue;
+			loopEntries.push({
+				name: dl.name,
+				state: dl.state,
+				active: false,
+			});
+		}
+
+		if (loopEntries.length === 0) {
+			ctx.ui.notify(
+				"No loops found. Use /ralph start <name> to create one.",
+				"info",
+			);
+			return;
+		}
+
+		const lines = [
+			"**Ralph Loops**",
+			"",
+			"| Name | Status | Iteration | Duration | Cost |",
+			"|------|--------|-----------|----------|------|",
+		];
+
+		for (const entry of loopEntries) {
+			const s = entry.state;
+			const maxStr =
+				s.config.maxIterations > 0
+					? `/${s.config.maxIterations}`
+					: "";
+			const marker = entry.active ? " ●" : "";
+
+			lines.push(
+				`| ${entry.name}${marker} | ${s.status} | ${s.iteration}${maxStr} | ${fmtDuration(s.stats.durationMs)} | ${fmtCost(s.stats.cost)} |`,
+			);
+		}
+
+		pi.sendMessage({
+			customType: "ralph_assistant",
+			content: lines.join("\n"),
+			display: true,
+			details: {},
+		});
+	}
+
+	function handleKill(ctx: ExtensionCommandContext, argsStr: string) {
+		const name = argsStr.trim() || activeLoop?.name;
+
+		if (!name) {
+			ctx.ui.notify(
+				"No active loop. Usage: /ralph kill <name>",
+				"error",
+			);
+			return;
+		}
+
+		if (!activeLoop || activeLoop.name !== name) {
+			ctx.ui.notify(`No active loop named "${name}"`, "error");
+			return;
+		}
+
+		activeLoop.engine.kill();
+		ctx.ui.notify(`Killed loop "${name}"`, "info");
+	}
+
+	async function handleClean(ctx: ExtensionCommandContext) {
+		const loops = listLocalLoops(ctx.cwd);
+		const cleanable = loops.filter((l) => {
+			if (!l.state) return true;
+			// Don't clean the active loop
+			if (activeLoop && l.name === activeLoop.name) return false;
+			return (
+				l.state.status === "completed" ||
+				l.state.status === "stopped" ||
+				l.state.status === "error"
+			);
+		});
+
+		if (cleanable.length === 0) {
+			ctx.ui.notify("No loops to clean up", "info");
+			return;
+		}
+
+		const names = cleanable.map((l) => l.name).join(", ");
+
+		if (ctx.hasUI) {
+			const ok = await ctx.ui.confirm(
+				"Clean loops?",
+				`Remove ${cleanable.length} loop${cleanable.length > 1 ? "s" : ""}: ${names}`,
+			);
+			if (!ok) return;
+		}
+
+		let cleaned = 0;
+		for (const loop of cleanable) {
+			try {
+				rmSync(loop.dir, { recursive: true, force: true });
+				cleaned++;
+			} catch {
+				// ignore
+			}
+		}
+
+		ctx.ui.notify(
+			`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
+			"info",
+		);
+	}
 }

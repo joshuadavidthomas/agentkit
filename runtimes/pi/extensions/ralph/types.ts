@@ -1,11 +1,10 @@
 /**
- * Ralph Loop — Shared types between loop runner and extension.
+ * Ralph Loop — Shared types between loop engine and extension.
  */
 
 export type LoopStatus =
 	| "starting"
 	| "running"
-	| "stopping"
 	| "stopped"
 	| "completed"
 	| "error";
@@ -13,6 +12,7 @@ export type LoopStatus =
 export interface LoopConfig {
 	name: string;
 	cwd: string;
+	/** Relative to the ralph dir */
 	taskFile: string;
 	/** 0 = unlimited */
 	maxIterations: number;
@@ -56,50 +56,7 @@ export interface LoopState {
 	pid: number;
 }
 
-export interface RegistryEntry {
-	pid: number;
-	cwd: string;
-	ralphDir: string;
-	name: string;
-	startedAt: string;
-	lastSeen: string;
-	status: LoopStatus;
-	iteration: number;
-	maxIterations: number;
-	model?: string;
-	provider?: string;
-}
-
-export interface SteerCommand {
-	type: "steer";
-	message: string;
-}
-
-export interface FollowupCommand {
-	type: "followup";
-	message: string;
-}
-
-export interface StopCommand {
-	type: "stop";
-}
-
-export type InboxCommand = SteerCommand | FollowupCommand | StopCommand;
-
+/** Get the .ralph/<name>/ directory for a named loop in a project */
 export function loopDir(cwd: string, name: string): string {
 	return `${cwd}/.ralph/${name}`;
-}
-
-export function registryDir(): string {
-	const home = process.env.HOME ?? "";
-	return `${home}/.ralph/registry`;
-}
-
-/** Mirrors pi's session directory naming: slashes become dashes */
-export function slugifyPath(p: string): string {
-	return p.replace(/\//g, "-").replace(/^-/, "");
-}
-
-export function registryFilename(cwd: string, name: string): string {
-	return `--${slugifyPath(cwd)}--${name}.json`;
 }
