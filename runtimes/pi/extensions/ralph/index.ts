@@ -16,6 +16,7 @@ import {
 	AssistantMessageComponent,
 	getMarkdownTheme,
 	ToolExecutionComponent,
+	UserMessageComponent,
 } from "@mariozechner/pi-coding-agent";
 import { TUI } from "@mariozechner/pi-tui";
 import type { Component, Terminal } from "@mariozechner/pi-tui";
@@ -325,6 +326,12 @@ export default function (pi: ExtensionAPI) {
 		);
 	});
 
+	pi.registerMessageRenderer("ralph_user", (message) => {
+		return new StripLeadingSpacer(
+			new UserMessageComponent(String(message.content), getMarkdownTheme()),
+		);
+	});
+
 	// ── Input Routing ───────────────────────────────────────────────
 
 	// Enter → steer the RPC agent mid-iteration
@@ -333,6 +340,14 @@ export default function (pi: ExtensionAPI) {
 
 		const text = event.text.trim();
 		if (!text) return { action: "handled" as const };
+
+		// Show user message in chat stream
+		pi.sendMessage({
+			customType: "ralph_user",
+			content: text,
+			display: true,
+			details: {},
+		});
 
 		// Show as sticky widget until iteration ends
 		pendingNudgeText = text;
@@ -454,15 +469,18 @@ export default function (pi: ExtensionAPI) {
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
-				const lines = [theme.fg("accent", statusLine)];
+				const lines: string[] = [];
+
+				// Pending messages above status (matches pi's native styling)
 				if (nudge) {
-					lines.push(theme.fg("accent", `» ${nudge}`));
+					lines.push(theme.fg("dim", ` Steering: ${nudge}`));
 				}
 				if (followup) {
-					lines.push(
-						theme.fg("accent", `⏳ Next: ${followup}`),
-					);
+					lines.push(theme.fg("dim", ` Follow-up: ${followup}`));
 				}
+
+				// Status line last (closest to editor)
+				lines.push(theme.fg("accent", statusLine));
 				return lines;
 			},
 			invalidate() {},
@@ -650,10 +668,16 @@ export default function (pi: ExtensionAPI) {
 
 			onIterationStart: (iteration) => {
 				resetRenderingState();
+
+				// If a follow-up was queued, show it as a user message
+				// in the stream now that it's being consumed
+				const consumedFollowup = pendingFollowupText;
+
 				// Clear pending messages — follow-up was consumed, nudge from
 				// previous iteration is no longer relevant
 				pendingNudgeText = null;
 				pendingFollowupText = null;
+
 				pi.sendMessage({
 					customType: "ralph_iteration",
 					content: `Iteration ${iteration}`,
@@ -663,6 +687,16 @@ export default function (pi: ExtensionAPI) {
 						status: "start",
 					},
 				});
+
+				if (consumedFollowup) {
+					pi.sendMessage({
+						customType: "ralph_user",
+						content: consumedFollowup,
+						display: true,
+						details: {},
+					});
+				}
+
 				updateWidget(ctx);
 			},
 
