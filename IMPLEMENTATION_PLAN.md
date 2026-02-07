@@ -262,10 +262,10 @@ Two distinct paths, matching pi's native steer vs follow-up semantics:
   prompt instead of task.md
 - Pi's built-in `handleFollowUp()` never runs (shortcut consumed the keypress)
 
-**When no loop is active** — both paths fall through to normal pi behavior.
-The alt+enter shortcut must handle this carefully: if no loop is active, it
-needs to trigger the normal follow-up behavior (read editor text, call
-`pi.sendUserMessage()` with appropriate delivery).
+**When no loop is active** — the input handler returns `{ action: "continue" }`
+(normal pi behavior). The alt+enter shortcut always fires (can't conditionally
+register), but the handler replicates native behavior when no loop is active:
+`getEditorText()` → `setEditorText("")` → `pi.sendUserMessage(text, { deliverAs: "followUp" })`.
 
 - [ ] Register `pi.on("input", ...)` handler
   - When loop active: return `{ action: "handled" }`, forward to RPC as steer
@@ -273,7 +273,8 @@ needs to trigger the normal follow-up behavior (read editor text, call
 - [ ] Register `pi.registerShortcut("alt+enter", ...)` handler
   - When loop active: `getEditorText()` → `setEditorText("")` → queue follow-up
   - When no loop active: `getEditorText()` → `setEditorText("")` →
-    `pi.sendUserMessage(text, { deliverAs: "followUp" })` to preserve native behavior
+    `pi.sendUserMessage(text, { deliverAs: "followUp" })` (replicates native behavior
+    since registerShortcut always captures the keypress)
 - [ ] Show submitted message in TUI as visual confirmation
   - `pi.sendMessage()` with a `ralph_steer` or `ralph_followup` renderer
   - Echo what was sent so the user sees their message in the chat flow
