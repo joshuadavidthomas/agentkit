@@ -262,7 +262,10 @@ let activeLoop: {
 	ctx: ExtensionCommandContext;
 } | null = null;
 
-// Pending follow-up shown as sticky widget above editor until consumed
+// Pending messages shown as sticky widget above editor until consumed.
+// Steer: shown until agent finishes current turn and receives it.
+// Follow-up: shown until next iteration starts and consumes it.
+let pendingSteerText: string | null = null;
 let pendingFollowupText: string | null = null;
 
 // Rendering state for the active loop's event stream
@@ -340,13 +343,11 @@ export default function (pi: ExtensionAPI) {
 		const text = event.text.trim();
 		if (!text) return { action: "handled" as const };
 
-		// Show user message in chat stream
-		pi.sendMessage({
-			customType: "ralph_user",
-			content: text,
-			display: true,
-			details: {},
-		});
+		// Show as sticky widget until agent receives it (at next message_end).
+		// The user message is inserted into the stream at that point, not now,
+		// so it appears at the right position in the conversation.
+		pendingSteerText = text;
+		updateWidget(activeLoop.ctx);
 
 		activeLoop.engine.nudge(text);
 		return { action: "handled" as const };
@@ -423,6 +424,22 @@ export default function (pi: ExtensionAPI) {
 				});
 				currentAssistantText = "";
 			}
+
+			// If a steer is pending, the agent just finished its interrupted
+			// turn. Insert the user message now so it appears at the right
+			// position — right before the agent's response to the steer.
+			if (pendingSteerText) {
+				pi.sendMessage({
+					customType: "ralph_user",
+					content: pendingSteerText,
+					display: true,
+					details: {},
+				});
+				pendingSteerText = null;
+				if (activeLoop) {
+					updateWidget(activeLoop.ctx);
+				}
+			}
 		}
 	}
 
@@ -458,14 +475,18 @@ export default function (pi: ExtensionAPI) {
 			statusLine = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
 		}
 
-		// Capture pending follow-up for the render closure
+		// Capture pending messages for the render closure
+		const steer = pendingSteerText;
 		const followup = pendingFollowupText;
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
 				const lines: string[] = [];
 
-				// Pending follow-up above status (matches pi's native styling)
+				// Pending messages above status (matches pi's native styling)
+				if (steer) {
+					lines.push(theme.fg("dim", ` Steering: ${steer}`));
+				}
 				if (followup) {
 					lines.push(theme.fg("dim", ` Follow-up: ${followup}`));
 				}
@@ -664,7 +685,8 @@ export default function (pi: ExtensionAPI) {
 				// in the stream now that it's being consumed
 				const consumedFollowup = pendingFollowupText;
 
-				// Clear pending follow-up — it was consumed
+				// Clear pending messages — follow-up consumed, steer no longer relevant
+				pendingSteerText = null;
 				pendingFollowupText = null;
 
 				pi.sendMessage({
@@ -709,6 +731,7 @@ export default function (pi: ExtensionAPI) {
 					status === "stopped" ||
 					status === "error"
 				) {
+					pendingSteerText = null;
 					pendingFollowupText = null;
 				}
 				updateWidget(ctx);
@@ -737,6 +760,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Track as active
 		activeLoop = { name: parsed.name, dir, engine, ctx };
+		pendingSteerText = null;
 		pendingFollowupText = null;
 		resetRenderingState();
 
