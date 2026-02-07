@@ -467,15 +467,7 @@ export default function (pi: ExtensionAPI) {
 				const taskContent = readFileSync(taskFilePath, "utf-8").trim();
 
 				// Fresh session for this iteration
-				const { cancelled } = await ctx.newSession({
-					async setup(sm) {
-						sm.appendMessage({
-							role: "user",
-							content: [{ type: "text", text: taskContent }],
-							timestamp: Date.now(),
-						});
-					},
-				});
+				const { cancelled } = await ctx.newSession();
 
 				if (cancelled || stopRequested) break;
 
@@ -487,8 +479,11 @@ export default function (pi: ExtensionAPI) {
 					details: {},
 				});
 
-				// Agent responds with native rendering — tool calls,
-				// assistant text, thinking, everything rendered by pi
+				// Trigger the agent — this sends the task as a user
+				// message AND starts the agent loop (native rendering)
+				pi.sendUserMessage(taskContent);
+
+				// Wait for agent to finish (tool calls, text, everything)
 				await ctx.waitForIdle();
 
 				if (stopRequested) break;
