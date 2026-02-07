@@ -410,6 +410,26 @@ export default function (pi: ExtensionAPI) {
 			if (ame?.type === "text_delta") {
 				currentAssistantText += ame.delta as string;
 			}
+		} else if (eventType === "message_start") {
+			const msg = event.message as
+				| Record<string, unknown>
+				| undefined;
+
+			// When the steer is delivered, the RPC emits a message_start
+			// with role "user". Insert our user message at exactly this
+			// point — right where the agent actually receives it.
+			if (msg?.role === "user" && pendingSteerText) {
+				pi.sendMessage({
+					customType: "ralph_user",
+					content: pendingSteerText,
+					display: true,
+					details: {},
+				});
+				pendingSteerText = null;
+				if (activeLoop) {
+					updateWidget(activeLoop.ctx);
+				}
+			}
 		} else if (eventType === "message_end") {
 			const msg = event.message as
 				| Record<string, unknown>
@@ -423,22 +443,6 @@ export default function (pi: ExtensionAPI) {
 					details: {},
 				});
 				currentAssistantText = "";
-			}
-
-			// If a steer is pending, the agent just finished its interrupted
-			// turn. Insert the user message now so it appears at the right
-			// position — right before the agent's response to the steer.
-			if (pendingSteerText) {
-				pi.sendMessage({
-					customType: "ralph_user",
-					content: pendingSteerText,
-					display: true,
-					details: {},
-				});
-				pendingSteerText = null;
-				if (activeLoop) {
-					updateWidget(activeLoop.ctx);
-				}
 			}
 		}
 	}
