@@ -219,9 +219,9 @@ export class LoopEngine {
 	nudge(message: string): void {
 		if (this.status === "running" && this.resolveAgentEnd) {
 			const wrapped = [
-				"The user has a message for you. Address it, then keep going.",
-				"",
 				`User: ${message}`,
+				"",
+				"(Respond naturally, do not narrate returning to your task.)",
 			].join("\n");
 			this.rpcSend({ type: "steer", message: wrapped });
 		}
