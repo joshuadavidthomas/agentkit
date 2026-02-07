@@ -14,6 +14,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import {
 	AssistantMessageComponent,
+	CustomEditor,
 	getMarkdownTheme,
 	ToolExecutionComponent,
 	UserMessageComponent,
@@ -322,44 +323,53 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => {
 		if (activeLoop) {
+			uninstallLoopEditor(activeLoop.ctx);
 			activeLoop.engine.kill();
 			activeLoop = null;
 		}
 	});
 
-	// Input Routing
+	// Input Routing — custom editor replaces pi's default while loop is active.
+	// Handles Esc (kill), Enter (steer), and Alt+N / followUp action (queue for next iteration)
+	// via CustomEditor callbacks. Restored to default when loop ends.
 
-	// Enter → steer the agent mid-iteration
-	pi.on("input", async (event) => {
-		if (!activeLoop) return { action: "continue" as const };
+	function installLoopEditor(ctx: ExtensionCommandContext, engine: LoopEngine): void {
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+			const editor = new CustomEditor(tui, theme, keybindings);
 
-		const text = event.text.trim();
-		if (!text) return { action: "handled" as const };
+			editor.onEscape = () => {
+				engine.kill();
+			};
 
-		pendingSteerText = text;
-		updateWidget(activeLoop.ctx);
+			editor.onSubmit = (text: string) => {
+				const trimmed = text.trim();
+				if (!trimmed) return;
 
-		activeLoop.engine.nudge(text);
-		return { action: "handled" as const };
-	});
+				pendingSteerText = trimmed;
+				updateWidget(ctx);
 
-	// Alt+N → queue for next iteration
-	pi.registerShortcut("alt+n", {
-		description: "Ralph: queue message for next iteration",
-		handler: (ctx) => {
-			if (!activeLoop) return;
+				engine.nudge(trimmed);
+			};
 
-			const text = ctx.ui.getEditorText().trim();
-			if (!text) return;
+			editor.onAction("followUp", () => {
+				const text = editor.getText().trim();
+				if (!text) return;
 
-			ctx.ui.setEditorText("");
+				editor.setText("");
 
-			pendingFollowupText = text;
-			updateWidget(activeLoop.ctx);
+				pendingFollowupText = text;
+				updateWidget(ctx);
 
-			activeLoop.engine.queueForNextIteration(text);
-		},
-	});
+				engine.queueForNextIteration(text);
+			});
+
+			return editor;
+		});
+	}
+
+	function uninstallLoopEditor(ctx: ExtensionCommandContext): void {
+		ctx.ui.setEditorComponent(undefined);
+	}
 
 	// Event Rendering — uses typed AgentSessionEvent
 
@@ -730,6 +740,7 @@ export default function (pi: ExtensionAPI) {
 					) {
 						pendingSteerText = null;
 						pendingFollowupText = null;
+						uninstallLoopEditor(ctx);
 					}
 					updateWidget(ctx);
 					if (status === "completed") {
@@ -765,6 +776,7 @@ export default function (pi: ExtensionAPI) {
 		pendingSteerText = null;
 		pendingFollowupText = null;
 		resetRenderingState();
+		installLoopEditor(ctx, engine);
 
 		const maxStr =
 			parsed.maxIterations === 0
@@ -787,6 +799,7 @@ export default function (pi: ExtensionAPI) {
 			})
 			.finally(() => {
 				if (activeLoop?.engine === engine) {
+					uninstallLoopEditor(ctx);
 					activeLoop = null;
 				}
 			});
