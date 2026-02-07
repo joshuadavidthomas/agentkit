@@ -17,7 +17,7 @@ import {
 	getMarkdownTheme,
 	ToolExecutionComponent,
 } from "@mariozechner/pi-coding-agent";
-import { TUI } from "@mariozechner/pi-tui";
+import { Container, TUI } from "@mariozechner/pi-tui";
 import type { Component, Terminal } from "@mariozechner/pi-tui";
 import {
 	existsSync,
@@ -246,10 +246,18 @@ const pendingToolArgs = new Map<
 	string,
 	{ toolName: string; args: Record<string, unknown> }
 >();
+// Completed tool calls buffered until the next assistant message_end
+const completedTools: Array<{
+	toolName: string;
+	args: Record<string, unknown>;
+	result: unknown;
+	isError: boolean;
+}> = [];
 
 function resetRenderingState(): void {
 	currentAssistantText = "";
 	pendingToolArgs.clear();
+	completedTools.length = 0;
 }
 
 // ── Extension Entry Point ──────────────────────────────────────────
@@ -265,37 +273,49 @@ export default function (pi: ExtensionAPI) {
 		},
 	);
 
-	pi.registerMessageRenderer("ralph_tool", (message) => {
-		const { toolName, args, result, isError, cwd } = message.details as {
-			toolName: string;
-			args: Record<string, unknown>;
-			result?: { content: Array<{ type: string; text?: string }> };
-			isError?: boolean;
-			cwd?: string;
+	pi.registerMessageRenderer("ralph_turn", (message) => {
+		const { tools, text, cwd } = message.details as {
+			tools: Array<{
+				toolName: string;
+				args: Record<string, unknown>;
+				result: unknown;
+				isError: boolean;
+			}>;
+			text: string;
+			cwd: string;
 		};
 
-		const comp = new ToolExecutionComponent(
-			toolName,
-			args,
-			{ showImages: false },
-			undefined,
-			stubTui,
-			cwd,
-		);
-		comp.setArgsComplete();
+		const container = new Container();
 
-		if (result) {
-			comp.updateResult(
-				{ ...result, isError: isError ?? false },
-				false,
+		// Render tool calls
+		for (const tool of tools) {
+			const comp = new ToolExecutionComponent(
+				tool.toolName,
+				tool.args,
+				{ showImages: false },
+				undefined,
+				stubTui,
+				cwd,
 			);
+			comp.setArgsComplete();
+			if (tool.result) {
+				comp.updateResult(
+					{
+						...(tool.result as { content: Array<{ type: string; text?: string }> }),
+						isError: tool.isError,
+					},
+					false,
+				);
+			}
+			container.addChild(comp);
 		}
 
-		return comp;
-	});
+		// Render assistant text
+		if (text) {
+			container.addChild(renderAsAssistantMessage(text));
+		}
 
-	pi.registerMessageRenderer("ralph_assistant", (message) => {
-		return renderAsAssistantMessage(String(message.content));
+		return container;
 	});
 
 	pi.registerMessageRenderer(
@@ -321,21 +341,16 @@ export default function (pi: ExtensionAPI) {
 				args: (event.args ?? {}) as Record<string, unknown>,
 			});
 		} else if (eventType === "tool_execution_end") {
+			// Buffer completed tool calls — render with the next assistant message
 			const toolCallId = event.toolCallId as string;
 			const pending = pendingToolArgs.get(toolCallId);
 			pendingToolArgs.delete(toolCallId);
 
-			pi.sendMessage({
-				customType: "ralph_tool",
-				content: event.toolName as string,
-				display: true,
-				details: {
-					toolName: event.toolName as string,
-					args: pending?.args ?? {},
-					result: event.result,
-					isError: event.isError as boolean,
-					cwd,
-				},
+			completedTools.push({
+				toolName: event.toolName as string,
+				args: pending?.args ?? {},
+				result: event.result,
+				isError: (event.isError as boolean) ?? false,
 			});
 		} else if (eventType === "message_update") {
 			const ame = event.assistantMessageEvent as
@@ -349,14 +364,26 @@ export default function (pi: ExtensionAPI) {
 				| Record<string, unknown>
 				| undefined;
 
-			if (msg?.role === "assistant" && currentAssistantText.trim()) {
-				pi.sendMessage({
-					customType: "ralph_assistant",
-					content: currentAssistantText.trim(),
-					display: true,
-					details: {},
-				});
-				currentAssistantText = "";
+			// Render a complete turn: buffered tool calls + assistant text
+			// Fires on assistant message_end (stopReason=stop or toolUse)
+			if (msg?.role === "assistant") {
+				const hasTools = completedTools.length > 0;
+				const hasText = currentAssistantText.trim().length > 0;
+
+				if (hasTools || hasText) {
+					pi.sendMessage({
+						customType: "ralph_turn",
+						content: currentAssistantText.trim() || "(tool calls)",
+						display: true,
+						details: {
+							tools: hasTools ? [...completedTools] : [],
+							text: hasText ? currentAssistantText.trim() : "",
+							cwd,
+						},
+					});
+					completedTools.length = 0;
+					currentAssistantText = "";
+				}
 			}
 		}
 	}
