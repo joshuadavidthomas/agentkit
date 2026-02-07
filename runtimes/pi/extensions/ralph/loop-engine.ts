@@ -146,7 +146,13 @@ export class LoopEngine {
 		this.rpc = spawn("pi", rpcArgs, {
 			cwd: this.config.cwd,
 			stdio: ["pipe", "pipe", "pipe"],
+			// Own process group so Ctrl+C doesn't hit the child directly.
+			// We manage the child's lifecycle ourselves via cleanup().
+			detached: true,
 		});
+
+		// Don't let the child keep the parent alive if it's exiting
+		this.rpc.unref();
 
 		// Drain stderr to prevent process blocking
 		this.rpc.stderr?.resume();
@@ -204,7 +210,15 @@ export class LoopEngine {
 	kill(): void {
 		this.stopRequested = true;
 		if (this.rpc && !this.rpc.killed) {
-			this.rpc.kill("SIGTERM");
+			try {
+				process.kill(-this.rpc.pid!, "SIGTERM");
+			} catch {
+				try {
+					this.rpc.kill("SIGTERM");
+				} catch {
+					// Already dead
+				}
+			}
 		}
 		this.setStatus("stopped");
 		this.writeState();
@@ -449,7 +463,17 @@ export class LoopEngine {
 		this.eventsStream = null;
 
 		if (this.rpc && !this.rpc.killed) {
-			this.rpc.kill("SIGTERM");
+			// Kill the process group (negative pid) since we spawned detached
+			try {
+				process.kill(-this.rpc.pid!, "SIGTERM");
+			} catch {
+				// Process group may already be gone
+				try {
+					this.rpc.kill("SIGTERM");
+				} catch {
+					// Already dead
+				}
+			}
 		}
 		this.rpc = null;
 	}

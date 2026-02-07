@@ -334,6 +334,15 @@ export default function (pi: ExtensionAPI) {
 		);
 	});
 
+	// ── Shutdown ────────────────────────────────────────────────────
+
+	pi.on("session_shutdown", () => {
+		if (activeLoop) {
+			activeLoop.engine.kill();
+			activeLoop = null;
+		}
+	});
+
 	// ── Input Routing ───────────────────────────────────────────────
 
 	// Enter → steer the RPC agent mid-iteration
