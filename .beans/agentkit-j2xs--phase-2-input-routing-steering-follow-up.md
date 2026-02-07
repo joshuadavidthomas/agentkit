@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-02-07T15:38:57Z
-updated_at: 2026-02-07T15:54:13Z
+updated_at: 2026-02-07T15:55:16Z
 parent: agentkit-y69o
 ---
 
@@ -13,29 +13,26 @@ Wire up input interception so typed messages route to the RPC loop process.
 
 ## Architecture
 
-Two distinct paths using pi's existing Enter/Alt+Enter keybinding UX:
+Two distinct paths:
 
 **Enter (steer)** — interrupts RPC agent after current tool:
-1. User presses Enter → pi's onSubmit fires → prompt() → input event
-2. Our `pi.on("input", ...)` handler intercepts → returns `{ action: "handled" }`
-3. Forward text to RPC as `{ type: "steer", message: text }`
+- `pi.on("input")` intercepts → returns `{ action: "handled" }`
+- Forwards text to RPC as `{ type: "steer", message }`
+- Shows "Steer: ..." border in TUI
 
-**Alt+Enter (follow-up)** — queued for next iteration:
-1. User presses Alt+Enter → our `registerShortcut("alt+enter")` fires FIRST
-2. Handler calls `ctx.ui.getEditorText()` to read text
-3. Handler calls `ctx.ui.setEditorText("")` to clear editor
-4. Queue text via `activeLoop.engine.followUp(text)`
-5. Pi's built-in handleFollowUp never runs (shortcut consumed it)
+**Ctrl+Shift+Enter (follow-up)** — queued for next iteration:
+- `pi.registerShortcut("ctrl+shift+enter")` fires
+- Reads editor via `ctx.ui.getEditorText()`, clears via `ctx.ui.setEditorText("")`
+- Queues via `engine.followUp(text)` — becomes next iteration prompt
+- Shows "Queued for next iteration: ..." border in TUI
 
-**When no loop is active** — both paths fall through to normal pi behavior:
-- input handler returns `{ action: "continue" }`
-- alt+enter shortcut handler returns without doing anything (but NOTE: this means pi's built-in followUp won't fire — need to handle this case by manually triggering submission)
+When no loop active, both fall through to normal pi behavior.
 
 ## Checklist
 
-- [ ] Register `pi.on("input", ...)` — when loop active, return handled + forward as RPC steer
-- [ ] Register `pi.registerShortcut("alt+enter", ...)` — when loop active, read editor text, clear, queue as follow-up
-- [ ] Handle alt+enter when NO loop is active (must not break normal pi follow-up behavior)
-- [ ] Show visual feedback for queued steer/follow-up messages (echo in TUI via sendMessage)
+- [x] Register `pi.on("input", ...)` — when loop active, return handled + forward as RPC steer
+- [x] Register `pi.registerShortcut("ctrl+shift+enter", ...)` — when loop active, read editor, clear, queue follow-up
+- [x] When no loop active: input returns continue, shortcut is no-op
+- [x] Visual feedback: ralph_steer and ralph_followup message renderers echo what was sent
 - [ ] Test: steer mid-iteration interrupts agent after current tool
 - [ ] Test: follow-up queues and becomes next iteration prompt

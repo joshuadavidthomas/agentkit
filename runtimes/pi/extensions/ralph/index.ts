@@ -342,7 +342,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Ctrl+Shift+Enter → queue for next iteration
-	pi.registerShortcut("ctrl+shift+enter", {
+	pi.registerShortcut("ctrl+shift+n", {
 		description: "Ralph: queue message for next iteration",
 		handler: (ctx) => {
 			if (!activeLoop) return;
