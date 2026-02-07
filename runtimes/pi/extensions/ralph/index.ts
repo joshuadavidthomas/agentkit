@@ -380,25 +380,16 @@ export default function (pi: ExtensionAPI) {
 	function updateWidget(ctx: ExtensionCommandContext): void {
 		if (!activeLoop) {
 			ctx.ui.setWidget("ralph", undefined);
-			ctx.ui.setStatus("ralph", undefined);
 			return;
 		}
 
 		const state = activeLoop.engine.getState();
 		const name = activeLoop.name;
 
-		// Status bar (compact)
 		const maxStr =
 			state.config.maxIterations > 0
 				? `/${state.config.maxIterations}`
 				: "";
-		ctx.ui.setStatus(
-			"ralph",
-			ctx.ui.theme.fg(
-				"accent",
-				`ralph: ${name} (${state.iteration}${maxStr})`,
-			),
-		);
 
 		// Widget (above editor)
 		let line: string;
@@ -433,7 +424,6 @@ export default function (pi: ExtensionAPI) {
 				activeLoop.engine.currentStatus === "error"
 			) {
 				ctx.ui.setWidget("ralph", undefined);
-				ctx.ui.setStatus("ralph", undefined);
 			}
 		}, 5000);
 	}
