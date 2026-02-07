@@ -243,19 +243,40 @@ the Phase 0 demo proved, but generalized for real use.
   - `/ralph kill [name]` — force-kill the RPC process
   - `/ralph clean` — remove completed/stopped loop directories
 
-### Phase 2: Input Routing (Steering)
+### Phase 2: Input Routing (Steering + Follow-up)
 
-Wire up input interception so typed messages go to the loop's RPC process
-instead of the foreground agent.
+Wire up input interception using pi's existing Enter/Alt+Enter UX.
+Two distinct paths, matching pi's native steer vs follow-up semantics:
+
+**Enter → steer** (interrupt RPC agent mid-iteration):
+- `pi.on("input", ...)` intercepts when loop is active
+- Returns `{ action: "handled" }` to prevent foreground agent processing
+- Forwards text to RPC process as `{ type: "steer", message: text }`
+- The RPC agent receives it after current tool execution, skips remaining tools
+
+**Alt+Enter → follow-up** (queue for next iteration):
+- `pi.registerShortcut("alt+enter", ...)` fires before pi's built-in handler
+- Reads editor text via `ctx.ui.getEditorText()`
+- Clears editor via `ctx.ui.setEditorText("")`
+- Queues text via `activeLoop.engine.followUp(text)` — used as next iteration's
+  prompt instead of task.md
+- Pi's built-in `handleFollowUp()` never runs (shortcut consumed the keypress)
+
+**When no loop is active** — both paths fall through to normal pi behavior.
+The alt+enter shortcut must handle this carefully: if no loop is active, it
+needs to trigger the normal follow-up behavior (read editor text, call
+`pi.sendUserMessage()` with appropriate delivery).
 
 - [ ] Register `pi.on("input", ...)` handler
   - When loop active: return `{ action: "handled" }`, forward to RPC as steer
   - When no loop active: return `{ action: "continue" }` for normal behavior
-- [ ] Show submitted message in TUI as a "sent" confirmation
-  - `pi.sendMessage()` with a `ralph_steer` renderer to echo what was sent
-- [ ] Handle between-iteration input
-  - If agent isn't running (between `agent_end` and next `prompt`),
-    queue as follow-up — used as the next iteration's prompt instead of task.md
+- [ ] Register `pi.registerShortcut("alt+enter", ...)` handler
+  - When loop active: `getEditorText()` → `setEditorText("")` → queue follow-up
+  - When no loop active: `getEditorText()` → `setEditorText("")` →
+    `pi.sendUserMessage(text, { deliverAs: "followUp" })` to preserve native behavior
+- [ ] Show submitted message in TUI as visual confirmation
+  - `pi.sendMessage()` with a `ralph_steer` or `ralph_followup` renderer
+  - Echo what was sent so the user sees their message in the chat flow
 - [ ] Widget indication that input is being routed to the loop
   - Visual cue so the user knows their editor submissions go to ralph
 
