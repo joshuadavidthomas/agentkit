@@ -343,15 +343,6 @@ export default function (pi: ExtensionAPI) {
 		return { action: "handled" as const };
 	});
 
-	// Esc → abort current iteration and stop the loop
-	pi.registerShortcut("escape", {
-		description: "Ralph: abort and stop loop",
-		handler: () => {
-			if (!activeLoop) return;
-			activeLoop.engine.kill();
-		},
-	});
-
 	// Alt+N → queue for next iteration
 	pi.registerShortcut("alt+n", {
 		description: "Ralph: queue message for next iteration",
@@ -507,13 +498,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("ralph", {
 		description:
-			"Ralph loop extension. Subcommands: start, stop, status, list, clean",
+			"Ralph loop extension. Subcommands: start, stop, kill, status, list, clean",
 		getArgumentCompletions: (prefix) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
 				const subcommands = [
 					"start",
 					"stop",
+					"kill",
 					"status",
 					"list",
 					"clean",
@@ -523,7 +515,7 @@ export default function (pi: ExtensionAPI) {
 					.map((s) => ({ value: s, label: s }));
 			}
 			const sub = parts[0];
-			if (["stop", "status"].includes(sub)) {
+			if (["stop", "kill", "status"].includes(sub)) {
 				const namePrefix = parts[1] || "";
 				const loops = listLocalLoops(process.cwd());
 				const names = loops
@@ -550,6 +542,8 @@ export default function (pi: ExtensionAPI) {
 					return handleStart(pi, ctx, subArgs);
 				case "stop":
 					return handleStop(ctx, subArgs);
+				case "kill":
+					return handleKill(ctx, subArgs);
 				case "status":
 					return handleStatus(pi, ctx, subArgs);
 				case "list":
@@ -558,7 +552,7 @@ export default function (pi: ExtensionAPI) {
 					return handleClean(ctx);
 				default:
 					ctx.ui.notify(
-						"Usage: /ralph <start|stop|status|list|clean> [args]",
+						"Usage: /ralph <start|stop|kill|status|list|clean> [args]",
 						"info",
 					);
 			}
@@ -822,6 +816,26 @@ export default function (pi: ExtensionAPI) {
 			`Stopping loop "${name}" after current iteration completes...`,
 			"info",
 		);
+	}
+
+	function handleKill(ctx: ExtensionCommandContext, argsStr: string) {
+		const name = argsStr.trim() || activeLoop?.name;
+
+		if (!name) {
+			ctx.ui.notify(
+				"No active loop. Usage: /ralph kill <name>",
+				"error",
+			);
+			return;
+		}
+
+		if (!activeLoop || activeLoop.name !== name) {
+			ctx.ui.notify(`No active loop named "${name}"`, "error");
+			return;
+		}
+
+		activeLoop.engine.kill();
+		ctx.ui.notify(`Killed loop "${name}"`, "info");
 	}
 
 	function handleStatus(
