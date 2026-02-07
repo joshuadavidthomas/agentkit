@@ -185,10 +185,17 @@ export class LoopEngine {
 	/**
 	 * Steer the agent mid-iteration with a user message.
 	 * Delivered after the current tool finishes via session.steer().
+	 * The message is wrapped with instructions to continue the task
+	 * so the steer doesn't short-circuit the iteration.
 	 */
 	nudge(message: string): void {
-		if (this.status === "running" && this.session?.isStreaming) {
-			this.session.steer(message).catch(() => {});
+		if (this.status === "running" && this.session) {
+			const wrapped = [
+				message,
+				"",
+				"(Address the above, then continue with your current task.)",
+			].join("\n");
+			this.session.steer(wrapped).catch(() => {});
 		}
 	}
 

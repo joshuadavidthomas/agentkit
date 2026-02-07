@@ -343,6 +343,15 @@ export default function (pi: ExtensionAPI) {
 		return { action: "handled" as const };
 	});
 
+	// Esc → abort current iteration and stop the loop
+	pi.registerShortcut("escape", {
+		description: "Ralph: abort and stop loop",
+		handler: () => {
+			if (!activeLoop) return;
+			activeLoop.engine.kill();
+		},
+	});
+
 	// Alt+N → queue for next iteration
 	pi.registerShortcut("alt+n", {
 		description: "Ralph: queue message for next iteration",
