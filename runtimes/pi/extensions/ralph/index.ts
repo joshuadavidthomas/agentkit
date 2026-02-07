@@ -19,8 +19,9 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@mariozechner/pi-coding-agent";
-import { TUI } from "@mariozechner/pi-tui";
-import type { Component, Terminal } from "@mariozechner/pi-tui";
+import { TUI, Key, matchesKey } from "@mariozechner/pi-tui";
+import type { Component, Terminal, EditorTheme } from "@mariozechner/pi-tui";
+import type { KeybindingsManager } from "@mariozechner/pi-coding-agent";
 import {
 	existsSync,
 	mkdirSync,
@@ -74,6 +75,33 @@ class StripLeadingSpacer implements Component {
 			return lines.slice(1);
 		}
 		return lines;
+	}
+}
+
+/**
+ * Custom editor for the ralph loop. Intercepts Enter in handleInput()
+ * so the text goes ONLY to the loop agent (via onSteer callback) and
+ * does NOT reach pi's input pipeline / parent agent. All other keys
+ * pass through to CustomEditor for built-in keybinding support.
+ */
+class RalphEditor extends CustomEditor {
+	onSteer?: (text: string) => void;
+
+	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
+		super(tui, theme, keybindings);
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
+			const text = this.getText().trim();
+			if (text && this.onSteer) {
+				this.onSteer(text);
+				this.setText("");
+			}
+			return;
+		}
+
+		super.handleInput(data);
 	}
 }
 
@@ -330,25 +358,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Input Routing — custom editor replaces pi's default while loop is active.
-	// Handles Esc (kill), Enter (steer), and Alt+N / followUp action (queue for next iteration)
-	// via CustomEditor callbacks. Restored to default when loop ends.
+	// Intercepts Enter in handleInput() to prevent pi's input pipeline from
+	// also sending text to the parent agent. Esc and follow-up use CustomEditor
+	// callbacks. Restored to default when loop ends.
 
 	function installLoopEditor(ctx: ExtensionCommandContext, engine: LoopEngine): void {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-			const editor = new CustomEditor(tui, theme, keybindings);
+			const editor = new RalphEditor(tui, theme, keybindings);
+
+			editor.onSteer = (text: string) => {
+				pendingSteerText = text;
+				updateWidget(ctx);
+				engine.nudge(text);
+			};
 
 			editor.onEscape = () => {
 				engine.kill();
-			};
-
-			editor.onSubmit = (text: string) => {
-				const trimmed = text.trim();
-				if (!trimmed) return;
-
-				pendingSteerText = trimmed;
-				updateWidget(ctx);
-
-				engine.nudge(trimmed);
 			};
 
 			editor.onAction("followUp", () => {
