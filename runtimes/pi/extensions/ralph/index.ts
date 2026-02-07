@@ -320,6 +320,67 @@ export default function (pi: ExtensionAPI) {
 		);
 	});
 
+	// ── Input Routing ───────────────────────────────────────────────
+
+	// Enter → steer the RPC agent mid-iteration
+	pi.on("input", async (event) => {
+		if (!activeLoop) return { action: "continue" as const };
+
+		const text = event.text.trim();
+		if (!text) return { action: "handled" as const };
+
+		// Show what was sent
+		pi.sendMessage({
+			customType: "ralph_steer",
+			content: text,
+			display: true,
+			details: {},
+		});
+
+		activeLoop.engine.steer(text);
+		return { action: "handled" as const };
+	});
+
+	// Ctrl+Shift+Enter → queue for next iteration
+	pi.registerShortcut("ctrl+shift+enter", {
+		description: "Ralph: queue message for next iteration",
+		handler: (ctx) => {
+			if (!activeLoop) return;
+
+			const text = ctx.ui.getEditorText().trim();
+			if (!text) return;
+
+			ctx.ui.setEditorText("");
+
+			// Show what was queued
+			pi.sendMessage({
+				customType: "ralph_followup",
+				content: text,
+				display: true,
+				details: {},
+			});
+
+			activeLoop.engine.followUp(text);
+		},
+	});
+
+	// Renderers for steer/follow-up echo messages
+	pi.registerMessageRenderer("ralph_steer", (message, _options, theme) => {
+		const color = (s: string) => theme.fg("accent", s);
+		return new LabeledBorder(`Steer: ${message.content}`, color);
+	});
+
+	pi.registerMessageRenderer(
+		"ralph_followup",
+		(message, _options, theme) => {
+			const color = (s: string) => theme.fg("accent", s);
+			return new LabeledBorder(
+				`Queued for next iteration: ${message.content}`,
+				color,
+			);
+		},
+	);
+
 	// ── Event Rendering ─────────────────────────────────────────────
 
 	function handleRpcEvent(

@@ -1,10 +1,11 @@
 ---
 # agentkit-j2xs
 title: 'Phase 2: Input Routing (Steering + Follow-up)'
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-02-07T15:38:57Z
-updated_at: 2026-02-07T15:38:57Z
+updated_at: 2026-02-07T15:54:13Z
 parent: agentkit-y69o
 ---
 
