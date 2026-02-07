@@ -219,7 +219,7 @@ export class LoopEngine {
 	nudge(message: string): void {
 		if (this.status === "running" && this.resolveAgentEnd) {
 			const wrapped = [
-				"The user has a message for you. Address it briefly, then continue with your original task where you left off.",
+				"The user has a message for you. Address it, then keep going.",
 				"",
 				`User: ${message}`,
 			].join("\n");
