@@ -2,13 +2,13 @@
  * Ralph Loop Extension
  *
  * Provides an in-session iterative agent loop with fresh context per iteration.
- * Spawns `pi --mode rpc --no-session` as a child process and drives iterations
- * directly, rendering events live in the TUI.
+ * Uses the pi SDK (AgentSession) in-process — no subprocess, no RPC.
  *
- * Commands: /ralph start, stop, status, list, kill, clean
+ * Commands: /ralph start, stop, status, list, clean
  */
 
 import type {
+	AgentSessionEvent,
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
@@ -33,8 +33,6 @@ import { LoopEngine } from "./loop-engine.ts";
 import type { IterationStats, LoopConfig, LoopState } from "./types.ts";
 import { loopDir } from "./types.ts";
 
-// ── Stub TUI for ToolExecutionComponent ────────────────────────────
-
 const stubTerminal: Terminal = {
 	start() {},
 	stop() {},
@@ -57,8 +55,6 @@ const stubTerminal: Terminal = {
 	setTitle() {},
 };
 const stubTui = new TUI(stubTerminal);
-
-// ── TUI Helpers ────────────────────────────────────────────────────
 
 /**
  * Strips exactly one leading empty line from a component's render output.
@@ -118,8 +114,6 @@ function renderAsAssistantMessage(text: string): AssistantMessageComponent {
 	);
 }
 
-// ── Formatting ─────────────────────────────────────────────────────
-
 function fmtDuration(ms: number): string {
 	const secs = Math.round(ms / 1000);
 	if (secs < 60) return `${secs}s`;
@@ -148,8 +142,6 @@ function fmtIterStats(stats: IterationStats): string {
 			: `${Math.round(stats.durationMs / 1000)}s`;
 	return `${duration} │ ${stats.turns} turns │ ${fmtTokens(stats.tokensIn)} in ${fmtTokens(stats.tokensOut)} out │ ${fmtCost(stats.cost)}`;
 }
-
-// ── State Helpers ──────────────────────────────────────────────────
 
 /** Read state.json from a ralph loop directory, or null if missing/invalid */
 function readLoopState(dir: string): LoopState | null {
@@ -189,8 +181,6 @@ function listLocalLoops(
 	}
 	return results;
 }
-
-// ── Argument Parsing ───────────────────────────────────────────────
 
 interface ParsedStartArgs {
 	name: string;
@@ -253,8 +243,6 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 	return result;
 }
 
-// ── Active Loop State ──────────────────────────────────────────────
-
 let activeLoop: {
 	name: string;
 	dir: string;
@@ -263,8 +251,6 @@ let activeLoop: {
 } | null = null;
 
 // Pending messages shown as sticky widget above editor until consumed.
-// Steer: shown until agent finishes current turn and receives it.
-// Follow-up: shown until next iteration starts and consumes it.
 let pendingSteerText: string | null = null;
 let pendingFollowupText: string | null = null;
 
@@ -280,10 +266,8 @@ function resetRenderingState(): void {
 	pendingToolArgs.clear();
 }
 
-// ── Extension Entry Point ──────────────────────────────────────────
-
 export default function (pi: ExtensionAPI) {
-	// ── Message Renderers ───────────────────────────────────────────
+	// Message Renderers
 
 	pi.registerMessageRenderer(
 		"ralph_iteration",
@@ -334,7 +318,7 @@ export default function (pi: ExtensionAPI) {
 		);
 	});
 
-	// ── Shutdown ────────────────────────────────────────────────────
+	// Shutdown
 
 	pi.on("session_shutdown", () => {
 		if (activeLoop) {
@@ -343,18 +327,15 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// ── Input Routing ───────────────────────────────────────────────
+	// Input Routing
 
-	// Enter → steer the RPC agent mid-iteration
+	// Enter → steer the agent mid-iteration
 	pi.on("input", async (event) => {
 		if (!activeLoop) return { action: "continue" as const };
 
 		const text = event.text.trim();
 		if (!text) return { action: "handled" as const };
 
-		// Show as sticky widget until agent receives it (at next message_end).
-		// The user message is inserted into the stream at that point, not now,
-		// so it appears at the right position in the conversation.
 		pendingSteerText = text;
 		updateWidget(activeLoop.ctx);
 
@@ -373,7 +354,6 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.setEditorText("");
 
-			// Show as sticky widget until next iteration consumes it
 			pendingFollowupText = text;
 			updateWidget(activeLoop.ctx);
 
@@ -381,53 +361,44 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ── Event Rendering ─────────────────────────────────────────────
+	// Event Rendering — uses typed AgentSessionEvent
 
-	function handleRpcEvent(
-		event: Record<string, unknown>,
+	function handleSessionEvent(
+		event: AgentSessionEvent,
 		cwd: string,
 	): void {
-		const eventType = event.type as string;
-
-		if (eventType === "tool_execution_start") {
-			const toolCallId = event.toolCallId as string;
-			pendingToolArgs.set(toolCallId, {
-				toolName: event.toolName as string,
+		if (event.type === "tool_execution_start") {
+			pendingToolArgs.set(event.toolCallId, {
+				toolName: event.toolName,
 				args: (event.args ?? {}) as Record<string, unknown>,
 			});
-		} else if (eventType === "tool_execution_end") {
-			const toolCallId = event.toolCallId as string;
-			const pending = pendingToolArgs.get(toolCallId);
-			pendingToolArgs.delete(toolCallId);
+		} else if (event.type === "tool_execution_end") {
+			const pending = pendingToolArgs.get(event.toolCallId);
+			pendingToolArgs.delete(event.toolCallId);
 
 			pi.sendMessage({
 				customType: "ralph_tool",
-				content: event.toolName as string,
+				content: event.toolName,
 				display: true,
 				details: {
-					toolName: event.toolName as string,
+					toolName: event.toolName,
 					args: pending?.args ?? {},
 					result: event.result,
-					isError: event.isError as boolean,
+					isError: event.isError,
 					cwd,
 				},
 			});
-		} else if (eventType === "message_update") {
-			const ame = event.assistantMessageEvent as
-				| Record<string, unknown>
-				| undefined;
-			if (ame?.type === "text_delta") {
-				currentAssistantText += ame.delta as string;
+		} else if (event.type === "message_update") {
+			if (event.assistantMessageEvent.type === "text_delta") {
+				currentAssistantText += event.assistantMessageEvent.delta;
 			}
-		} else if (eventType === "message_start") {
-			const msg = event.message as
-				| Record<string, unknown>
-				| undefined;
+		} else if (event.type === "message_start") {
+			const msg = event.message;
 
-			// When the steer is delivered, the RPC emits a message_start
+			// When a steer is delivered, the session emits a message_start
 			// with role "user". Insert our user message at exactly this
 			// point — right where the agent actually receives it.
-			if (msg?.role === "user" && pendingSteerText) {
+			if ("role" in msg && msg.role === "user" && pendingSteerText) {
 				pi.sendMessage({
 					customType: "ralph_user",
 					content: pendingSteerText,
@@ -439,12 +410,14 @@ export default function (pi: ExtensionAPI) {
 					updateWidget(activeLoop.ctx);
 				}
 			}
-		} else if (eventType === "message_end") {
-			const msg = event.message as
-				| Record<string, unknown>
-				| undefined;
+		} else if (event.type === "message_end") {
+			const msg = event.message;
 
-			if (msg?.role === "assistant" && currentAssistantText.trim()) {
+			if (
+				"role" in msg &&
+				msg.role === "assistant" &&
+				currentAssistantText.trim()
+			) {
 				pi.sendMessage({
 					customType: "ralph_assistant",
 					content: currentAssistantText.trim(),
@@ -456,7 +429,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	// ── Widget Management ───────────────────────────────────────────
+	// Widget Management
 
 	function updateWidget(ctx: ExtensionCommandContext): void {
 		if (!activeLoop) {
@@ -472,7 +445,6 @@ export default function (pi: ExtensionAPI) {
 				? `/${state.config.maxIterations}`
 				: "";
 
-		// Status line
 		let statusLine: string;
 		if (state.status === "starting" || state.iteration === 0) {
 			statusLine = `ralph: ${name} │ starting`;
@@ -488,7 +460,6 @@ export default function (pi: ExtensionAPI) {
 			statusLine = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
 		}
 
-		// Capture pending messages for the render closure
 		const steer = pendingSteerText;
 		const followup = pendingFollowupText;
 
@@ -496,7 +467,6 @@ export default function (pi: ExtensionAPI) {
 			render(width: number): string[] {
 				const lines: string[] = [];
 
-				// Pending messages above status (matches pi's native styling)
 				if (steer) {
 					lines.push(theme.fg("dim", ` Steering: ${steer}`));
 				}
@@ -504,7 +474,6 @@ export default function (pi: ExtensionAPI) {
 					lines.push(theme.fg("dim", ` Follow-up: ${followup}`));
 				}
 
-				// Status line last (closest to editor)
 				lines.push(theme.fg("accent", statusLine));
 				return lines;
 			},
@@ -525,11 +494,11 @@ export default function (pi: ExtensionAPI) {
 		}, 5000);
 	}
 
-	// ── Command Registration ────────────────────────────────────────
+	// Command Registration
 
 	pi.registerCommand("ralph", {
 		description:
-			"Ralph loop extension. Subcommands: start, stop, status, list, kill, clean",
+			"Ralph loop extension. Subcommands: start, stop, status, list, clean",
 		getArgumentCompletions: (prefix) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
@@ -538,16 +507,14 @@ export default function (pi: ExtensionAPI) {
 					"stop",
 					"status",
 					"list",
-					"kill",
 					"clean",
 				];
 				return subcommands
 					.filter((s) => s.startsWith(parts[0] || ""))
 					.map((s) => ({ value: s, label: s }));
 			}
-			// For stop/status/kill, complete with loop names
 			const sub = parts[0];
-			if (["stop", "status", "kill"].includes(sub)) {
+			if (["stop", "status"].includes(sub)) {
 				const namePrefix = parts[1] || "";
 				const loops = listLocalLoops(process.cwd());
 				const names = loops
@@ -578,20 +545,18 @@ export default function (pi: ExtensionAPI) {
 					return handleStatus(pi, ctx, subArgs);
 				case "list":
 					return handleList(pi, ctx);
-				case "kill":
-					return handleKill(ctx, subArgs);
 				case "clean":
 					return handleClean(ctx);
 				default:
 					ctx.ui.notify(
-						"Usage: /ralph <start|stop|status|list|kill|clean> [args]",
+						"Usage: /ralph <start|stop|status|list|clean> [args]",
 						"info",
 					);
 			}
 		},
 	});
 
-	// ── Command Handlers ────────────────────────────────────────────
+	// Command Handlers
 
 	async function handleStart(
 		pi: ExtensionAPI,
@@ -604,7 +569,6 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// Only one active loop at a time (for now)
 		if (activeLoop) {
 			ctx.ui.notify(
 				`Loop "${activeLoop.name}" is already running. Stop it first with /ralph stop`,
@@ -616,26 +580,13 @@ export default function (pi: ExtensionAPI) {
 		const cwd = ctx.cwd;
 		const dir = loopDir(cwd, parsed.name);
 
-		// Check if loop already exists on disk and is running
+		// Check if loop already exists on disk and was running
 		const existingState = readLoopState(dir);
-		if (
-			existingState &&
-			existingState.status === "running" &&
-			existingState.pid > 0
-		) {
-			try {
-				process.kill(existingState.pid, 0);
-				ctx.ui.notify(
-					`Loop "${parsed.name}" appears to still be running (PID ${existingState.pid})`,
-					"warning",
-				);
-				return;
-			} catch {
-				// PID is dead, safe to reuse
-			}
+		if (existingState && existingState.status === "running") {
+			// No pid to check anymore — in-process sessions don't survive restarts.
+			// Safe to reuse since we're in a fresh pi session.
 		}
 
-		// Create directory structure
 		mkdirSync(join(dir, "iterations"), { recursive: true });
 
 		// Handle task file
@@ -673,7 +624,6 @@ export default function (pi: ExtensionAPI) {
 			}
 			writeFileSync(taskFilePath, taskContent);
 		}
-		// else: task.md already exists from a previous run — reuse it
 
 		// Build config
 		const config: LoopConfig = {
@@ -687,97 +637,132 @@ export default function (pi: ExtensionAPI) {
 			reflectEvery: 0,
 		};
 
-		// Create engine with rendering callbacks
-		const engine = new LoopEngine(dir, config, {
-			onEvent: (event) => handleRpcEvent(event, cwd),
+		// Resolve model from config or fall back to parent pi's current model
+		const modelRegistry = ctx.modelRegistry;
+		let resolvedModel = ctx.model;
+		if (parsed.model) {
+			const allModels = modelRegistry.getAll();
+			const found = parsed.provider
+				? allModels.find(
+						(m) =>
+							m.provider === parsed.provider &&
+							m.id === parsed.model,
+					)
+				: allModels.find((m) => m.id === parsed.model);
+			if (found) {
+				resolvedModel = found;
+			} else {
+				ctx.ui.notify(
+					`Model "${parsed.model}" not found, using current model`,
+					"warning",
+				);
+			}
+		}
 
-			onIterationStart: (iteration) => {
-				resetRenderingState();
+		// Resolve thinking level
+		const thinkingLevel = parsed.thinking as
+			| "off"
+			| "minimal"
+			| "low"
+			| "medium"
+			| "high"
+			| "xhigh"
+			| undefined;
 
-				// If a follow-up was queued, show it as a user message
-				// in the stream now that it's being consumed
-				const consumedFollowup = pendingFollowupText;
+		// Create engine with rendering callbacks and session dependencies
+		const engine = new LoopEngine(
+			dir,
+			config,
+			{
+				onEvent: (event) => handleSessionEvent(event, cwd),
 
-				// Clear pending messages — follow-up consumed, steer no longer relevant
-				pendingSteerText = null;
-				pendingFollowupText = null;
+				onIterationStart: (iteration) => {
+					resetRenderingState();
 
-				pi.sendMessage({
-					customType: "ralph_iteration",
-					content: `Iteration ${iteration}`,
-					display: true,
-					details: {
-						iteration,
-						status: "start",
-					},
-				});
+					const consumedFollowup = pendingFollowupText;
 
-				if (consumedFollowup) {
-					pi.sendMessage({
-						customType: "ralph_user",
-						content: consumedFollowup,
-						display: true,
-						details: {},
-					});
-				}
-
-				updateWidget(ctx);
-			},
-
-			onIterationEnd: (iteration, stats) => {
-				pi.sendMessage({
-					customType: "ralph_iteration",
-					content: fmtIterStats(stats),
-					display: true,
-					details: {
-						iteration,
-						status: "end",
-					},
-				});
-				updateWidget(ctx);
-			},
-
-			onStatusChange: (status, error) => {
-				// Clear pending messages on terminal states
-				if (
-					status === "completed" ||
-					status === "stopped" ||
-					status === "error"
-				) {
 					pendingSteerText = null;
 					pendingFollowupText = null;
-				}
-				updateWidget(ctx);
-				if (status === "completed") {
-					const state = engine.getState();
-					ctx.ui.notify(
-						`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
-						"info",
-					);
-					clearWidgetAfterDelay(ctx);
-				} else if (status === "stopped") {
-					ctx.ui.notify(
-						`Loop "${parsed.name}" stopped`,
-						"info",
-					);
-					clearWidgetAfterDelay(ctx);
-				} else if (status === "error") {
-					ctx.ui.notify(
-						`Loop "${parsed.name}" error: ${error}`,
-						"error",
-					);
-					clearWidgetAfterDelay(ctx);
-				}
-			},
-		});
 
-		// Track as active
+					pi.sendMessage({
+						customType: "ralph_iteration",
+						content: `Iteration ${iteration}`,
+						display: true,
+						details: {
+							iteration,
+							status: "start",
+						},
+					});
+
+					if (consumedFollowup) {
+						pi.sendMessage({
+							customType: "ralph_user",
+							content: consumedFollowup,
+							display: true,
+							details: {},
+						});
+					}
+
+					updateWidget(ctx);
+				},
+
+				onIterationEnd: (iteration, stats) => {
+					pi.sendMessage({
+						customType: "ralph_iteration",
+						content: fmtIterStats(stats),
+						display: true,
+						details: {
+							iteration,
+							status: "end",
+						},
+					});
+					updateWidget(ctx);
+				},
+
+				onStatusChange: (status, error) => {
+					if (
+						status === "completed" ||
+						status === "stopped" ||
+						status === "error"
+					) {
+						pendingSteerText = null;
+						pendingFollowupText = null;
+					}
+					updateWidget(ctx);
+					if (status === "completed") {
+						const state = engine.getState();
+						ctx.ui.notify(
+							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
+							"info",
+						);
+						clearWidgetAfterDelay(ctx);
+					} else if (status === "stopped") {
+						ctx.ui.notify(
+							`Loop "${parsed.name}" stopped`,
+							"info",
+						);
+						clearWidgetAfterDelay(ctx);
+					} else if (status === "error") {
+						ctx.ui.notify(
+							`Loop "${parsed.name}" error: ${error}`,
+							"error",
+						);
+						clearWidgetAfterDelay(ctx);
+					}
+				},
+			},
+			{
+				modelRegistry,
+				model: resolvedModel,
+				thinkingLevel,
+			},
+		);
+
 		activeLoop = { name: parsed.name, dir, engine, ctx };
 		pendingSteerText = null;
 		pendingFollowupText = null;
 		resetRenderingState();
 
-		// Show confirmation
 		const maxStr =
 			parsed.maxIterations === 0
 				? "unlimited"
@@ -789,7 +774,6 @@ export default function (pi: ExtensionAPI) {
 		);
 		updateWidget(ctx);
 
-		// Fire and forget — the loop runs until completion/stop/error
 		engine
 			.start()
 			.catch((err) => {
@@ -799,7 +783,6 @@ export default function (pi: ExtensionAPI) {
 				);
 			})
 			.finally(() => {
-				// Only clear activeLoop if this engine is still the active one
 				if (activeLoop?.engine === engine) {
 					activeLoop = null;
 				}
@@ -843,7 +826,6 @@ export default function (pi: ExtensionAPI) {
 			return handleList(pi, ctx);
 		}
 
-		// Check active loop first, then disk
 		let state: LoopState | null = null;
 		if (activeLoop && activeLoop.name === name) {
 			state = activeLoop.engine.getState();
@@ -891,14 +873,12 @@ export default function (pi: ExtensionAPI) {
 	function handleList(pi: ExtensionAPI, ctx: ExtensionCommandContext) {
 		const diskLoops = listLocalLoops(ctx.cwd);
 
-		// Merge active loop with disk loops
 		const loopEntries: Array<{
 			name: string;
 			state: LoopState;
 			active: boolean;
 		}> = [];
 
-		// Add active loop first
 		if (activeLoop) {
 			loopEntries.push({
 				name: activeLoop.name,
@@ -907,7 +887,6 @@ export default function (pi: ExtensionAPI) {
 			});
 		}
 
-		// Add disk loops (skip if already shown as active)
 		for (const dl of diskLoops) {
 			if (activeLoop && dl.name === activeLoop.name) continue;
 			if (!dl.state) continue;
@@ -954,31 +933,10 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	function handleKill(ctx: ExtensionCommandContext, argsStr: string) {
-		const name = argsStr.trim() || activeLoop?.name;
-
-		if (!name) {
-			ctx.ui.notify(
-				"No active loop. Usage: /ralph kill <name>",
-				"error",
-			);
-			return;
-		}
-
-		if (!activeLoop || activeLoop.name !== name) {
-			ctx.ui.notify(`No active loop named "${name}"`, "error");
-			return;
-		}
-
-		activeLoop.engine.kill();
-		ctx.ui.notify(`Killed loop "${name}"`, "info");
-	}
-
 	async function handleClean(ctx: ExtensionCommandContext) {
 		const loops = listLocalLoops(ctx.cwd);
 		const cleanable = loops.filter((l) => {
 			if (!l.state) return true;
-			// Don't clean the active loop
 			if (activeLoop && l.name === activeLoop.name) return false;
 			return (
 				l.state.status === "completed" ||

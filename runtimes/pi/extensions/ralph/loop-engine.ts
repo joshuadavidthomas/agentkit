@@ -1,16 +1,23 @@
 /**
  * Ralph Loop Engine
  *
- * Drives the RPC iteration loop in-process. Spawns `pi --mode rpc --no-session`
- * as a child process, manages iterations, tracks telemetry, writes filesystem
- * artifacts (state.json, events.jsonl, iterations/).
+ * Drives the iteration loop in-process using the pi SDK (AgentSession).
+ * Creates an AgentSession via createAgentSession(), manages iterations,
+ * tracks telemetry, writes filesystem artifacts (state.json, iterations/).
  *
- * The extension creates an instance on `/ralph start` and wires up callbacks
- * for TUI rendering. Later, this same engine can be used by a standalone
- * detached loop-runner for attach/detach mode.
+ * No subprocess, no RPC, no JSON serialization — events are typed objects
+ * in the same heap, steering is a method call, fresh context is instant.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Model } from "@mariozechner/pi-ai";
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	type ModelRegistry,
+	SessionManager,
+	createAgentSession,
+} from "@mariozechner/pi-coding-agent";
 import {
 	createWriteStream,
 	type WriteStream,
@@ -22,7 +29,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import type {
 	CumulativeStats,
 	IterationStats,
@@ -31,11 +37,9 @@ import type {
 	LoopStatus,
 } from "./types.ts";
 
-// ── Callbacks ──────────────────────────────────────────────────────
-
 export interface LoopEngineCallbacks {
-	/** Raw RPC event forwarded for TUI rendering */
-	onEvent: (event: Record<string, unknown>) => void;
+	/** Typed session event forwarded for TUI rendering */
+	onEvent: (event: AgentSessionEvent) => void;
 	/** Fired before the first prompt of each iteration */
 	onIterationStart?: (iteration: number) => void;
 	/** Fired after stats are collected for a completed iteration */
@@ -44,10 +48,16 @@ export interface LoopEngineCallbacks {
 	onStatusChange?: (status: LoopStatus, error?: string) => void;
 }
 
-// ── Engine ─────────────────────────────────────────────────────────
+/** Dependencies from the parent pi session needed to create child sessions */
+export interface LoopEngineSessionDeps {
+	modelRegistry: ModelRegistry;
+	model?: Model<any>;
+	thinkingLevel?: ThinkingLevel;
+}
 
 export class LoopEngine {
-	private rpc: ChildProcess | null = null;
+	private session: AgentSession | null = null;
+	private unsubscribe: (() => void) | null = null;
 	private status: LoopStatus = "starting";
 	private iteration = 0;
 	private startedAt = new Date();
@@ -75,21 +85,16 @@ export class LoopEngine {
 	// Control flow
 	private stopRequested = false;
 	private pendingFollowup?: string;
-	private resolveAgentEnd: (() => void) | null = null;
-	private rejectAgentEnd: ((err: Error) => void) | null = null;
-	private spawnError?: Error;
 
-	// Filesystem / streams
+	// Filesystem
 	private eventsStream: WriteStream | null = null;
-	private rl: ReturnType<typeof createInterface> | null = null;
 
 	constructor(
 		private ralphDir: string,
 		private config: LoopConfig,
 		private callbacks: LoopEngineCallbacks,
+		private sessionDeps: LoopEngineSessionDeps,
 	) {}
-
-	// ── Public API ──────────────────────────────────────────────────
 
 	get currentStatus(): LoopStatus {
 		return this.status;
@@ -108,7 +113,6 @@ export class LoopEngine {
 			startedAt: this.startedAt.toISOString(),
 			updatedAt: new Date().toISOString(),
 			error: this.error,
-			pid: this.rpc?.pid ?? 0,
 		};
 	}
 
@@ -117,80 +121,42 @@ export class LoopEngine {
 	 * or an error occurs. Returns when the loop is finished.
 	 */
 	async start(): Promise<void> {
-		// Ensure directories exist
 		mkdirSync(join(this.ralphDir, "iterations"), { recursive: true });
-
-		// Clear old artifacts for a fresh start
 		this.clearArtifacts();
 
-		// Open events log
 		this.eventsStream = createWriteStream(
 			join(this.ralphDir, "events.jsonl"),
 			{ flags: "a" },
 		);
 
-		// Write config
 		writeFileSync(
 			join(this.ralphDir, "config.json"),
 			JSON.stringify(this.config, null, 2) + "\n",
 		);
 
-		// Spawn RPC process
-		const rpcArgs = ["--mode", "rpc", "--no-session"];
-		if (this.config.model) rpcArgs.push("--model", this.config.model);
-		if (this.config.provider)
-			rpcArgs.push("--provider", this.config.provider);
-		if (this.config.thinking)
-			rpcArgs.push("--thinking", this.config.thinking);
-
-		this.rpc = spawn("pi", rpcArgs, {
-			cwd: this.config.cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-			// Own process group so Ctrl+C doesn't hit the child directly.
-			// We manage the child's lifecycle ourselves via cleanup().
-			detached: true,
-		});
-
-		// Don't let the child keep the parent alive if it's exiting
-		this.rpc.unref();
-
-		// Drain stderr to prevent process blocking
-		this.rpc.stderr?.resume();
-
-		// Handle spawn failures
-		this.rpc.on("error", (err) => {
-			this.spawnError = err;
-			this.error = `Failed to start pi RPC: ${err.message}`;
+		// Create AgentSession via SDK — no subprocess, in-process
+		try {
+			const { session } = await createAgentSession({
+				cwd: this.config.cwd,
+				sessionManager: SessionManager.inMemory(),
+				modelRegistry: this.sessionDeps.modelRegistry,
+				authStorage: this.sessionDeps.modelRegistry.authStorage,
+				model: this.sessionDeps.model,
+				thinkingLevel: this.sessionDeps.thinkingLevel,
+			});
+			this.session = session;
+		} catch (err) {
+			this.error = `Failed to create agent session: ${err instanceof Error ? err.message : String(err)}`;
 			this.setStatus("error");
-			if (this.rejectAgentEnd) {
-				this.rejectAgentEnd(new Error(this.error));
-			}
+			return;
+		}
+
+		// Subscribe to events for rendering and telemetry
+		this.unsubscribe = this.session.subscribe((event) => {
+			this.eventsStream?.write(JSON.stringify(event) + "\n");
+			this.handleEvent(event);
 		});
 
-		// Handle unexpected exit mid-iteration
-		this.rpc.on("exit", (code, signal) => {
-			if (this.rejectAgentEnd) {
-				this.rejectAgentEnd(
-					new Error(
-						`RPC process exited unexpectedly (code=${code}, signal=${signal})`,
-					),
-				);
-			}
-		});
-
-		// Parse event stream
-		this.rl = createInterface({ input: this.rpc.stdout! });
-		this.rl.on("line", (line) => {
-			this.eventsStream?.write(line + "\n");
-			try {
-				const event = JSON.parse(line);
-				this.handleEvent(event);
-			} catch {
-				// ignore parse errors
-			}
-		});
-
-		// Run the loop
 		this.setStatus("running");
 		this.writeState();
 
@@ -206,56 +172,33 @@ export class LoopEngine {
 		this.stopRequested = true;
 	}
 
-	/** Force-kill the RPC process immediately. */
+	/** Abort current iteration immediately and stop the loop. */
 	kill(): void {
 		this.stopRequested = true;
-		if (this.rpc && !this.rpc.killed) {
-			try {
-				process.kill(-this.rpc.pid!, "SIGTERM");
-			} catch {
-				try {
-					this.rpc.kill("SIGTERM");
-				} catch {
-					// Already dead
-				}
-			}
+		if (this.session) {
+			this.session.abort().catch(() => {});
 		}
 		this.setStatus("stopped");
 		this.writeState();
 	}
 
 	/**
-	 * Steer the RPC agent mid-iteration with a user message.
-	 * Delivered after the current tool finishes. The message is wrapped
-	 * with instructions to address the user's input and then continue
-	 * with the original task.
+	 * Steer the agent mid-iteration with a user message.
+	 * Delivered after the current tool finishes via session.steer().
 	 */
 	nudge(message: string): void {
-		if (this.status === "running" && this.resolveAgentEnd) {
-			const wrapped = [
-				`User: ${message}`,
-				"",
-				"(Respond naturally, do not narrate returning to your task.)",
-			].join("\n");
-			this.rpcSend({ type: "steer", message: wrapped });
+		if (this.status === "running" && this.session?.isStreaming) {
+			this.session.steer(message).catch(() => {});
 		}
 	}
 
-	/** Queue a message as the next iteration's prompt (instead of task.md). */
+	/** Queue a message to be appended to the next iteration's prompt. */
 	queueForNextIteration(message: string): void {
 		this.pendingFollowup = message;
 	}
 
-	// ── Iteration Loop ──────────────────────────────────────────────
-
 	private async runIterations(): Promise<void> {
 		const taskPath = join(this.ralphDir, this.config.taskFile);
-
-		// Brief yield to let spawn errors propagate before entering the loop
-		await new Promise((r) => setTimeout(r, 50));
-		if (this.spawnError) {
-			return; // status already set to "error" by the error handler
-		}
 
 		for (
 			this.iteration = 1;
@@ -275,18 +218,9 @@ export class LoopEngine {
 				: taskContent;
 			this.pendingFollowup = undefined;
 
-			// Wait for agent to complete this iteration
-			const agentEndPromise = new Promise<void>((resolve, reject) => {
-				this.resolveAgentEnd = resolve;
-				this.rejectAgentEnd = reject;
-			});
-
-			this.rpcSend({ type: "prompt", message: prompt });
-
 			try {
-				await agentEndPromise;
+				await this.session!.prompt(prompt);
 			} catch (err) {
-				// If stop/kill was requested, the RPC exit is intentional
 				if (this.stopRequested) break;
 
 				this.error = String(
@@ -296,9 +230,6 @@ export class LoopEngine {
 				this.writeState();
 				return;
 			}
-
-			this.resolveAgentEnd = null;
-			this.rejectAgentEnd = null;
 
 			// Collect and save stats for this iteration
 			const iterStats = this.saveIterationStats();
@@ -314,57 +245,31 @@ export class LoopEngine {
 				break;
 
 			// Fresh context for next iteration
-			this.rpcSend({ type: "new_session" });
+			await this.session!.newSession();
 		}
 
 		this.setStatus(this.stopRequested ? "stopped" : "completed");
 		this.writeState();
 	}
 
-	// ── Event Handling ──────────────────────────────────────────────
-
-	private handleEvent(event: Record<string, unknown>): void {
-		const eventType = event.type as string;
-
+	private handleEvent(event: AgentSessionEvent): void {
 		// Forward to extension for rendering
 		this.callbacks.onEvent(event);
 
 		// Track telemetry from message_end events
-		if (eventType === "message_end") {
-			const msg = event.message as
-				| Record<string, unknown>
-				| undefined;
-			if (msg?.role === "assistant") {
+		if (event.type === "message_end") {
+			const msg = event.message;
+			if ("role" in msg && msg.role === "assistant" && "usage" in msg) {
 				this.iterTurns++;
-				const usage = msg.usage as
-					| Record<string, unknown>
-					| undefined;
-				if (usage) {
-					this.iterTokensIn +=
-						(usage.input as number) ?? 0;
-					this.iterTokensOut +=
-						(usage.output as number) ?? 0;
-					this.iterCacheRead +=
-						(usage.cacheRead as number) ?? 0;
-					this.iterCacheWrite +=
-						(usage.cacheWrite as number) ?? 0;
-					const cost = usage.cost as
-						| Record<string, unknown>
-						| undefined;
-					if (cost)
-						this.iterCost +=
-							(cost.total as number) ?? 0;
-				}
+				const usage = msg.usage;
+				this.iterTokensIn += usage.input ?? 0;
+				this.iterTokensOut += usage.output ?? 0;
+				this.iterCacheRead += usage.cacheRead ?? 0;
+				this.iterCacheWrite += usage.cacheWrite ?? 0;
+				this.iterCost += usage.cost?.total ?? 0;
 			}
 		}
-
-		// Resolve iteration promise on agent_end
-		if (eventType === "agent_end") {
-			if (this.resolveAgentEnd) this.resolveAgentEnd();
-		}
 	}
-
-	// ── Telemetry ───────────────────────────────────────────────────
 
 	private resetIterStats(): void {
 		this.iterStartTime = Date.now();
@@ -393,7 +298,6 @@ export class LoopEngine {
 			endedAt: new Date(now).toISOString(),
 		};
 
-		// Write per-iteration stats file
 		const iterFile = join(
 			this.ralphDir,
 			"iterations",
@@ -401,7 +305,6 @@ export class LoopEngine {
 		);
 		writeFileSync(iterFile, JSON.stringify(stats, null, 2) + "\n");
 
-		// Update cumulative stats
 		this.cumulativeStats.iterations++;
 		this.cumulativeStats.durationMs += durationMs;
 		this.cumulativeStats.turns += this.iterTurns;
@@ -411,8 +314,6 @@ export class LoopEngine {
 
 		return stats;
 	}
-
-	// ── Filesystem ──────────────────────────────────────────────────
 
 	/** Atomic write: tmp file + rename to prevent partial reads */
 	private writeState(): void {
@@ -442,39 +343,23 @@ export class LoopEngine {
 		} catch {}
 	}
 
-	// ── Internal ────────────────────────────────────────────────────
-
-	private rpcSend(command: Record<string, unknown>): void {
-		if (this.rpc?.stdin?.writable) {
-			this.rpc.stdin.write(JSON.stringify(command) + "\n");
-		}
-	}
-
 	private setStatus(status: LoopStatus): void {
 		this.status = status;
 		this.callbacks.onStatusChange?.(status, this.error);
 	}
 
 	private cleanup(): void {
-		this.rl?.close();
-		this.rl = null;
+		if (this.unsubscribe) {
+			this.unsubscribe();
+			this.unsubscribe = null;
+		}
 
 		this.eventsStream?.end();
 		this.eventsStream = null;
 
-		if (this.rpc && !this.rpc.killed) {
-			// Kill the process group (negative pid) since we spawned detached
-			try {
-				process.kill(-this.rpc.pid!, "SIGTERM");
-			} catch {
-				// Process group may already be gone
-				try {
-					this.rpc.kill("SIGTERM");
-				} catch {
-					// Already dead
-				}
-			}
+		if (this.session) {
+			this.session.dispose();
+			this.session = null;
 		}
-		this.rpc = null;
 	}
 }

@@ -53,7 +53,6 @@ export interface LoopState {
 	startedAt: string;
 	updatedAt: string;
 	error?: string;
-	pid: number;
 }
 
 /** Get the .ralph/<name>/ directory for a named loop in a project */

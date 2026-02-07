@@ -203,33 +203,34 @@ Sticky pending message display in widget. User messages inserted into stream
 at the right position (on `message_start` for steers, on iteration start
 for follow-ups).
 
-### Phase 3: SDK Migration
+### Phase 3: SDK Migration ✅
 
-Replace the RPC subprocess with the pi SDK (`createAgentSession`). This
-eliminates all process management complexity while keeping the same
+Replaced the RPC subprocess with the pi SDK (`createAgentSession`). This
+eliminated all process management complexity while keeping the same
 user-facing behavior.
 
-- [ ] Replace RPC subprocess with `createAgentSession()` in LoopEngine
+- [x] Replace RPC subprocess with `createAgentSession()` in LoopEngine
   - `SessionManager.inMemory()` for no persistence
   - Configure model/provider/thinking via session options
   - Share `AuthStorage` and `ModelRegistry` from parent pi
-- [ ] Replace `rpcSend({ type: "prompt" })` with `await session.prompt()`
-- [ ] Replace `rpcSend({ type: "new_session" })` with `await session.newSession()`
-- [ ] Replace `rpcSend({ type: "steer" })` with `await session.steer()`
-  - Remove the wrapper prompt — `session.steer()` handles delivery natively
-- [ ] Replace JSON event parsing with `session.subscribe()`
+- [x] Replace `rpcSend({ type: "prompt" })` with `await session.prompt()`
+- [x] Replace `rpcSend({ type: "new_session" })` with `await session.newSession()`
+- [x] Replace `rpcSend({ type: "steer" })` with `await session.steer()`
+  - Removed the wrapper prompt — `session.steer()` handles delivery natively
+- [x] Replace JSON event parsing with `session.subscribe()`
   - Same event types, but typed — no more JSON.parse on stdout lines
-  - Remove readline, events.jsonl writing (or keep for debugging)
-- [ ] Replace process lifecycle management with `session.dispose()`
-  - Remove spawn, detached, unref, process groups, SIGTERM
-  - Remove session_shutdown handler (dispose is instant)
-- [ ] Replace `agent_end` promise resolution with proper event handling
-  - Subscribe to `agent_end` event directly
-- [ ] Verify: steer user message timing still works
-  - `message_start` with role "user" should still fire for steers
-- [ ] Verify: telemetry extraction from `message_end` events still works
-- [ ] Remove `/ralph kill` command (no process to kill, stop is sufficient)
-- [ ] Update index.ts event rendering to use typed events instead of
+  - Kept events.jsonl writing (JSON.stringify of typed events) for debugging
+- [x] Replace process lifecycle management with `session.dispose()`
+  - Removed spawn, detached, unref, process groups, SIGTERM
+  - session_shutdown now calls engine.kill() which does abort + dispose
+- [x] Replace `agent_end` promise resolution with proper event handling
+  - No longer needed — `await session.prompt()` resolves when agent finishes
+- [x] Verify: steer user message timing still works
+  - `message_start` with role "user" still fires for steers via subscribe()
+- [x] Verify: telemetry extraction from `message_end` events still works
+  - Uses typed AgentMessage with proper Usage type instead of Record casts
+- [x] Remove `/ralph kill` command (no process to kill, stop is sufficient)
+- [x] Update index.ts event rendering to use typed events instead of
   `Record<string, unknown>` casts
 
 ### Phase 4: Reflection + Task File Management

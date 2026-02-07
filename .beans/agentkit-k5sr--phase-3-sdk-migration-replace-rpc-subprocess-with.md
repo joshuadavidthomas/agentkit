@@ -1,10 +1,11 @@
 ---
 # agentkit-k5sr
 title: 'Phase 3: SDK Migration — replace RPC subprocess with AgentSession'
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-02-07T17:06:16Z
-updated_at: 2026-02-07T17:06:16Z
+updated_at: 2026-02-07T17:51:42Z
 parent: agentkit-y69o
 ---
 
@@ -20,22 +21,33 @@ The SDK provides everything the RPC mode did as typed method calls:
 
 ## Checklist
 
-- [ ] Replace RPC subprocess with `createAgentSession()` in LoopEngine
+- [x] Replace RPC subprocess with `createAgentSession()` in LoopEngine
   - `SessionManager.inMemory()` for no persistence
   - Configure model/provider/thinking via session options
   - Share `AuthStorage` and `ModelRegistry` from parent pi
-- [ ] Replace `rpcSend({ type: "prompt" })` with `await session.prompt()`
-- [ ] Replace `rpcSend({ type: "new_session" })` with `await session.newSession()`
-- [ ] Replace `rpcSend({ type: "steer" })` with `await session.steer()`
-  - Remove the wrapper prompt — `session.steer()` handles delivery natively
-- [ ] Replace JSON event parsing with `session.subscribe()`
+- [x] Replace `rpcSend({ type: "prompt" })` with `await session.prompt()`
+- [x] Replace `rpcSend({ type: "new_session" })` with `await session.newSession()`
+- [x] Replace `rpcSend({ type: "steer" })` with `await session.steer()`
+  - Removed the wrapper prompt — `session.steer()` handles delivery natively
+- [x] Replace JSON event parsing with `session.subscribe()`
   - Same event types, but typed — no more JSON.parse on stdout lines
-  - Remove readline, events.jsonl writing (or keep for debugging)
-- [ ] Replace process lifecycle management with `session.dispose()`
-  - Remove spawn, detached, unref, process groups, SIGTERM
-  - Remove session_shutdown handler (dispose is instant)
-- [ ] Replace `agent_end` promise resolution with proper event handling
-- [ ] Verify: steer user message timing still works (message_start with role user)
-- [ ] Verify: telemetry extraction from message_end events still works
-- [ ] Remove `/ralph kill` command (no process to kill, stop is sufficient)
-- [ ] Update index.ts event rendering to use typed events instead of Record<string, unknown> casts
+  - Kept events.jsonl writing (JSON.stringify of typed events) for debugging
+- [x] Replace process lifecycle management with `session.dispose()`
+  - Removed spawn, detached, unref, process groups, SIGTERM
+  - session_shutdown now calls engine.kill() which does abort + dispose
+- [x] Replace `agent_end` promise resolution with proper event handling
+  - No longer needed — `await session.prompt()` resolves when agent finishes
+- [x] Verify: steer user message timing still works (message_start with role user)
+  - Uses typed events, message_start still fires with user role for steers
+- [x] Verify: telemetry extraction from message_end events still works
+  - Uses typed AgentMessage with proper Usage interface
+- [x] Remove `/ralph kill` command (no process to kill, stop is sufficient)
+- [x] Update index.ts event rendering to use typed events instead of Record<string, unknown> casts
+
+## Notes
+
+- Removed `pid` from `LoopState` type (no subprocess = no PID)
+- `kill()` method retained on engine but now calls `session.abort()` + `dispose()` instead of process signals
+- Engine constructor now takes `LoopEngineSessionDeps` with modelRegistry, model, and thinkingLevel from parent pi
+- Model resolution (string → Model object) happens in index.ts before engine creation
+- Events log still written to events.jsonl via JSON.stringify of typed events
