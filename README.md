@@ -126,6 +126,10 @@ Query codebases semantically using LLMs. Use when asking questions about librari
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
+### [diataxis](./skills/diataxis/SKILL.md)
+
+Structure and write documentation using the [Diátaxis](https://diataxis.fr/) framework. Classifies content into tutorials, how-to guides, reference, and explanation. Includes all diataxis.fr pages as reference material for on-demand loading.
+
 ### [coolify-compose](./skills/coolify-compose/SKILL.md)
 
 Convert Docker Compose files to Coolify templates.
@@ -207,6 +211,10 @@ From [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/pa
 ### pi-subagents
 
 Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
+
+### diataxis
+
+Reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). Source repository: [evildmp/diataxis-documentation-framework](https://github.com/evildmp/diataxis-documentation-framework).
 
 ## License
 
