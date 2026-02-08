@@ -79,25 +79,49 @@ class StripLeadingSpacer implements Component {
 }
 
 /**
- * Custom editor for the ralph loop. Intercepts Enter in handleInput()
- * so the text goes ONLY to the loop agent (via onSteer callback) and
- * does NOT reach pi's input pipeline / parent agent. All other keys
- * pass through to CustomEditor for built-in keybinding support.
+ * Custom editor for the ralph loop. Intercepts Enter, Alt+Enter, and Esc
+ * in handleInput() so they route to the loop engine instead of pi's parent
+ * agent.
+ *
+ * Why we intercept here instead of using onAction/onEscape:
+ * pi's setEditorComponent() post-processing copies all default action
+ * handlers onto the custom editor AFTER the factory returns, silently
+ * overwriting any handlers the extension registered. So we must handle
+ * these keys at a higher priority — before super.handleInput() dispatches
+ * to the overwritten handlers.
  */
 class RalphEditor extends CustomEditor {
 	onSteer?: (text: string) => void;
+	onFollowUp?: (text: string) => void;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(tui, theme, keybindings);
 	}
 
 	handleInput(data: string): void {
+		// Alt+Enter → queue follow-up for next iteration
+		if (matchesKey(data, Key.alt("enter"))) {
+			const text = this.getText().trim();
+			if (text && this.onFollowUp) {
+				this.onFollowUp(text);
+				this.setText("");
+			}
+			return;
+		}
+
+		// Enter (not Shift+Enter) → steer current iteration
 		if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
 			const text = this.getText().trim();
 			if (text && this.onSteer) {
 				this.onSteer(text);
 				this.setText("");
 			}
+			return;
+		}
+
+		// Esc → kill the loop (when not showing autocomplete)
+		if (matchesKey(data, Key.escape) && !this.isShowingAutocomplete()) {
+			this.onEscape?.();
 			return;
 		}
 
@@ -371,9 +395,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Input Routing — custom editor replaces pi's default while loop is active.
-	// Intercepts Enter in handleInput() to prevent pi's input pipeline from
-	// also sending text to the parent agent. Esc and follow-up use CustomEditor
-	// callbacks. Restored to default when loop ends.
+	// All key routing (Enter, Alt+Enter, Esc) is handled in RalphEditor.handleInput()
+	// at a higher priority than super.handleInput(), because pi's setEditorComponent
+	// post-processing overwrites onAction/onEscape handlers with its own defaults.
 
 	function installLoopEditor(ctx: ExtensionCommandContext, engine: LoopEngine): void {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
@@ -385,21 +409,15 @@ export default function (pi: ExtensionAPI) {
 				engine.nudge(text);
 			};
 
+			editor.onFollowUp = (text: string) => {
+				pendingFollowupText = text;
+				updateWidget(ctx);
+				engine.queueForNextIteration(text);
+			};
+
 			editor.onEscape = () => {
 				engine.kill();
 			};
-
-			editor.onAction("followUp", () => {
-				const text = editor.getText().trim();
-				if (!text) return;
-
-				editor.setText("");
-
-				pendingFollowupText = text;
-				updateWidget(ctx);
-
-				engine.queueForNextIteration(text);
-			});
 
 			return editor;
 		});
