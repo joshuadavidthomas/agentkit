@@ -130,11 +130,20 @@ export function renderSubagentResult(
 
 		const items = getDisplayItems(r.messages);
 
-		// Render items in chronological order: tool calls inline,
-		// intermediate text as dim, final text as full markdown output
-		for (let i = 0; i < items.length; i++) {
-			const item = items[i]!;
-			if (item.type === "tool") {
+		if (isRunning) {
+			// While running, show a compact fixed-height view to prevent the
+			// TUI from auto-scrolling to the bottom on every update.
+			// Only display the last few tool calls so the widget height stays
+			// roughly constant as new tool calls stream in.
+			const MAX_RUNNING_TOOLS = 5;
+			const toolItems = items.filter((it) => it.type === "tool");
+			const hiddenCount = Math.max(0, toolItems.length - MAX_RUNNING_TOOLS);
+			if (hiddenCount > 0) {
+				c.addChild(
+					new Text(theme.fg("dim", `  ... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`), 0, 0),
+				);
+			}
+			for (const item of toolItems.slice(-MAX_RUNNING_TOOLS)) {
 				const { label, summary } = formatToolCallParts(item.name, item.args);
 				c.addChild(
 					new Text(
@@ -143,17 +152,41 @@ export function renderSubagentResult(
 						0,
 					),
 				);
-			} else if (item.type === "text" && item.text.trim()) {
-				// Check if this is the last text item — render as full output
-				const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
-				if (isLastText) {
-					// Add spacer only if preceded by tool calls (not at start)
-					if (i > 0) c.addChild(new Spacer(1));
-					c.addChild(new Markdown(item.text, 0, 0, mdTheme));
-				} else {
-					// Intermediate text — show truncated and dim
-					const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
-					c.addChild(new Text(theme.fg("dim", preview + (item.text.length > 120 ? "..." : "")), 0, 0));
+			}
+			// Show recent output lines from progress if available
+			const recentLines = (r.progress?.recentOutput ?? []).slice(-3);
+			if (recentLines.length > 0) {
+				c.addChild(new Spacer(1));
+				for (const line of recentLines) {
+					c.addChild(new Text(theme.fg("dim", `  ${line.slice(0, 120)}${line.length > 120 ? "..." : ""}`), 0, 0));
+				}
+			}
+		} else {
+			// Completed: render full items in chronological order — tool calls
+			// inline, intermediate text as dim, final text as full markdown output
+			for (let i = 0; i < items.length; i++) {
+				const item = items[i]!;
+				if (item.type === "tool") {
+					const { label, summary } = formatToolCallParts(item.name, item.args);
+					c.addChild(
+						new Text(
+							`  ${theme.fg("accent", "▸")} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`,
+							0,
+							0,
+						),
+					);
+				} else if (item.type === "text" && item.text.trim()) {
+					// Check if this is the last text item — render as full output
+					const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
+					if (isLastText) {
+						// Add spacer only if preceded by tool calls (not at start)
+						if (i > 0) c.addChild(new Spacer(1));
+						c.addChild(new Markdown(item.text, 0, 0, mdTheme));
+					} else {
+						// Intermediate text — show truncated and dim
+						const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
+						c.addChild(new Text(theme.fg("dim", preview + (item.text.length > 120 ? "..." : "")), 0, 0));
+					}
 				}
 			}
 		}
