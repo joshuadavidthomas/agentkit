@@ -175,6 +175,13 @@ export class LoopEngine {
 	/** Abort current iteration immediately and stop the loop. */
 	kill(): void {
 		this.stopRequested = true;
+
+		// Unsubscribe immediately to stop event flow before abort cleanup
+		if (this.unsubscribe) {
+			this.unsubscribe();
+			this.unsubscribe = null;
+		}
+
 		if (this.session) {
 			this.session.abort().catch(() => {});
 		}
@@ -260,6 +267,9 @@ export class LoopEngine {
 	}
 
 	private handleEvent(event: AgentSessionEvent): void {
+		// Don't forward events after stop/kill — prevents rendering after abort
+		if (this.stopRequested) return;
+
 		// Forward to extension for rendering
 		this.callbacks.onEvent(event);
 

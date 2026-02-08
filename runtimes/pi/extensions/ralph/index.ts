@@ -280,7 +280,8 @@ let activeLoop: {
 } | null = null;
 
 // Pending messages shown as sticky widget above editor until consumed.
-let pendingSteerText: string | null = null;
+// Steer texts are queued (not a single value) to handle rapid consecutive steers.
+let pendingSteerTexts: string[] = [];
 let pendingFollowupText: string | null = null;
 
 // Rendering state for the active loop's event stream
@@ -296,6 +297,18 @@ function resetRenderingState(): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	/** Flush any accumulated assistant text as a rendered message. */
+	function flushAssistantText(): void {
+		if (currentAssistantText.trim()) {
+			pi.sendMessage({
+				customType: "ralph_assistant",
+				content: currentAssistantText.trim(),
+				display: true,
+				details: {},
+			});
+		}
+		currentAssistantText = "";
+	}
 	// Message Renderers
 
 	pi.registerMessageRenderer(
@@ -367,7 +380,7 @@ export default function (pi: ExtensionAPI) {
 			const editor = new RalphEditor(tui, theme, keybindings);
 
 			editor.onSteer = (text: string) => {
-				pendingSteerText = text;
+				pendingSteerTexts.push(text);
 				updateWidget(ctx);
 				engine.nudge(text);
 			};
@@ -428,39 +441,30 @@ export default function (pi: ExtensionAPI) {
 				currentAssistantText += event.assistantMessageEvent.delta;
 			}
 		} else if (event.type === "message_start") {
+			// Flush any accumulated assistant text from the previous message
+			// before starting a new one. This prevents text from bleeding
+			// across message boundaries (e.g., when a steer creates a new turn).
+			flushAssistantText();
+
 			const msg = event.message;
 
 			// When a steer is delivered, the session emits a message_start
 			// with role "user". Insert our user message at exactly this
 			// point — right where the agent actually receives it.
-			if ("role" in msg && msg.role === "user" && pendingSteerText) {
+			if ("role" in msg && msg.role === "user" && pendingSteerTexts.length > 0) {
+				const steerText = pendingSteerTexts.shift()!;
 				pi.sendMessage({
 					customType: "ralph_user",
-					content: pendingSteerText,
+					content: steerText,
 					display: true,
 					details: {},
 				});
-				pendingSteerText = null;
 				if (activeLoop) {
 					updateWidget(activeLoop.ctx);
 				}
 			}
 		} else if (event.type === "message_end") {
-			const msg = event.message;
-
-			if (
-				"role" in msg &&
-				msg.role === "assistant" &&
-				currentAssistantText.trim()
-			) {
-				pi.sendMessage({
-					customType: "ralph_assistant",
-					content: currentAssistantText.trim(),
-					display: true,
-					details: {},
-				});
-				currentAssistantText = "";
-			}
+			flushAssistantText();
 		}
 	}
 
@@ -495,14 +499,14 @@ export default function (pi: ExtensionAPI) {
 			statusLine = `ralph: ${name} │ ${state.status} │ iter ${state.iteration}${maxStr}${duration}${cost}`;
 		}
 
-		const steer = pendingSteerText;
+		const steers = [...pendingSteerTexts];
 		const followup = pendingFollowupText;
 
 		ctx.ui.setWidget("ralph", (_tui, theme) => ({
 			render(width: number): string[] {
 				const lines: string[] = [];
 
-				if (steer) {
+				for (const steer of steers) {
 					lines.push(theme.fg("dim", ` Steering: ${steer}`));
 				}
 				if (followup) {
@@ -715,11 +719,13 @@ export default function (pi: ExtensionAPI) {
 				onEvent: (event) => handleSessionEvent(event, cwd),
 
 				onIterationStart: (iteration) => {
+					// Flush any remaining text from previous iteration before clearing
+					flushAssistantText();
 					resetRenderingState();
 
 					const consumedFollowup = pendingFollowupText;
 
-					pendingSteerText = null;
+					pendingSteerTexts = [];
 					pendingFollowupText = null;
 
 					pi.sendMessage({
@@ -763,7 +769,7 @@ export default function (pi: ExtensionAPI) {
 						status === "stopped" ||
 						status === "error"
 					) {
-						pendingSteerText = null;
+						pendingSteerTexts = [];
 						pendingFollowupText = null;
 						uninstallLoopEditor(ctx);
 					}
@@ -798,7 +804,7 @@ export default function (pi: ExtensionAPI) {
 		);
 
 		activeLoop = { name: parsed.name, dir, engine, ctx };
-		pendingSteerText = null;
+		pendingSteerTexts = [];
 		pendingFollowupText = null;
 		resetRenderingState();
 		installLoopEditor(ctx, engine);
