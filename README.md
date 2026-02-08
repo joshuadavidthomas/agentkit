@@ -126,13 +126,13 @@ Query codebases semantically using LLMs. Use when asking questions about librari
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### [diataxis](./skills/diataxis/SKILL.md)
-
-Structure and write documentation using the [Diátaxis](https://diataxis.fr/) framework. Classifies content into tutorials, how-to guides, reference, and explanation. Includes all diataxis.fr pages as reference material for on-demand loading.
-
 ### [coolify-compose](./skills/coolify-compose/SKILL.md)
 
 Convert Docker Compose files to Coolify templates.
+
+### [diataxis](./skills/diataxis/SKILL.md)
+
+Structure and write documentation using the [Diátaxis](https://diataxis.fr/) framework. Classifies content into tutorials, how-to guides, reference, and explanation. Includes all diataxis.fr pages as reference material for on-demand loading.
 
 ### [frontend-design-principles](./skills/frontend-design-principles/SKILL.md)
 
