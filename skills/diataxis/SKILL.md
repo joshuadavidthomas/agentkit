@@ -7,14 +7,6 @@ description: Structure, classify, and write documentation using the Diátaxis fr
 
 Apply the Diátaxis systematic framework to structure and write documentation.
 
-## When This Skill Triggers
-
-Classify the user's request into one of these tasks:
-
-1. **Writing new documentation** — Determine which type to write, then follow its principles.
-2. **Improving existing documentation** — Classify what exists, identify type violations, fix them.
-3. **Organizing documentation architecture** — Assess the full doc set, separate mixed content, structure by type.
-
 ## The Four Documentation Types
 
 Diátaxis identifies exactly four types, defined by two axes:
