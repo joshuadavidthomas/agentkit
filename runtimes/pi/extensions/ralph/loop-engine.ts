@@ -228,7 +228,7 @@ export class LoopEngine {
 			// Re-read task each iteration — the agent may have updated it
 			const taskContent = readFileSync(taskPath, "utf-8").trim();
 			const prompt = this.pendingFollowup
-				? `${taskContent}\n\n---\n\nUser follow-up: ${this.pendingFollowup}`
+				? `${taskContent}\n\n---\n\n${this.pendingFollowup}`
 				: taskContent;
 			this.pendingFollowup = undefined;
 
