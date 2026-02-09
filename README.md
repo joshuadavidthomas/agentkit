@@ -12,10 +12,10 @@ This installs everything:
 
 | What | Where |
 |------|-------|
-| Skills | `~/.agents/skills/` (symlinked) |
 | Agents | `~/.config/opencode/agents/`, `~/.pi/agent/agents/` (transformed) |
 | Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
-| dcg config | `~/.config/dcg/` (symlinked) |
+| Skills | `~/.agents/skills/` (symlinked) |
+| [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
 
 
 ## Agents
