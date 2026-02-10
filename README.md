@@ -164,6 +164,26 @@ The key constraint: hands-on use over documentation. Install the tool, try it yo
 
 Extract and work with YouTube video transcripts.
 
+### Salsa
+
+A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
+
+| Skill | Description |
+|-------|-------------|
+| [salsa-overview](./skills/salsa-overview/SKILL.md) | Start here — what Salsa is, core concepts, and routing to specialized skills |
+| [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
+| [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
+| [salsa-database-architecture](./skills/salsa-database-architecture/SKILL.md) | Database struct design, layered trait hierarchies, crate boundaries, test vs production patterns |
+| [salsa-cycle-handling](./skills/salsa-cycle-handling/SKILL.md) | Handling recursive/cyclic queries with fixed-point iteration and fallback values |
+| [salsa-accumulators](./skills/salsa-accumulators/SKILL.md) | Side-channel output from tracked functions — diagnostics, warnings, logs |
+| [salsa-durability](./skills/salsa-durability/SKILL.md) | Optimizing performance by assigning durability levels to skip revalidation |
+| [salsa-memory-management](./skills/salsa-memory-management/SKILL.md) | Controlling cache growth, LRU sizing, and preventing unbounded memory usage |
+| [salsa-incremental-testing](./skills/salsa-incremental-testing/SKILL.md) | Verifying incremental reuse with event capture and memoization assertions |
+| [salsa-cancellation](./skills/salsa-cancellation/SKILL.md) | Cancellation handling for interactive systems — LSP servers, watch-mode CLIs |
+| [salsa-lsp-integration](./skills/salsa-lsp-integration/SKILL.md) | Building LSP servers with Salsa — host/snapshot concurrency, editor changes, diagnostics |
+| [salsa-production-patterns](./skills/salsa-production-patterns/SKILL.md) | Graduating from prototype to production — the maturity model and scaling strategies |
+| [salsa-advanced-plumbing](./skills/salsa-advanced-plumbing/SKILL.md) | Low-level patterns — `specify`, `singleton`, `attach`, persistence, synthetic writes |
+
 ## Tools
 
 ### [dcg](./dcg/)
@@ -215,6 +235,21 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 ### diataxis
 
 Reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). Source repository: [evildmp/diataxis-documentation-framework](https://github.com/evildmp/diataxis-documentation-framework).
+
+### salsa
+
+References code and patterns from:
+
+- [BAML](https://github.com/BoundaryML/baml) (Apache-2.0)
+- [Cairo](https://github.com/starkware-libs/cairo) (Apache-2.0)
+- [Fe](https://github.com/argotorg/fe) (Apache-2.0)
+- [Mun](https://github.com/mun-lang/mun) (MIT OR Apache-2.0)
+- [Salsa](https://github.com/salsa-rs/salsa) (MIT OR Apache-2.0)
+- [WGSL Analyzer](https://github.com/wgsl-analyzer/wgsl-analyzer) (MIT OR Apache-2.0)
+- [django-language-server](https://github.com/joshuadavidthomas/django-language-server) (Apache-2.0)
+- [rust-analyzer](https://github.com/rust-lang/rust-analyzer) (MIT OR Apache-2.0)
+- [stc](https://github.com/dudykr/stc) (Apache-2.0)
+- [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
 
 ## License
 
