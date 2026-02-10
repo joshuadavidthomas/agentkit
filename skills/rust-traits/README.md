@@ -12,8 +12,10 @@ patterns like sealed traits, extension traits, and marker traits.
   catalog, review checklist
 - `references/dispatch-patterns.md` — Static vs dynamic dispatch, monomorphization,
   `impl Trait`, performance comparison
-- `references/trait-patterns.md` — Sealed, extension, marker, blanket, GATs,
+- `references/trait-patterns.md` — Sealed, marker, blanket, GATs,
   closure-based strategies, newtype delegation
+- `references/extension-traits.md` — The Ext pattern (blanket Ext and sealed Ext),
+  implementation guide, combinator return types, ecosystem examples
 - `references/standard-traits.md` — Which std traits to implement, derive vs manual,
   conversion hierarchy, `Deref` rules
 

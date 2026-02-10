@@ -1,11 +1,11 @@
 ---
 # agentkit-wi3d
 title: Build rust-traits skill
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-02-10T18:29:41Z
-updated_at: 2026-02-10T18:34:43Z
+updated_at: 2026-02-10T18:35:08Z
 ---
 
 Build the rust-traits skill — trait design, dispatch decisions, object safety, pattern catalog.

@@ -49,30 +49,15 @@ impl Format for Yaml {
 
 ## Extension Trait
 
-Adds methods to types you don't own. Works around the orphan rule without the
-newtype cost.
+Adds methods to types or traits you don't own. Two variants: **blanket Ext** (adds
+methods to every implementor of a trait, e.g., `AsyncReadExt` for all `AsyncRead`)
+and **sealed Ext** (adds methods to a specific type, e.g., Axum's `RequestExt`).
 
-```rust
-pub trait PathExt {
-    fn has_extension(&self, ext: &str) -> bool;
-}
+This pattern is pervasive — Tokio, futures, Tower, itertools, and Axum all use it.
 
-impl PathExt for std::path::Path {
-    fn has_extension(&self, ext: &str) -> bool {
-        self.extension()
-            .map(|e| e.eq_ignore_ascii_case(ext))
-            .unwrap_or(false)
-    }
-}
-```
-
-**Conventions:**
-- Name: `{Type}Ext` (e.g., `StrExt`, `PathExt`, `IteratorExt`)
-- Put in a prelude module or re-export at crate root so users can import it
-- Keep the trait focused — don't dump unrelated methods on one extension trait
-
-**Ecosystem examples:** `itertools::Itertools`, `futures::StreamExt`,
-`tokio::io::AsyncReadExt`.
+For the full reference (both variants, implementation guide, combinator return types,
+Ext vs newtype decision, naming conventions), see
+[extension-traits.md](extension-traits.md).
 
 ## Marker Trait
 

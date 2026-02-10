@@ -344,24 +344,34 @@ impl State for Inactive { fn name(&self) -> &'static str { "inactive" } }
 
 **Authority:** Rust API Guidelines [C-SEALED]. std sealing patterns.
 
-### Extension trait — add methods to foreign types
+### Extension trait — add methods to types or traits you don't own
 
-Use when you need methods on types you don't own, without the newtype cost.
+Two variants exist:
+
+**Blanket Ext** — adds convenience methods to every implementor of a base trait.
+The dominant pattern in Tokio, futures, Tower, and itertools.
 
 ```rust
-pub trait StrExt {
-    fn truncate_ellipsis(&self, max: usize) -> String;
-}
-
-impl StrExt for str {
-    fn truncate_ellipsis(&self, max: usize) -> String {
-        if self.len() <= max { self.to_string() }
-        else { format!("{}…", &self[..max]) }
+pub trait AsyncReadExt: AsyncRead {
+    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Read<'a, Self>
+    where Self: Unpin,
+    {
+        read(self, buf)
     }
+    // ... all methods have default impls
 }
+impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}  // blanket impl
 ```
 
-Convention: name the trait `{Type}Ext` and put it in a prelude or re-export it.
+**Sealed Ext** — adds methods to a specific foreign type. Used by Axum's
+`RequestExt`.
+
+Convention: name the trait `{Base}Ext` (e.g., `AsyncReadExt`, `StreamExt`,
+`PathExt`). Re-export from crate root or a prelude module.
+
+For the full reference (both variants, implementation guide, combinator patterns,
+Ext vs newtype decision), see
+[references/extension-traits.md](references/extension-traits.md).
 
 ### Marker trait — compile-time capability tags
 
