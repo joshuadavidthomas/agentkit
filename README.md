@@ -150,6 +150,26 @@ Includes:
 
 Methodical approach to researching unfamiliar codebases using specialized subagents.
 
+### Salsa
+
+A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
+
+| Skill | Description |
+|-------|-------------|
+| [salsa-accumulators](./skills/salsa-accumulators/SKILL.md) | Side-channel output from tracked functions — diagnostics, warnings, logs |
+| [salsa-advanced-plumbing](./skills/salsa-advanced-plumbing/SKILL.md) | Low-level patterns — `specify`, `singleton`, `attach`, persistence, synthetic writes |
+| [salsa-cancellation](./skills/salsa-cancellation/SKILL.md) | Cancellation handling for interactive systems — LSP servers, watch-mode CLIs |
+| [salsa-cycle-handling](./skills/salsa-cycle-handling/SKILL.md) | Handling recursive/cyclic queries with fixed-point iteration and fallback values |
+| [salsa-database-architecture](./skills/salsa-database-architecture/SKILL.md) | Database struct design, layered trait hierarchies, crate boundaries, test vs production patterns |
+| [salsa-durability](./skills/salsa-durability/SKILL.md) | Optimizing performance by assigning durability levels to skip revalidation |
+| [salsa-incremental-testing](./skills/salsa-incremental-testing/SKILL.md) | Verifying incremental reuse with event capture and memoization assertions |
+| [salsa-lsp-integration](./skills/salsa-lsp-integration/SKILL.md) | Building LSP servers with Salsa — host/snapshot concurrency, editor changes, diagnostics |
+| [salsa-memory-management](./skills/salsa-memory-management/SKILL.md) | Controlling cache growth, LRU sizing, and preventing unbounded memory usage |
+| [salsa-overview](./skills/salsa-overview/SKILL.md) | Start here — what Salsa is, core concepts, and routing to specialized skills |
+| [salsa-production-patterns](./skills/salsa-production-patterns/SKILL.md) | Graduating from prototype to production — the maturity model and scaling strategies |
+| [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
+| [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
+
 ### [skill-authoring](./skills/skill-authoring/SKILL.md)
 
 Guide for authoring, creating, refining, or troubleshooting agent skills.
@@ -163,26 +183,6 @@ The key constraint: hands-on use over documentation. Install the tool, try it yo
 ### [youtube-transcript](./skills/youtube-transcript/SKILL.md)
 
 Extract and work with YouTube video transcripts.
-
-### Salsa
-
-A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
-
-| Skill | Description |
-|-------|-------------|
-| [salsa-overview](./skills/salsa-overview/SKILL.md) | Start here — what Salsa is, core concepts, and routing to specialized skills |
-| [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
-| [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
-| [salsa-database-architecture](./skills/salsa-database-architecture/SKILL.md) | Database struct design, layered trait hierarchies, crate boundaries, test vs production patterns |
-| [salsa-cycle-handling](./skills/salsa-cycle-handling/SKILL.md) | Handling recursive/cyclic queries with fixed-point iteration and fallback values |
-| [salsa-accumulators](./skills/salsa-accumulators/SKILL.md) | Side-channel output from tracked functions — diagnostics, warnings, logs |
-| [salsa-durability](./skills/salsa-durability/SKILL.md) | Optimizing performance by assigning durability levels to skip revalidation |
-| [salsa-memory-management](./skills/salsa-memory-management/SKILL.md) | Controlling cache growth, LRU sizing, and preventing unbounded memory usage |
-| [salsa-incremental-testing](./skills/salsa-incremental-testing/SKILL.md) | Verifying incremental reuse with event capture and memoization assertions |
-| [salsa-cancellation](./skills/salsa-cancellation/SKILL.md) | Cancellation handling for interactive systems — LSP servers, watch-mode CLIs |
-| [salsa-lsp-integration](./skills/salsa-lsp-integration/SKILL.md) | Building LSP servers with Salsa — host/snapshot concurrency, editor changes, diagnostics |
-| [salsa-production-patterns](./skills/salsa-production-patterns/SKILL.md) | Graduating from prototype to production — the maturity model and scaling strategies |
-| [salsa-advanced-plumbing](./skills/salsa-advanced-plumbing/SKILL.md) | Low-level patterns — `specify`, `singleton`, `attach`, persistence, synthetic writes |
 
 ## Tools
 
@@ -204,41 +204,25 @@ When blocked, the agent is instructed to ask if the server is already running, a
 
 This repository includes and adapts work from several sources.
 
-### agents
+code-analyzer, code-locator, code-pattern-finder, and web-searcher agents are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
 
-code-analyzer, code-locator, code-pattern-finder, and web-searcher are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
+Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
-### answer
-
-From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
-
-### frontend-design-principles
-
-Cobbled together from:
+The frontend-design-principles skill was cobbled together from:
 
 - The [frontend-design](https://github.com/anthropics/skills/tree/main/frontend-design) skill in [anthropics/skills](https://github.com/anthropics/skills) (Apache 2.0)
 - [Dammyjay93/interface-design](https://github.com/Dammyjay93/interface-design) (MIT, Damola Akinleye)
 - [Teaching Claude to Design Better: Improving Anthropic's Frontend Design Skill](https://www.justinwetch.com/blog/improvingclaudefrontend) ([relevant PR](https://github.com/anthropics/skills/pull/210) to official anthropics/skills skill) by Justin Wetch
 
-### messages
+Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
-From [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
+Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
-### notify
+pi-subagents pi extension vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
-From [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
+Diátaxis reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). Source repository: [evildmp/diataxis-documentation-framework](https://github.com/evildmp/diataxis-documentation-framework).
 
-### pi-subagents
-
-Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
-
-### diataxis
-
-Reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). Source repository: [evildmp/diataxis-documentation-framework](https://github.com/evildmp/diataxis-documentation-framework).
-
-### salsa
-
-References code and patterns from:
+Salsa skills reference code and patterns from:
 
 - [BAML](https://github.com/BoundaryML/baml) (Apache-2.0)
 - [Cairo](https://github.com/starkware-libs/cairo) (Apache-2.0)
