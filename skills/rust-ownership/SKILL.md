@@ -35,6 +35,8 @@ stays quiet.
 Functions should borrow unless they need to store, return, or transfer the value.
 This is the single most impactful rule for reducing borrow checker fights.
 
+**Authority:** Rust API Guidelines (caller controls allocation); Effective Rust (prefer borrowing in APIs).
+
 ```rust
 // WRONG — takes ownership unnecessarily
 fn contains_admin(users: Vec<User>) -> bool {
@@ -68,7 +70,7 @@ fn sum(prices: &[f64]) -> f64 { prices.iter().sum() }
 
 | Instead of | Accept | Works with |
 |-----------|--------|------------|
-| `&String` | `&str` | `String`, `&str`, string literals, `Cow<str>` |
+| `&String` | `&str` | `String`, `&str`, string literals, `Cow<'_, str>` |
 | `&Vec<T>` | `&[T]` | `Vec<T>`, `[T; N]`, slices |
 | `&PathBuf` | `&Path` | `PathBuf`, `&Path`, `&str`, `&OsStr` |
 | `&OsString` | `&OsStr` | `OsString`, `&OsStr` |
@@ -179,8 +181,8 @@ unnecessary), see [references/smart-pointers.md](references/smart-pointers.md).
 
 ## Lifetime Essentials
 
-Lifetimes describe how long references are valid. The compiler infers most of them.
-You only annotate when the compiler can't figure it out.
+Let the compiler infer lifetimes. Only write lifetime parameters when elision fails
+or when a type stores references (e.g., structs holding `&str`).
 
 ### Elision rules (when you don't need annotations)
 
@@ -284,8 +286,7 @@ fn process(data: &Data) {
 thread transfer, stored copy), it's probably a design issue. Fix the ownership
 model, not the symptom.
 
-**Authority:** pretzelhammer, "Tour of Rust's Standard Library Traits" (Clone section).
-BurntSushi: "unwrap is not that bad" (similar reasoning applies to clone).
+**Authority:** pretzelhammer ("Tour of Rust's Standard Library Traits" — Clone/Copy); Effective Rust (items on ownership ergonomics).
 
 ## Common Mistakes (Agent Failure Modes)
 

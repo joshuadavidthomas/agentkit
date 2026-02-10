@@ -2,8 +2,7 @@
 
 ## Box<T> — Single-owner heap allocation
 
-`Box<T>` is the simplest smart pointer: one owner, heap-allocated, freed when the
-owner drops. Use it for three main cases.
+`Box<T>` is the simplest smart pointer: one owner, heap-allocated, freed when the owner drops. Use it for three main cases.
 
 ### Recursive types
 
@@ -33,52 +32,50 @@ fn make_error(msg: &str) -> Box<dyn std::error::Error> {
 
 ### Large values off the stack
 
-Moving a large struct through function calls copies it each time (on the stack).
-Box it once, pass the pointer.
+Moving a large struct through function calls copies it each time (on the stack). Box it once, pass the pointer.
 
 ```rust
-// 10KB struct — expensive to move on stack
-struct LargeBuffer {
-    data: [u8; 10240],
-}
+struct LargeBuffer { data: [u8; 10240] }
 
-// Heap-allocated, only the pointer moves
-let buf = Box::new(LargeBuffer { data: [0; 10240] });
-process(buf);  // Moves the Box (pointer), not the 10KB
+fn process(_: Box<LargeBuffer>) {}
+
+fn main() {
+    process(Box::new(LargeBuffer { data: [0; 10240] }));
+}
 ```
 
 ### When Box is unnecessary
 
-Don't box small types. Don't box just because "it's on the heap." If you have a
-`Vec<T>` or `String`, the data is already heap-allocated — boxing the handle adds
-an unnecessary indirection.
+Don't box small types. Don't box just because "it's on the heap." If you have a `Vec<T>` or `String`, the data is already heap-allocated — boxing the handle adds an unnecessary indirection.
 
 ```rust
-// WRONG — Vec already heap-allocates its contents
-let data: Box<Vec<i32>> = Box::new(vec![1, 2, 3]);
+fn main() {
+    // WRONG — Vec already heap-allocates its contents
+    let _boxed: Box<Vec<i32>> = Box::new(vec![1, 2, 3]);
 
-// RIGHT — Vec handles its own heap allocation
-let data: Vec<i32> = vec![1, 2, 3];
+    // RIGHT — Vec handles its own heap allocation
+    let _plain: Vec<i32> = vec![1, 2, 3];
+}
 ```
 
 ## Rc<T> — Single-threaded shared ownership
 
-`Rc<T>` (reference counted) lets multiple owners share immutable access to the same
-heap data. Cloning an `Rc` increments a counter; dropping decrements it. When the
-count reaches zero, the data is freed.
+`Rc<T>` (reference counted) lets multiple owners share immutable access to the same heap data. Cloning an `Rc` increments a counter; dropping decrements it. When the count reaches zero, the data is freed.
 
 ```rust
 use std::rc::Rc;
 
-let config = Rc::new(Config::load()?);
+struct Config;
+struct Handler(Rc<Config>);
 
-// Multiple components share the same config — no deep copy
-let handler_a = Handler::new(Rc::clone(&config));
-let handler_b = Handler::new(Rc::clone(&config));
+fn main() {
+    let config = Rc::new(Config);
+    let _a = Handler(Rc::clone(&config));
+    let _b = Handler(Rc::clone(&config));
+}
 ```
 
-**Use `Rc::clone(&x)` not `x.clone()`.** The former makes it clear you're
-incrementing a reference count, not deep-copying the data. clippy enforces this.
+**Use `Rc::clone(&x)` not `x.clone()`.** The former makes it clear you're incrementing a reference count, not deep-copying the data. clippy enforces this.
 
 ### Rc is NOT thread-safe
 
@@ -92,41 +89,47 @@ threads won't compile. Use `Arc` instead.
 
 ## Arc<T> — Multi-threaded shared ownership
 
-`Arc<T>` (atomically reference counted) is `Rc` with atomic operations. It's
-`Send + Sync` when `T: Send + Sync`.
+`Arc<T>` (atomically reference counted) is `Rc` with atomic operations. It's `Send + Sync` when `T: Send + Sync`.
 
 ```rust
 use std::sync::Arc;
 
-let config = Arc::new(Config::load()?);
+struct Config;
 
-let handle = std::thread::spawn({
-    let config = Arc::clone(&config);
-    move || {
-        process(&config);
-    }
-});
+fn main() {
+    let config = Arc::new(Config);
+
+    let handle = std::thread::spawn({
+        let config = Arc::clone(&config);
+        move || {
+            let _cfg: &Config = &config; // Arc<T> derefs to T
+        }
+    });
+
+    handle.join().unwrap();
+}
 ```
 
-**Use `Arc::clone(&x)` not `x.clone()`.** Same reason as `Rc` — clarity about
-what's being cloned.
+**Use `Arc::clone(&x)` not `x.clone()`.** Same reason as `Rc` — clarity about what's being cloned.
 
 ### Arc + Mutex for shared mutable state
 
 ```rust
 use std::sync::{Arc, Mutex};
 
-let counter = Arc::new(Mutex::new(0));
+fn main() {
+    let counter = Arc::new(Mutex::new(0));
+    let mut handles = Vec::new();
 
-let handles: Vec<_> = (0..10).map(|_| {
-    let counter = Arc::clone(&counter);
-    std::thread::spawn(move || {
-        let mut num = counter.lock().unwrap();
-        *num += 1;
-    })
-}).collect();
+    for _ in 0..10 {
+        let counter = Arc::clone(&counter);
+        handles.push(std::thread::spawn(move || *counter.lock().unwrap() += 1));
+    }
 
-for h in handles { h.join().unwrap(); }
+    for h in handles {
+        h.join().unwrap();
+    }
+}
 ```
 
 Prefer `RwLock` over `Mutex` when reads vastly outnumber writes.
@@ -139,13 +142,11 @@ Prefer `RwLock` over `Mutex` when reads vastly outnumber writes.
 | Overhead | Non-atomic increment | Atomic increment |
 | When | Single-threaded sharing | Cross-thread sharing |
 
-Don't use `Arc` in single-threaded code. The atomic operations are unnecessary
-overhead. clippy: `rc_buffer`, `arc_with_non_send_sync`.
+Don't use `Arc` in single-threaded code. The atomic operations are unnecessary overhead. clippy: `rc_buffer`, `arc_with_non_send_sync`.
 
 ## Weak<T> — Breaking reference cycles
 
-`Weak<T>` is a non-owning handle to `Rc`/`Arc` data. It doesn't prevent deallocation.
-Use it to break cycles in graph structures.
+`Weak<T>` is a non-owning handle to `Rc`/`Arc` data. It doesn't prevent deallocation. Use it to break cycles in graph structures.
 
 ```rust
 use std::rc::{Rc, Weak};
@@ -167,8 +168,7 @@ data has been freed.
 
 ## Cell<T> and RefCell<T> — Interior mutability
 
-Interior mutability lets you mutate data behind a shared reference (`&T`). This is
-the escape hatch when the borrow checker's static analysis is too conservative.
+Interior mutability lets you mutate data behind a shared reference (`&T`). This is the escape hatch when the borrow checker's static analysis is too conservative.
 
 ### Cell<T> — for Copy types
 
@@ -178,12 +178,10 @@ types because it copies the value in and out.
 ```rust
 use std::cell::Cell;
 
-struct Counter {
-    count: Cell<u32>,
-}
+struct Counter { count: Cell<u32> }
 
 impl Counter {
-    fn increment(&self) {  // &self, not &mut self
+    fn increment(&self) {
         self.count.set(self.count.get() + 1);
     }
 }
@@ -197,31 +195,24 @@ them panics.
 ```rust
 use std::cell::RefCell;
 
-let data = RefCell::new(vec![1, 2, 3]);
+fn main() {
+    let data = RefCell::new(vec![1, 2, 3]);
 
-// Runtime borrow check
-let borrowed = data.borrow();      // &Vec<i32>
-let mut_borrow = data.borrow_mut(); // PANICS: already borrowed
+    // Runtime borrow check: this panics because an immutable borrow is still active.
+    let _borrowed = data.borrow();
+    let _mut_borrow = data.borrow_mut();
+}
 ```
 
-**Prefer `try_borrow()` / `try_borrow_mut()` in production code.** They return
-`Result` instead of panicking, letting you handle conflicts gracefully.
+**Prefer `try_borrow()` / `try_borrow_mut()` in production code.** They return `Result` instead of panicking, letting you handle conflicts gracefully.
 
 ### When interior mutability is appropriate
 
-- **Caches and memoization:** A method computes a value once and caches it, but the
-  method takes `&self` because it's logically a read operation.
-- **Observer/listener patterns:** Registering callbacks via `&self`.
-- **Test doubles:** Mock objects that record calls for later assertion.
+Use it for: caches/memoization behind `&self`, observer/listener registration, and test doubles that record calls.
 
 ### When interior mutability is a code smell
 
-- You're using `RefCell` everywhere to dodge the borrow checker → Restructure your
-  types to separate mutable and immutable parts.
-- `RefCell::borrow_mut()` panics at runtime → Your access pattern has a logical
-  conflict that should be resolved at the type level.
-- You're wrapping large subsystems in `RefCell` → Break the subsystem into smaller
-  pieces with clearer ownership.
+If you're using `RefCell` everywhere to dodge the borrow checker, if `borrow_mut()` panics in practice, or if you're wrapping large subsystems, the design needs clearer ownership boundaries.
 
 ## Decision summary
 
@@ -246,4 +237,4 @@ I need shared AND mutable
   → Cross threads? Arc<Mutex<T>> or Arc<RwLock<T>>
 ```
 
-**Authority:** The Rust Book ch 15. Effective Rust Items 14-15. std library design.
+**Authority:** The Rust Book ch 15. Effective Rust (smart pointers and ownership tradeoffs). std library design.

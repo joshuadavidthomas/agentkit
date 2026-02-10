@@ -223,5 +223,4 @@ The practical impact: mutable references are stricter than immutable references.
 If you're getting confusing lifetime errors with `&mut` but not `&`, variance is
 usually the reason.
 
-**Authority:** Common Rust Lifetime Misconceptions (pretzelhammer). The Rust Book
-ch 10.3, ch 15. Rust Reference: lifetime elision, subtyping. Effective Rust Items 14-15.
+**Authority:** Common Rust Lifetime Misconceptions (pretzelhammer). The Rust Book ch 10.3, ch 15. Rust Reference: lifetime elision, subtyping. Effective Rust (lifetimes and borrowing).

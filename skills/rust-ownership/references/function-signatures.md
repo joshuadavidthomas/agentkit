@@ -2,40 +2,38 @@
 
 ## Accept borrowed forms — the general rule
 
-Every owned type has a borrowed counterpart that's more flexible. Accept the borrowed
-form unless you need ownership.
+Every owned type has a borrowed counterpart that's more flexible. Accept the borrowed form unless you need ownership.
 
-| Owned form | Borrowed form | Deref coercion from |
-|-----------|--------------|---------------------|
-| `String` | `&str` | `String`, `&str`, `Box<str>`, `Cow<str>`, `Rc<String>`, `Arc<String>` |
-| `Vec<T>` | `&[T]` | `Vec<T>`, `[T; N]`, `Box<[T]>` |
-| `PathBuf` | `&Path` | `PathBuf`, `&Path`, `OsString` (via `AsRef<Path>`) |
-| `OsString` | `&OsStr` | `OsString`, `&OsStr`, `String`, `&str` |
+| Owned form | Borrowed form | Works with callers holding |
+|-----------|--------------|----------------------------|
+| `String` | `&str` | `String`, `&str`, string literals, `Cow<'_, str>`, `Box<str>`, `Rc<String>`, `Arc<String>` |
+| `Vec<T>` | `&[T]` | `Vec<T>`, arrays (`[T; N]`), slices, `Box<[T]>` |
+| `PathBuf` | `&Path` | `PathBuf`, `&Path`, `&str` (via `AsRef<Path>`) |
+| `OsString` | `&OsStr` | `OsString`, `&OsStr`, `&str` (via `AsRef<OsStr>`) |
 | `CString` | `&CStr` | `CString`, `&CStr` |
 
-**Why this matters:** A function accepting `&str` works for callers holding `String`,
-`&str`, or string literals — zero allocation, zero conversion. A function accepting
-`&String` forces callers with `&str` to allocate a `String` first.
+**Why this matters:** A function accepting `&str` works for callers holding `String`, `&str`, or string literals — zero allocation, zero conversion. A function accepting `&String` forces callers with `&str` to allocate a `String` first.
 
 **Authority:** Rust API Guidelines [C-CALLER-CONTROL]. clippy: `ptr_arg`.
 
 ## `impl AsRef<T>` — generic borrows
 
-When your function needs to work with multiple types that can provide a reference
-to `T`, use `AsRef<T>`:
+When your function needs to work with multiple types that can provide a reference to `T`, use `AsRef<T>`:
 
 ```rust
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn read_config(path: impl AsRef<Path>) -> std::io::Result<String> {
     std::fs::read_to_string(path.as_ref())
 }
 
-// All of these work:
-read_config("config.toml");                    // &str
-read_config(Path::new("config.toml"));         // &Path
-read_config(PathBuf::from("config.toml"));     // PathBuf
-read_config(String::from("config.toml"));      // String
+fn main() -> std::io::Result<()> {
+    let _ = read_config("config.toml")?;                // &str
+    let _ = read_config(Path::new("config.toml"))?;     // &Path
+    let _ = read_config(PathBuf::from("config.toml"))?; // PathBuf
+    let _ = read_config(String::from("config.toml"))?;  // String
+    Ok(())
+}
 ```
 
 Common `AsRef` bounds:
@@ -51,10 +49,11 @@ one type, `&str` is simpler than `impl AsRef<str>`.
 
 ## `impl Into<T>` — flexible ownership transfer
 
-When a function needs to **own** the value, `Into<T>` lets callers pass either the
-target type or anything convertible to it.
+When a function needs to **own** the value, `Into<T>` lets callers pass either the target type or anything convertible to it.
 
 ```rust
+use std::path::PathBuf;
+
 struct Config {
     name: String,
     path: PathBuf,
@@ -69,9 +68,13 @@ impl Config {
     }
 }
 
-// Callers don't need explicit conversion
-let c1 = Config::new("my-app", "/etc/my-app");       // &str → String, &str → PathBuf
-let c2 = Config::new(app_name, config_path);          // String → String, PathBuf → PathBuf
+fn main() {
+    let app_name = String::from("my-app");
+    let config_path = PathBuf::from("/etc/my-app");
+
+    let _c1 = Config::new("my-app", "/etc/my-app"); // &str → String, &str → PathBuf
+    let _c2 = Config::new(app_name, config_path);     // String → String, PathBuf → PathBuf
+}
 ```
 
 **Use `Into<T>` when:**
@@ -86,8 +89,7 @@ let c2 = Config::new(app_name, config_path);          // String → String, Path
 
 ## `Cow<'a, T>` — conditional ownership
 
-`Cow` (Clone on Write) borrows when possible, owns when necessary. Use it when a
-function sometimes returns a reference to its input and sometimes creates a new value.
+`Cow` (Clone on Write) borrows when possible, owns when necessary. Use it when a function sometimes returns a reference to its input and sometimes creates a new value.
 
 ```rust
 use std::borrow::Cow;
@@ -99,7 +101,7 @@ fn escape_html(input: &str) -> Cow<'_, str> {
             input
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
-                .replace('>', "&gt;")
+                .replace('>', "&gt;"),
         )
     } else {
         // No escaping needed — borrow the original
@@ -107,29 +109,32 @@ fn escape_html(input: &str) -> Cow<'_, str> {
     }
 }
 
-// Caller doesn't care whether it's borrowed or owned
-let output = escape_html("hello");          // Cow::Borrowed — zero alloc
-let output = escape_html("a < b");          // Cow::Owned — one alloc
-println!("{}", output);                      // Deref to &str either way
+fn main() {
+    let output = escape_html("hello"); // Cow::Borrowed — zero alloc
+    println!("{output}");
+
+    let output = escape_html("a < b"); // Cow::Owned — one alloc
+    println!("{output}");
+}
 ```
 
 ### When to use Cow
 
-- **String processing** that usually passes input through unchanged
-- **Normalization** functions (trim, lowercase) where most inputs are already normal
-- **Configuration** that has defaults (borrowed) overridden by user values (owned)
-- **Deserialization** with zero-copy for common cases
+Use it for "usually borrowed, sometimes owned" APIs: string processing that mostly passes through, normalization where most inputs are already normal, configs with borrowed defaults overridden by owned values, and zero-copy deserialization fast paths.
 
 ### When NOT to use Cow
 
-- The function always modifies input → just return `String`
-- The function never modifies input → just return `&str`
-- The complexity cost of `Cow` outweighs the allocation savings
+If you always modify input, return `String`. If you never modify input, return `&str`. Otherwise, don't pay `Cow`'s complexity cost.
 
 ### Cow in structs
 
 ```rust
 use std::borrow::Cow;
+
+#[derive(Clone, Copy)]
+enum LogLevel {
+    Info,
+}
 
 struct LogEntry<'a> {
     message: Cow<'a, str>,
@@ -137,12 +142,13 @@ struct LogEntry<'a> {
 }
 
 impl<'a> LogEntry<'a> {
-    // Can hold borrowed OR owned strings
     fn new(message: impl Into<Cow<'a, str>>, level: LogLevel) -> Self {
-        Self { message: message.into(), level }
+        Self {
+            message: message.into(),
+            level,
+        }
     }
 
-    // Convert to fully owned version (e.g., for sending to another thread)
     fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             message: Cow::Owned(self.message.into_owned()),
@@ -163,10 +169,19 @@ Function names signal ownership transfer. Follow std conventions:
 | `into_` | `self → T` | Consumes, may be free | `String::into_bytes`, `Vec::into_boxed_slice` |
 
 ```rust
+struct MyType {
+    inner: String,
+}
+
 impl MyType {
-    fn as_str(&self) -> &str { &self.inner }              // Free borrow
-    fn to_string(&self) -> String { self.inner.clone() }  // Allocates
-    fn into_inner(self) -> String { self.inner }          // Consumes, free
+    fn as_str(&self) -> &str { &self.inner }
+    fn to_string(&self) -> String { self.inner.clone() }
+    fn into_inner(self) -> String { self.inner }
+}
+
+fn main() {
+    let t = MyType { inner: "hi".to_string() };
+    let _s: &str = t.as_str();
 }
 ```
 
@@ -178,23 +193,34 @@ When the borrow checker complains about borrowing two parts of the same struct,
 split the borrow by accessing fields directly:
 
 ```rust
+struct Item {
+    name: String,
+}
+
 struct State {
     items: Vec<Item>,
     log: Vec<String>,
 }
 
-// WRONG — borrows all of State twice
-fn process(state: &mut State) {
-    for item in &state.items {
-        state.log.push(format!("processed {}", item.name));  // E0502
+impl State {
+    fn log_processed(&mut self, name: &str) {
+        self.log.push(format!("processed {name}"));
     }
 }
 
-// RIGHT — borrow fields independently
-fn process(state: &mut State) {
+// WRONG — holds an immutable borrow of `state.items` across the loop,
+// then tries to borrow all of `state` mutably via `&mut self`.
+fn process_wrong(state: &mut State) {
+    for item in &state.items {
+        state.log_processed(&item.name); // E0502
+    }
+}
+
+// RIGHT — split the struct borrow; mutate only the field you need.
+fn process_right(state: &mut State) {
     let State { items, log } = state;
     for item in items.iter() {
-        log.push(format!("processed {}", item.name));  // OK: disjoint borrows
+        log.push(format!("processed {}", &item.name));
     }
 }
 ```
@@ -204,9 +230,7 @@ Destructuring makes this visible.
 
 ## Pattern: bind temporaries to extend their lifetime
 
-Temporaries live only for the statement that creates them (unless directly bound
-in a `let`). When you need the borrowed data to outlive the statement, bind the
-temporary to a variable first.
+Temporaries live only for the statement that creates them (unless directly bound in a `let`). When you need the borrowed data to outlive the statement, bind the temporary to a variable first.
 
 ```rust
 // WRONG — temporary String is dropped after push; vec holds a dangling borrow
@@ -221,5 +245,4 @@ refs.push(&owned);  // owned lives as long as refs — no issue
 
 The binding extends the value's lifetime to the enclosing scope.
 
-**Authority:** Rust API Guidelines [C-CALLER-CONTROL], [C-CONV].
-Effective Rust Items 14-15. The Rust Book ch 4.
+**Authority:** Rust API Guidelines [C-CALLER-CONTROL], [C-CONV]. Effective Rust (borrowing and API ergonomics). The Rust Book ch 4.
