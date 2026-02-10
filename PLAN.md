@@ -181,7 +181,7 @@ Testing pyramid for Rust. Organization conventions. Quick-start for each tool.
 
 ### 8. `rust-performance` — Performance Optimization Rulebook
 
-**Status**: TODO
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Optimizing Rust code, profiling, code review for performance, allocation
 reduction, choosing data structures.
