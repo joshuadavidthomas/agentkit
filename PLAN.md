@@ -4,34 +4,17 @@
 
 ## The Problem
 
-AI agents write Rust that compiles and works but doesn't *think in Rust*. They default
-to patterns from Python/TypeScript/Java — bare Strings for domain types, booleans for
-states, trait objects for closed sets, runtime validation instead of type-level
-guarantees, wildcard match arms, `clone()` to silence the borrow checker.
+AI agents write Rust that compiles and works but doesn't *think in Rust*. They default to patterns from Python/TypeScript/Java — bare Strings for domain types, booleans for states, trait objects for closed sets, runtime validation instead of type-level guarantees, wildcard match arms, `clone()` to silence the borrow checker.
 
-The Rust ecosystem has clear, well-documented preferences for how code should be
-written. These skills encode those preferences so agents follow them by default, without
-the user repeating "use enums" and "no bare Strings" every session.
+The Rust ecosystem has clear, well-documented preferences for how code should be written. These skills encode those preferences so agents follow them by default, without the user repeating "use enums" and "no bare Strings" every session.
 
 ## Design Principles
 
-1. **Prescriptive, not descriptive.** "Do this" not "here's how this works." The agent
-   already knows Rust. The skills encode *judgment and defaults*.
-
-2. **Ecosystem-backed, not opinion.** Every rule cites authority — std library design,
-   Rust API Guidelines, clippy lints, Effective Rust, community consensus. These aren't
-   personal preferences, they're what the ecosystem recommends.
-
-3. **Different shapes for different skills.** Decision-framework skills (ownership,
-   traits), rulebook skills (performance), ecosystem-survey skills (testing, serde),
-   correctness-checklist skills (unsafe). The topic dictates the structure.
-
-4. **Error-code entry points.** Some skills activate when the user pastes a compiler
-   error, not just when they're making a design decision. E0382 → ownership skill.
-
-5. **Multi-modal sections within skills.** A single skill serves different moments:
-   stuck on an error → error table. Making a design choice → decision tree. Reviewing
-   code → checklist. Not one narrative flow.
+1. **Prescriptive, not descriptive.** "Do this" not "here's how this works." The agent already knows Rust. The skills encode *judgment and defaults*.
+2. **Ecosystem-backed, not opinion.** Every rule cites authority — std library design, Rust API Guidelines, clippy lints, Effective Rust, community consensus. These aren't personal preferences, they're what the ecosystem recommends.
+3. **Different shapes for different skills.** Decision-framework skills (ownership, traits), rulebook skills (performance), ecosystem-survey skills (testing, serde), correctness-checklist skills (unsafe). The topic dictates the structure.
+4. **Error-code entry points.** Some skills activate when the user pastes a compiler error, not just when they're making a design decision. E0382 → ownership skill.
+5. **Multi-modal sections within skills.** A single skill serves different moments: stuck on an error → error table. Making a design choice → decision tree. Reviewing code → checklist. Not one narrative flow.
 
 ## The 8 Skills
 
@@ -39,8 +22,7 @@ the user repeating "use enums" and "no bare Strings" every session.
 
 **Status**: DONE (REVIEWED)
 
-**The most important skill.** Loaded for any Rust work. Encodes the core "think in
-Rust" principles that agents consistently fail to apply:
+**The most important skill.** Loaded for any Rust work. Encodes the core "think in Rust" principles that agents consistently fail to apply:
 
 - Every string with domain meaning is a newtype
 - Every boolean is a lie — use an enum
@@ -52,8 +34,7 @@ Rust" principles that agents consistently fail to apply:
 - Trait objects only for open sets — use enums for closed sets
 - Borrow by default — own when intentional
 
-**Shape:** Hard rules with std library evidence + ecosystem citations. Review checklist
-at the end. Not a tutorial.
+**Shape:** Hard rules with std library evidence + ecosystem citations. Review checklist at the end. Not a tutorial.
 
 **Key references:**
 - Rust API Guidelines (C-NEWTYPE, C-CUSTOM-TYPE, C-ENUM)
@@ -69,12 +50,9 @@ at the end. Not a tutorial.
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** E0382, E0505, E0597, E0106, E0507, E0716, choosing smart pointers,
-function signature design, fighting the borrow checker.
+**Triggers:** E0382, E0505, E0597, E0106, E0507, E0716, choosing smart pointers, function signature design, fighting the borrow checker.
 
-**Shape:** Error-code-to-design-question table at top. Pointer type decision tree.
-Function signature rules with quantified impact. "When clone is fine" section. Review
-checklist.
+**Shape:** Error-code-to-design-question table at top. Pointer type decision tree. Function signature rules with quantified impact. "When clone is fine" section. Review checklist.
 
 **Key references:**
 - The Rust Book ch 4, 10, 15
@@ -88,12 +66,9 @@ checklist.
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** Designing trait hierarchies, static vs dynamic dispatch, object safety
-errors, E0277, trait coherence/orphan issues, when to use generics vs trait objects vs
-enums.
+**Triggers:** Designing trait hierarchies, static vs dynamic dispatch, object safety errors, E0277, trait coherence/orphan issues, when to use generics vs trait objects vs enums.
 
-**Shape:** Decision framework (enum vs generic vs trait object). Object safety quick
-reference. Pattern catalog (sealed, extension, GATs, marker traits). Common mistakes.
+**Shape:** Decision framework (enum vs generic vs trait object). Object safety quick reference. Pattern catalog (sealed, extension, GATs, marker traits). Common mistakes.
 
 **Key references:**
 - The Rust Book ch 10, 17
@@ -107,11 +82,9 @@ reference. Pattern catalog (sealed, extension, GATs, marker traits). Common mist
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** Designing error types, choosing thiserror vs anyhow, error propagation,
-Result/Option patterns, "how should I handle errors in this project."
+**Triggers:** Designing error types, choosing thiserror vs anyhow, error propagation, Result/Option patterns, "how should I handle errors in this project."
 
-**Shape:** Library vs application as the central axis. Error-type-as-domain-model
-philosophy. Combinator quick reference. Boundary rules (where to log vs return).
+**Shape:** Library vs application as the central axis. Error-type-as-domain-model philosophy. Combinator quick reference. Boundary rules (where to log vs return).
 
 **Key references:**
 - Error Handling in Rust (BurntSushi) — the canonical post
@@ -125,12 +98,9 @@ philosophy. Combinator quick reference. Boundary rules (where to log vs return).
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** Newtype pattern, type-state, phantom types, builder pattern, "make invalid
-states unrepresentable," domain modeling, encoding invariants.
+**Triggers:** Newtype pattern, type-state, phantom types, builder pattern, "make invalid states unrepresentable," domain modeling, encoding invariants.
 
-**Shape:** Principles + pattern catalog. Each pattern with motivation (what problem it
-solves), std/ecosystem evidence, and concrete before/after examples. Domain constraint
-examples woven in (fintech: Money newtype, embedded: type-state for hardware).
+**Shape:** Principles + pattern catalog. Each pattern with motivation (what problem it solves), std/ecosystem evidence, and concrete before/after examples. Domain constraint examples woven in (fintech: Money newtype, embedded: type-state for hardware).
 
 **Key references:**
 - The Typestate Pattern in Rust (Cliffle)
@@ -145,12 +115,9 @@ examples woven in (fintech: Money newtype, embedded: type-state for hardware).
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** async/await, tokio, channels, spawning, Send/Sync errors, blocking in
-async context, graceful shutdown, cancellation.
+**Triggers:** async/await, tokio, channels, spawning, Send/Sync errors, blocking in async context, graceful shutdown, cancellation.
 
-**Shape:** "CPU-bound or I/O-bound?" entry question. Channel type selection table.
-Core rules (don't block, don't hold locks across .await). Production patterns
-(graceful shutdown, backpressure, timeouts). Threading/rayon as reference for CPU-bound.
+**Shape:** "CPU-bound or I/O-bound?" entry question. Channel type selection table. Core rules (don't block, don't hold locks across .await). Production patterns (graceful shutdown, backpressure, timeouts). Threading/rayon as reference for CPU-bound.
 
 **Key references:**
 - Tokio tutorial (tokio-rs/website)
@@ -163,11 +130,9 @@ Core rules (don't block, don't hold locks across .await). Production patterns
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** Writing tests, test organization, property testing, benchmarking, mocking,
-snapshot testing, fuzzing, CI test setup.
+**Triggers:** Writing tests, test organization, property testing, benchmarking, mocking, snapshot testing, fuzzing, CI test setup.
 
-**Shape:** Ecosystem survey — what tools exist, when to use each, how to set up.
-Testing pyramid for Rust. Organization conventions. Quick-start for each tool.
+**Shape:** Ecosystem survey — what tools exist, when to use each, how to set up. Testing pyramid for Rust. Organization conventions. Quick-start for each tool.
 
 **Key references:**
 - The Rust Book ch 11
@@ -183,11 +148,9 @@ Testing pyramid for Rust. Organization conventions. Quick-start for each tool.
 
 **Status**: DONE (REVIEWED)
 
-**Triggers:** Optimizing Rust code, profiling, code review for performance, allocation
-reduction, choosing data structures.
+**Triggers:** Optimizing Rust code, profiling, code review for performance, allocation reduction, choosing data structures.
 
-**Shape:** Impact-ranked rulebook (CRITICAL → LOW). Incorrect → correct contrast format.
-Quantified claims. Scannable, not narrative. Profiling tool setup in references.
+**Shape:** Impact-ranked rulebook (CRITICAL → LOW). Incorrect → correct contrast format. Quantified claims. Scannable, not narrative. Profiling tool setup in references.
 
 **Key references:**
 - Rust Performance Book (nnethercote)
@@ -198,13 +161,11 @@ Quantified claims. Scannable, not narrative. Profiling tool setup in references.
 
 ### 9. `rust-unsafe` — Unsafe Code and FFI
 
-**Status**: TODO
+**Status**: DONE
 
-**Triggers:** Writing unsafe code, FFI, raw pointers, transmute, reviewing unsafe
-blocks, `// SAFETY:` documentation, bindgen/cbindgen.
+**Triggers:** Writing unsafe code, FFI, raw pointers, transmute, reviewing unsafe blocks, `// SAFETY:` documentation, bindgen/cbindgen.
 
-**Shape:** "When is unsafe actually necessary?" decision list. Safety invariant
-documentation requirements. Review checklist. FFI patterns reference. Common UB catalog.
+**Shape:** "When is unsafe actually necessary?" decision list. Safety invariant documentation requirements. Review checklist. FFI patterns reference. Common UB catalog.
 
 **Key references:**
 - The Rustonomicon (rust-lang/nomicon) — primary source
@@ -217,12 +178,9 @@ documentation requirements. Review checklist. FFI patterns reference. Common UB 
 
 **Status**: TODO
 
-**Triggers:** Writing macros, macro_rules!, proc macros, derive macros, syn/quote,
-debugging macros, macro hygiene.
+**Triggers:** Writing macros, macro_rules!, proc macros, derive macros, syn/quote, debugging macros, macro hygiene.
 
-**Shape:** Reference manual. Declarative macro patterns (fragment specifiers,
-repetitions, push-down accumulation). Proc macro guide (derive, attribute,
-function-like). Error reporting. Debugging with cargo-expand.
+**Shape:** Reference manual. Declarative macro patterns (fragment specifiers, repetitions, push-down accumulation). Proc macro guide (derive, attribute, function-like). Error reporting. Debugging with cargo-expand.
 
 **Key references:**
 - The Little Book of Rust Macros (veykril/tlborm)
@@ -235,11 +193,9 @@ function-like). Error reporting. Debugging with cargo-expand.
 
 **Status**: TODO
 
-**Triggers:** Starting a new project, organizing crates, workspace setup, feature flags,
-public API design, documentation, conditional compilation.
+**Triggers:** Starting a new project, organizing crates, workspace setup, feature flags, public API design, documentation, conditional compilation.
 
-**Shape:** Structural guide. Workspace patterns. Feature flag conventions. Public API
-checklist (what to expose, what traits to implement, naming). Documentation conventions.
+**Shape:** Structural guide. Workspace patterns. Feature flag conventions. Public API checklist (what to expose, what traits to implement, naming). Documentation conventions.
 
 **Key references:**
 - The Cargo Book (rust-lang/cargo)
@@ -248,34 +204,19 @@ checklist (what to expose, what traits to implement, naming). Documentation conv
 - Edition Guide (rust-lang/edition-guide)
 
 **Notes from real agent failures:**
-- Agents add feature flags inside workspace crates to "separate concerns" without
-  realizing Cargo unifies features across the workspace. If any crate enables the
-  feature, it's compiled for all — the gate is pure ceremony. Needs a clear rule:
-  "Feature flags in workspace crates are for external consumers, not internal
-  organization. For internal separation, use separate crates, not feature gates."
-- Real case: 25 `cfg(feature = "parser")` annotations gating a lightweight dep
-  (`ruff_python_parser`) while the heavy dep (`ruff_python_ast`) was unconditional.
-  The gate was on the wrong thing *and* workspace unification made it moot. Agent
-  only realized this after user pushed back and it actually checked `cargo tree`.
-- The skill should cover: when feature flags help (published crates, truly optional
-  heavy deps like TLS backends), when they don't (workspace-internal organization),
-  and the alternative (crate boundaries for real separation).
+- Agents add feature flags inside workspace crates to "separate concerns" without realizing Cargo unifies features across the workspace. If any crate enables the feature, it's compiled for all — the gate is pure ceremony. Needs a clear rule: "Feature flags in workspace crates are for external consumers, not internal organization. For internal separation, use separate crates, not feature gates."
+- Real case: 25 `cfg(feature = "parser")` annotations gating a lightweight dep (`ruff_python_parser`) while the heavy dep (`ruff_python_ast`) was unconditional. The gate was on the wrong thing *and* workspace unification made it moot. Agent only realized this after user pushed back and it actually checked `cargo tree`.
+- The skill should cover: when feature flags help (published crates, truly optional heavy deps like TLS backends), when they don't (workspace-internal organization), and the alternative (crate boundaries for real separation).
 
 ### 12. `rust-interop` — Cross-Language Integration
 
 **Status**: TODO
 
-**Triggers:** PyO3, pyo3, napi-rs, wasm-bindgen, wasm-pack, cxx, extern "C", FFI,
-bindgen, cbindgen, uniffi, calling Rust from Python/JS/C/C++, embedding Rust, WASM.
+**Triggers:** PyO3, pyo3, napi-rs, wasm-bindgen, wasm-pack, cxx, extern "C", FFI, bindgen, cbindgen, uniffi, calling Rust from Python/JS/C/C++, embedding Rust, WASM.
 
-**Shape:** Entry question is "what language are you bridging to?" then routes to the
-right reference. SKILL.md covers universal principles: ownership at the boundary, type
-mapping, error translation across languages, when to copy vs borrow, GIL/runtime
-considerations. References go deep per ecosystem.
+**Shape:** Entry question is "what language are you bridging to?" then routes to the right reference. SKILL.md covers universal principles: ownership at the boundary, type mapping, error translation across languages, when to copy vs borrow, GIL/runtime considerations. References go deep per ecosystem.
 
-Note: C-level FFI (extern "C", CString/CStr, bindgen/cbindgen) moves HERE from
-rust-unsafe. rust-unsafe stays focused on raw unsafe Rust (pointers, transmute, safety
-invariants, UB).
+Note: C-level FFI (extern "C", CString/CStr, bindgen/cbindgen) moves HERE from rust-unsafe. rust-unsafe stays focused on raw unsafe Rust (pointers, transmute, safety invariants, UB).
 
 **Key references:**
 - PyO3 guide (PyO3/pyo3 — `guide/`)
@@ -291,12 +232,9 @@ invariants, UB).
 
 **Status**: TODO
 
-**Triggers:** serde attributes, custom serialization, enum representation (#[serde(tag)],
-untagged, adjacently tagged), #[serde(default)], #[serde(flatten)], custom
-Serialize/Deserialize impls, format-specific issues.
+**Triggers:** serde attributes, custom serialization, enum representation (#[serde(tag)], untagged, adjacently tagged), #[serde(default)], #[serde(flatten)], custom Serialize/Deserialize impls, format-specific issues.
 
-**Shape:** Attribute quick-reference (container/variant/field). Enum representation
-decision table. Custom impl patterns. Common mistakes. Before/after examples.
+**Shape:** Attribute quick-reference (container/variant/field). Enum representation decision table. Custom impl patterns. Common mistakes. Before/after examples.
 
 **Key references:**
 - serde.rs docs (serde-rs/serde-rs.github.io)
@@ -391,8 +329,7 @@ git clone --depth 1 https://github.com/rust-lang/rust-bindgen.git reference/bind
 ## Build Order
 
 **Phase 1: The Foundation**
-1. `rust-idiomatic` — The paradigm shift skill. Build first because it's the highest
-   impact and establishes the tone/approach for everything else.
+1. `rust-idiomatic` — The paradigm shift skill. Build first because it's the highest impact and establishes the tone/approach for everything else.
 2. `rust-type-design` — Closely related, the "how" to the idiomatic skill's "what."
 
 **Phase 2: Core Language**
@@ -441,11 +378,7 @@ skills/rust-{name}/
 
 ## Notes for Continuation
 
-- The three reference skill repos (claude-skills, dot-skills, rust-skills) are
-  structural inspiration only — content comes from primary sources
-- rust-skills' meta-cognitive framework is over-engineered for frontier models — strip
-  to pure knowledge, discard the scaffolding
-- dot-skills' quantified impact format is valuable — use for performance skill and
-  anywhere measurable claims apply
-- The key insight driving everything: agents don't lack Rust knowledge, they lack Rust
-  *defaults*. The skills change what the agent reaches for first.
+- The three reference skill repos (claude-skills, dot-skills, rust-skills) are structural inspiration only — content comes from primary sources
+- rust-skills' meta-cognitive framework is over-engineered for frontier models — strip to pure knowledge, discard the scaffolding
+- dot-skills' quantified impact format is valuable — use for performance skill and anywhere measurable claims apply
+- The key insight driving everything: agents don't lack Rust knowledge, they lack Rust *defaults*. The skills change what the agent reaches for first.
