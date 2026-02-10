@@ -7,18 +7,22 @@ Most Rust performance work is not “make LLVM smarter”. It is “allocate les
 **Incorrect (growth reallocations):**
 
 ```rust
+let xs = vec![1u32, 2, 3];
+
 let mut out = Vec::new();
-for x in xs {
-    out.push(f(x));
+for x in xs.iter() {
+    out.push(*x * 2);
 }
 ```
 
 **Correct (one allocation):**
 
 ```rust
+let xs = vec![1u32, 2, 3];
+
 let mut out = Vec::with_capacity(xs.len());
-for x in xs {
-    out.push(f(x));
+for x in xs.iter() {
+    out.push(*x * 2);
 }
 ```
 
@@ -28,19 +32,27 @@ Also consider `String::with_capacity` for hot string building.
 
 ## Prefer `extend` over “collect then append”
 
+If you only need to append transformed items, avoid allocating an intermediate `Vec`.
+
 **Incorrect (extra allocation):**
 
 ```rust
-let mut out = Vec::new();
-let tmp: Vec<_> = iter.map(f).collect();
-out.append(&mut tmp.clone());
+let xs = vec![1u32, 2, 3];
+let ys = vec![4u32, 5, 6];
+
+let mut out = xs;
+let mut tmp: Vec<u32> = ys.into_iter().map(|x| x * 2).collect();
+out.append(&mut tmp);
 ```
 
 **Correct (no intermediate Vec):**
 
 ```rust
-let mut out = Vec::new();
-out.extend(iter.map(f));
+let xs = vec![1u32, 2, 3];
+let ys = vec![4u32, 5, 6];
+
+let mut out = xs;
+out.extend(ys.into_iter().map(|x| x * 2));
 ```
 
 **Authority:** Rust Performance Book “Iterators” (`collect` and `extend`).
@@ -52,6 +64,7 @@ out.extend(iter.map(f));
 **Incorrect:**
 
 ```rust
+let id = 123u64;
 let s = format!("user:{id}");
 ```
 
@@ -60,6 +73,7 @@ let s = format!("user:{id}");
 ```rust
 use std::fmt::Write;
 
+let id = 123u64;
 let mut s = String::with_capacity(32);
 write!(&mut s, "user:{id}").unwrap();
 ```
@@ -85,15 +99,25 @@ buf.clone_from(&next); // reuses allocation when possible
 **Incorrect (double lookup):**
 
 ```rust
-if !m.contains_key(&k) {
+use std::collections::HashMap;
+
+let mut m: HashMap<&str, usize> = HashMap::new();
+let k = "key";
+
+if !m.contains_key(k) {
     m.insert(k, 0);
 }
-*m.get_mut(&k).unwrap() += 1;
+*m.get_mut(k).unwrap() += 1;
 ```
 
 **Correct (single lookup):**
 
 ```rust
+use std::collections::HashMap;
+
+let mut m: HashMap<&str, usize> = HashMap::new();
+let k = "key";
+
 *m.entry(k).or_insert(0) += 1;
 ```
 

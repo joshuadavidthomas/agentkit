@@ -16,7 +16,7 @@ Deep dives live in `references/`:
 
 This skill synthesizes guidance from:
 - The Rust Performance Book by Nicholas Nethercote (MIT OR Apache-2.0): https://nnethercote.github.io/perf-book/
-- Effective Rust by David Drysdale (content in `reference/effective-rust/`)
+- Effective Rust by David Drysdale (local copy: `reference/effective-rust.md`)
 - Rust Clippy documentation and the Clippy “Perf” lint group: https://rust-lang.github.io/rust-clippy/master/
 - The Rust Programming Language (Rust Book), especially iterator guidance (ch 13): https://doc.rust-lang.org/book/
 
