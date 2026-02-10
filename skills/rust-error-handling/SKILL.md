@@ -5,9 +5,7 @@ description: "Use when designing error types, choosing thiserror vs anyhow, prop
 
 # Error Strategy and Design
 
-Errors are **domain facts**, not formatting exercises. An error type tells callers what
-went wrong, whether they can recover, and what information is available. Design them
-with the same care as your success types.
+Errors are **domain facts**, not formatting exercises. An error type tells callers what went wrong, whether they can recover, and what information is available. Design them with the same care as your success types.
 
 The central axis: **library or application?** Everything flows from that.
 
@@ -19,18 +17,15 @@ The central axis: **library or application?** Everything flows from that.
 | **Application** (binary, server) | `anyhow` | `anyhow::Error` | You control the error boundary; you need context, not types |
 | **Boundary** (lib consumed by your app) | Both | thiserror at the edge, anyhow inside | Structured where callers need it, ergonomic where they don't |
 
-This is the ecosystem consensus. BurntSushi, Palmieri, Effective Rust Item 4, and
-the crate authors themselves all converge on it.
+This is the ecosystem consensus. BurntSushi, Palmieri, Effective Rust Item 4, and the crate authors themselves all converge on it.
 
 ## Library Errors: thiserror
 
-Libraries expose structured error types. Callers match on variants for control flow
-and recovery. Every variant is a **fact** about what failed.
+Libraries expose structured error types. Callers match on variants for control flow and recovery. Every variant is a **fact** about what failed.
 
 ### Rule 1: One error enum per unit of fallibility
 
-Don't build one `Error` enum for an entire crate. Each public function (or tightly
-related group) gets its own error type scoped to *its* failure modes.
+Don't build one `Error` enum for an entire crate. Each public function (or tightly related group) gets its own error type scoped to *its* failure modes.
 
 ```rust
 // WRONG — crate-wide "ball of mud"
@@ -69,17 +64,13 @@ pub enum QueryError {
 }
 ```
 
-**Why:** Scoped errors let callers know exactly which failures a function can produce.
-A crate-wide enum forces callers to handle variants that can't actually occur. It
-also leaks internal structure — adding a dependency's error type to your public enum
-exposes that dependency.
+**Why:** Scoped errors let callers know exactly which failures a function can produce. A crate-wide enum forces callers to handle variants that can't actually occur. It also leaks internal structure — adding a dependency's error type to your public enum exposes that dependency.
 
 **Authority:** Jewson, "Modular Errors in Rust." Effective Rust Item 4.
 
 ### Rule 2: Variants carry structured data, not strings
 
-Each variant is a data structure. Callers extract fields for logging, retry logic,
-or user messages. `Error(String)` forces them to parse your prose.
+Each variant is a data structure. Callers extract fields for logging, retry logic, or user messages. `Error(String)` forces them to parse your prose.
 
 ```rust
 // WRONG
@@ -91,13 +82,11 @@ InvalidConfig(String),
 InvalidConfigValue { key: String, value: String },
 ```
 
-**Authority:** std: `io::Error` has `ErrorKind` + optional inner error. `serde_json::Error`
-has `line()`, `column()`, `classify()`. **rust-idiomatic** Rule 5.
+**Authority:** std: `io::Error` has `ErrorKind` + optional inner error. `serde_json::Error` has `line()`, `column()`, `classify()`. **rust-idiomatic** Rule 5.
 
 ### Rule 3: Preserve the error chain with `#[source]`
 
-Every variant wrapping an underlying error must expose it via `source()`. This
-enables error chain traversal for logging and diagnostics.
+Every variant wrapping an underlying error must expose it via `source()`. This enables error chain traversal for logging and diagnostics.
 
 ```rust
 // WRONG — chain broken, cause is lost
@@ -113,17 +102,13 @@ Database {
 },
 ```
 
-`#[from]` implies `#[source]` and generates a `From` impl. Use `#[from]` when the
-conversion is unambiguous (one variant per source type). Use `#[source]` when you
-need additional context fields alongside the cause.
+`#[from]` implies `#[source]` and generates a `From` impl. Use `#[from]` when the conversion is unambiguous (one variant per source type). Use `#[source]` when you need additional context fields alongside the cause.
 
 **Authority:** `std::error::Error::source` + thiserror docs (source chaining).
 
 ### Rule 4: Don't auto-derive `From` for everything
 
-`#[from]` generates `From<SourceError> for YourError`. This is convenient but
-dangerous — it silently wraps errors without context and prevents having multiple
-variants from the same source type.
+`#[from]` generates `From<SourceError> for YourError`. This is convenient but dangerous — it silently wraps errors without context and prevents having multiple variants from the same source type.
 
 ```rust
 // CAREFUL — auto-conversion loses context about WHICH io operation failed
@@ -143,16 +128,13 @@ pub enum Error {
 }
 ```
 
-Use `#[from]` when the source type is unambiguous (e.g., one JSON error variant).
-Use manual construction when you need to distinguish multiple operations with the
-same underlying error type.
+Use `#[from]` when the source type is unambiguous (e.g., one JSON error variant). Use manual construction when you need to distinguish multiple operations with the same underlying error type.
 
 **Authority:** thiserror docs (`#[from]` constraints) + Jewson (contextful, scoped errors).
 
 ### Rule 5: Mark variants `#[non_exhaustive]` for public crates
 
-If you publish a crate, adding a variant is a breaking change unless the enum is
-`#[non_exhaustive]`. Apply it to public error enums that may grow.
+If you publish a crate, adding a variant is a breaking change unless the enum is `#[non_exhaustive]`. Apply it to public error enums that may grow.
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -165,8 +147,7 @@ pub enum ParseError {
 }
 ```
 
-Callers will need a `_ =>` arm — but this is the correct exception to
-**rust-idiomatic** Rule 4 (foreign `#[non_exhaustive]` types).
+Callers will need a `_ =>` arm — but this is the correct exception to **rust-idiomatic** Rule 4 (foreign `#[non_exhaustive]` types).
 
 **Authority:** Rust Reference: `#[non_exhaustive]` + Rust semver expectations for public enums.
 
@@ -178,13 +159,11 @@ Reduce repetition. Follow the std convention (`io::Result`, `fmt::Result`).
 pub type Result<T> = std::result::Result<T, Error>;
 ```
 
-For full thiserror attribute reference (all derive attributes, `#[error(transparent)]`,
-backtrace support), see [references/thiserror-patterns.md](references/thiserror-patterns.md).
+For full thiserror attribute reference (all derive attributes, `#[error(transparent)]`, backtrace support), see [references/thiserror-patterns.md](references/thiserror-patterns.md).
 
 ## Application Errors: anyhow
 
-Application code doesn't export error types — it **handles** them. Use `anyhow` for
-ergonomic propagation with context.
+Application code doesn't export error types — it **handles** them. Use `anyhow` for ergonomic propagation with context.
 
 ### Rule 7: Use `anyhow::Result` as your return type
 
@@ -201,13 +180,11 @@ fn load_config(path: &Path) -> Result<Config> {
 }
 ```
 
-Every `?` propagates with the full error chain intact. `context()` and
-`with_context()` add layers of "what was happening when this failed."
+Every `?` propagates with the full error chain intact. `context()` and `with_context()` add layers of "what was happening when this failed."
 
 ### Rule 8: Add context at every abstraction boundary
 
-Bare `?` propagates the error but loses *what you were trying to do*. Add context
-so the error chain reads like a stack trace of intent.
+Bare `?` propagates the error but loses *what you were trying to do*. Add context so the error chain reads like a stack trace of intent.
 
 ```rust
 use anyhow::{Context, Result};
@@ -235,9 +212,7 @@ fn setup(config_path: &Path) -> Result<()> {
 failed to connect to database: connection refused: Connection refused (os error 111)
 ```
 
-Use `.context("static string")` for fixed messages. Use
-`.with_context(|| format!(...))` when you need runtime values — the closure is only
-evaluated on error.
+Use `.context("static string")` for fixed messages. Use `.with_context(|| format!(...))` when you need runtime values — the closure is only evaluated on error.
 
 ### Rule 9: Use `bail!` and `ensure!` for early returns
 
@@ -258,16 +233,13 @@ fn process_command(cmd: &str) -> Result<()> {
 }
 ```
 
-`bail!(...)` is `return Err(anyhow!(...))`. `ensure!(cond, ...)` is
-`if !cond { bail!(...) }`. Both accept format strings.
+`bail!(...)` is `return Err(anyhow!(...))`. `ensure!(cond, ...)` is `if !cond { bail!(...) }`. Both accept format strings.
 
-For the full anyhow API reference (display formats, chain iteration, downcasting),
-see [references/anyhow-patterns.md](references/anyhow-patterns.md).
+For the full anyhow API reference (display formats, chain iteration, downcasting), see [references/anyhow-patterns.md](references/anyhow-patterns.md).
 
 ## Result and Option Combinators
 
-The `?` operator handles the common case. Combinators handle the rest. Don't write
-`match` when a combinator expresses intent more clearly.
+The `?` operator handles the common case. Combinators handle the rest. Don't write `match` when a combinator expresses intent more clearly.
 
 ### The essential combinators
 
@@ -297,14 +269,11 @@ let config = std::env::var("CONFIG_PATH")
     .and_then(|p| std::fs::read_to_string(p).ok());
 ```
 
-For the full combinator quick-reference with more examples, see
-[references/combinators.md](references/combinators.md).
+For the full combinator quick-reference with more examples, see [references/combinators.md](references/combinators.md).
 
 ## When to Panic
 
-Panics are for **bugs**, not errors. A panic means "this is a programmer mistake
-and the program cannot continue." User input failures, network errors, file-not-found
-— these are expected conditions, not panics.
+Panics are for **bugs**, not errors. A panic means "this is a programmer mistake and the program cannot continue." User input failures, network errors, file-not-found — these are expected conditions, not panics.
 
 ### `panic!` is correct for:
 
@@ -314,8 +283,7 @@ and the program cannot continue." User input failures, network errors, file-not-
 
 ### `expect()` over `unwrap()`
 
-When you know a value is `Some`/`Ok` due to prior logic, use `expect()` with a
-message explaining **why** it's safe:
+When you know a value is `Some`/`Ok` due to prior logic, use `expect()` with a message explaining **why** it's safe:
 
 ```rust
 // After validation that guarantees non-empty
@@ -327,9 +295,7 @@ let re = Regex::new(r"^\d{4}-\d{2}-\d{2}$")
     .expect("date regex is valid");
 ```
 
-`unwrap()` is acceptable in tests and when the safety is obvious from the
-immediately surrounding code. In production code, prefer `expect()` with a
-message or propagate with `?`.
+`unwrap()` is acceptable in tests and when the safety is obvious from the immediately surrounding code. In production code, prefer `expect()` with a message or propagate with `?`.
 
 ### Never panic for:
 
@@ -346,9 +312,7 @@ Errors cross abstraction boundaries. Handle the translation deliberately.
 
 ### Log once, at the edge
 
-Don't log errors at every layer. Each layer **propagates** (via `?` or context).
-The outermost handler — `main()`, the HTTP middleware, the CLI runner — logs once
-with the full chain.
+Don't log errors at every layer. Each layer **propagates** (via `?` or context). The outermost handler — `main()`, the HTTP middleware, the CLI runner — logs once with the full chain.
 
 ```rust
 // WRONG — logging at every layer
@@ -379,9 +343,7 @@ fn main() {
 
 ### Translate at layer boundaries
 
-When crossing from one abstraction to another (e.g., database → domain → HTTP),
-translate the error into the vocabulary of the outer layer. Don't leak
-`sqlx::Error` through your API boundary.
+When crossing from one abstraction to another (e.g., database → domain → HTTP), translate the error into the vocabulary of the outer layer. Don't leak `sqlx::Error` through your API boundary.
 
 ```rust
 // Domain layer — speaks domain language
@@ -409,8 +371,7 @@ impl UserRepo {
 
 ### Retryability as a method
 
-If callers need to decide whether to retry, expose it as a method — don't make
-them match on variant names they can't rely on.
+If callers need to decide whether to retry, expose it as a method — don't make them match on variant names they can't rely on.
 
 ```rust
 impl ApiError {
@@ -426,22 +387,14 @@ impl ApiError {
 
 ## Common Mistakes (Agent Failure Modes)
 
-- **`Error(String)` in a library** → Callers can't match. Define structured variants.
-  Use **rust-idiomatic** Rule 5.
-- **One giant error enum for the whole crate** → Scope errors to operations.
-  Callers handle only what a function can actually produce.
-- **`#[from]` on every variant** → Silent conversions lose context. Use `#[from]`
-  only when conversion is unambiguous.
-- **`anyhow` in a library's public API** → Callers lose the ability to match.
-  Use `thiserror` for public errors; `anyhow` is for your binary.
-- **Bare `?` without context in application code** → The error chain says *what*
-  failed but not *what you were doing*. Add `.context()`.
-- **Logging errors at every layer** → Log once at the outermost handler.
-  Inner layers propagate.
-- **`unwrap()` on user input or I/O** → These are expected failure modes.
-  Use `?` or combinators.
-- **`Box<dyn Error>` as the public error type** → Callers can't match without
-  downcasting. Use a concrete enum.
+- **`Error(String)` in a library** → Callers can't match. Define structured variants. Use **rust-idiomatic** Rule 5.
+- **One giant error enum for the whole crate** → Scope errors to operations. Callers handle only what a function can actually produce.
+- **`#[from]` on every variant** → Silent conversions lose context. Use `#[from]` only when conversion is unambiguous.
+- **`anyhow` in a library's public API** → Callers lose the ability to match. Use `thiserror` for public errors; `anyhow` is for your binary.
+- **Bare `?` without context in application code** → The error chain says *what* failed but not *what you were doing*. Add `.context()`.
+- **Logging errors at every layer** → Log once at the outermost handler. Inner layers propagate.
+- **`unwrap()` on user input or I/O** → These are expected failure modes. Use `?` or combinators.
+- **`Box<dyn Error>` as the public error type** → Callers can't match without downcasting. Use a concrete enum.
 
 ## Cross-References
 
@@ -453,32 +406,13 @@ impl ApiError {
 
 ## Review Checklist
 
-1. **Library or application?** Libraries use `thiserror` enums. Applications use
-   `anyhow`. At the boundary, use both.
-
-2. **Is the error type scoped to its operation?** One crate-wide `Error` enum is a
-   code smell. Each public function (or related group) should have its own error type.
-
-3. **Does every variant carry structured data?** No `Error(String)`. Callers must be
-   able to extract fields, not parse messages.
-
-4. **Is the error chain preserved?** Every variant wrapping a cause uses `#[source]`
-   or `#[from]`. Calling `.source()` walks the full chain.
-
-5. **Is `#[from]` used only where unambiguous?** Multiple variants from the same
-   source type? Use manual construction with context fields instead.
-
-6. **Does application code add context at every `?`?** Bare propagation loses intent.
-   Add `.context()` or `.with_context()`.
-
-7. **Are panics reserved for bugs?** User input, I/O, and network errors use `Result`.
-   `panic!` is for invariant violations and unreachable code.
-
-8. **Are errors logged once, at the edge?** Inner layers propagate. The outermost
-   handler logs with `{:#}` for the full chain.
-
-9. **Are error types translated at layer boundaries?** Database errors don't leak
-   through the domain API. Each layer speaks its own vocabulary.
-
-10. **Is there a `Result` type alias?** `pub type Result<T> = std::result::Result<T, Error>;`
-    reduces boilerplate within each module.
+1. **Library or application?** Libraries use `thiserror` enums. Applications use `anyhow`. At the boundary, use both.
+2. **Is the error type scoped to its operation?** One crate-wide `Error` enum is a code smell. Each public function (or related group) should have its own error type.
+3. **Does every variant carry structured data?** No `Error(String)`. Callers must be able to extract fields, not parse messages.
+4. **Is the error chain preserved?** Every variant wrapping a cause uses `#[source]` or `#[from]`. Calling `.source()` walks the full chain.
+5. **Is `#[from]` used only where unambiguous?** Multiple variants from the same source type? Use manual construction with context fields instead.
+6. **Does application code add context at every `?`?** Bare propagation loses intent. Add `.context()` or `.with_context()`.
+7. **Are panics reserved for bugs?** User input, I/O, and network errors use `Result`. `panic!` is for invariant violations and unreachable code.
+8. **Are errors logged once, at the edge?** Inner layers propagate. The outermost handler logs with `{:#}` for the full chain.
+9. **Are error types translated at layer boundaries?** Database errors don't leak through the domain API. Each layer speaks its own vocabulary.
+10. **Is there a `Result` type alias?** `pub type Result<T> = std::result::Result<T, Error>;` reduces boilerplate within each module.

@@ -1,8 +1,6 @@
 # Enums as the Primary Modeling Tool
 
-Rust enums are algebraic sum types — they represent "exactly one of these variants."
-They carry per-variant data, enable exhaustive matching, and make invalid states
-unrepresentable. They are the **first tool** to reach for when modeling a domain.
+Rust enums are algebraic sum types — they represent "exactly one of these variants." They carry per-variant data, enable exhaustive matching, and make invalid states unrepresentable. They are the **first tool** to reach for when modeling a domain.
 
 ## The Anti-Pattern: Structs with Kind Fields
 
@@ -43,8 +41,7 @@ match event {
 }
 ```
 
-**The smell:** A struct with a "kind" or "type" field plus `Option` fields that are
-"only valid when kind is X" — this is always an enum waiting to be written.
+**The smell:** A struct with a "kind" or "type" field plus `Option` fields that are "only valid when kind is X" — this is always an enum waiting to be written.
 
 ## State Machines
 
@@ -86,11 +83,9 @@ impl Order {
 }
 ```
 
-Transition functions consume the current state and produce the next. The compiler
-prevents calling `ship` on an already-shipped order without handling the error.
+Transition functions consume the current state and produce the next. The compiler prevents calling `ship` on an already-shipped order without handling the error.
 
-For more complex state machines where you want compile-time transition enforcement
-(not just runtime), see the typestate pattern in **rust-type-design**.
+For more complex state machines where you want compile-time transition enforcement (not just runtime), see the typestate pattern in **rust-type-design**.
 
 ## Enum vs Trait Object Decision
 
@@ -121,9 +116,7 @@ enum LogOutput {
 }
 ```
 
-This gives you exhaustive matching for the common cases and a trait object for
-extensibility. Use sparingly — if the `Custom` variant dominates, switch to a
-trait-based design.
+This gives you exhaustive matching for the common cases and a trait object for extensibility. Use sparingly — if the `Custom` variant dominates, switch to a trait-based design.
 
 ## Enum Methods and Shared Behavior
 
@@ -183,13 +176,11 @@ Enums are not a niche pattern — they are foundational in std:
 | `Bound<T>` | Range bound types |
 | `Entry<K, V>` | Occupied or Vacant map entry |
 
-Every one of these could have been modeled as a struct with flags and `Option` fields.
-None of them were. That's the idiom.
+Every one of these could have been modeled as a struct with flags and `Option` fields. None of them were. That's the idiom.
 
 ## #[non_exhaustive] for Library Enums
 
-If you're writing a library and your enum might gain variants, mark it
-`#[non_exhaustive]`:
+If you're writing a library and your enum might gain variants, mark it `#[non_exhaustive]`:
 
 ```rust
 #[non_exhaustive]
@@ -200,6 +191,4 @@ pub enum DatabaseError {
 }
 ```
 
-This forces downstream crates to include a `_ =>` arm — the one case where wildcard
-matching is required. Use deliberately: it makes the API less ergonomic. Prefer
-semver-major bumps when practical.
+This forces downstream crates to include a `_ =>` arm — the one case where wildcard matching is required. Use deliberately: it makes the API less ergonomic. Prefer semver-major bumps when practical.

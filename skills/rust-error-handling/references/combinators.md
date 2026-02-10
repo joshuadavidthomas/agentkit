@@ -1,7 +1,6 @@
 # Result and Option Combinators
 
-The `?` operator handles propagation. Combinators handle transformation. Don't write
-`match` blocks when a combinator expresses intent more clearly and concisely.
+The `?` operator handles propagation. Combinators handle transformation. Don't write `match` blocks when a combinator expresses intent more clearly and concisely.
 
 ## Result Combinators
 
@@ -31,8 +30,7 @@ let config: Result<Config, Error> = std::fs::read_to_string("config.toml")
     .and_then(|s| toml::from_str(&s).map_err(Error::Parse));
 ```
 
-Prefer `?` when you're in a function that returns `Result`. Use `and_then` in
-expression contexts (closures, iterators, chains).
+Prefer `?` when you're in a function that returns `Result`. Use `and_then` in expression contexts (closures, iterators, chains).
 
 ### `or_else` — Fallback with a different fallible operation
 
@@ -50,8 +48,7 @@ let name: String = lookup_name(id).unwrap_or_else(|_| format!("user_{id}"));
 let items: Vec<Item> = fetch_items().unwrap_or_default();
 ```
 
-Use `unwrap_or_else` when the default is expensive to compute — the closure
-only runs on `Err`.
+Use `unwrap_or_else` when the default is expensive to compute — the closure only runs on `Err`.
 
 ### `inspect` / `inspect_err` — Side effects without consuming
 
@@ -155,8 +152,7 @@ let timeout: Option<Duration> = raw.timeout
 
 ### `collect` into `Result`
 
-Collecting an iterator of `Result` values yields a single `Result`. Stops at
-the first error:
+Collecting an iterator of `Result` values yields a single `Result`. Stops at the first error:
 
 ```rust
 let numbers: Result<Vec<i32>, _> = strings.iter()
@@ -200,5 +196,4 @@ let failures: Vec<Error> = failures.into_iter().map(Result::unwrap_err).collect(
 | Multiple fallible steps in sequence | `?` on each step |
 | Expression-level error handling | Combinators |
 
-The `?` operator is syntactic sugar for `match` + `From`. Combinators are methods
-that express transformation intent. Use whichever reads more clearly at the call site.
+The `?` operator is syntactic sugar for `match` + `From`. Combinators are methods that express transformation intent. Use whichever reads more clearly at the call site.

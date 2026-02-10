@@ -1,16 +1,12 @@
 # anyhow Patterns
 
-`anyhow` provides a single error type (`anyhow::Error`) that wraps any
-`std::error::Error` and accumulates context. Use it in **application** code —
-binaries, servers, CLIs — where you control the error boundary and callers don't
-need to match on specific variants.
+`anyhow` provides a single error type (`anyhow::Error`) that wraps any `std::error::Error` and accumulates context. Use it in **application** code — binaries, servers, CLIs — where you control the error boundary and callers don't need to match on specific variants.
 
 ## Core API
 
 ### `anyhow::Result<T>`
 
-Type alias for `Result<T, anyhow::Error>`. Use as your default return type in
-application functions:
+Type alias for `Result<T, anyhow::Error>`. Use as your default return type in application functions:
 
 ```rust
 use anyhow::Result;
@@ -22,8 +18,7 @@ fn main() -> Result<()> {
 }
 ```
 
-Any error type implementing `std::error::Error + Send + Sync + 'static` converts
-automatically via `?`.
+Any error type implementing `std::error::Error + Send + Sync + 'static` converts automatically via `?`.
 
 ### `context()` and `with_context()`
 
@@ -46,8 +41,7 @@ fn read_config(path: &Path) -> Result<Config> {
 }
 ```
 
-**Always use `with_context()` when the message involves `format!`.** The closure
-avoids allocating the string on the success path.
+**Always use `with_context()` when the message involves `format!`.** The closure avoids allocating the string on the success path.
 
 `Context` also works on `Option<T>`, converting `None` to an error:
 
@@ -112,8 +106,7 @@ fn validate(workers: usize, port: u16) -> Result<()> {
 | `{:?}` | Full chain + backtrace (multi-line, "Caused by:" format) |
 | `{:#?}` | Struct-style debug output |
 
-For application `main()`, use `{:#}` for single-line logs or `{:?}` for
-detailed diagnostics:
+For application `main()`, use `{:#}` for single-line logs or `{:?}` for detailed diagnostics:
 
 ```rust
 fn main() {
@@ -168,11 +161,9 @@ match err.downcast_ref::<SqlError>() {
 }
 ```
 
-Downcasting works through context layers — `anyhow` preserves the original error
-even after `.context()` wrapping.
+Downcasting works through context layers — `anyhow` preserves the original error even after `.context()` wrapping.
 
-Three forms: `downcast::<T>()` (by value), `downcast_ref::<T>()` (by reference),
-`downcast_mut::<T>()` (by mutable reference).
+Three forms: `downcast::<T>()` (by value), `downcast_ref::<T>()` (by reference), `downcast_mut::<T>()` (by mutable reference).
 
 ## Backtrace Support
 
@@ -188,12 +179,8 @@ No code changes needed. The backtrace appears in `{:?}` output.
 
 ## When NOT to Use anyhow
 
-- **Library public APIs** — callers can't match on `anyhow::Error` variants.
-  Use `thiserror` for public error types.
-- **When callers need to recover from specific errors** — structured enums
-  are the right tool.
-- **In `From` impls for library error types** — don't depend on `anyhow` in
-  your library's public interface.
+- **Library public APIs** — callers can't match on `anyhow::Error` variants. Use `thiserror` for public error types.
+- **When callers need to recover from specific errors** — structured enums are the right tool.
+- **In `From` impls for library error types** — don't depend on `anyhow` in your library's public interface.
 
-It's fine to use `anyhow` **internally** in a library (private functions,
-tests) — just don't expose it in the public API.
+It's fine to use `anyhow` **internally** in a library (private functions, tests) — just don't expose it in the public API.

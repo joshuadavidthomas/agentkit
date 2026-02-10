@@ -1,7 +1,6 @@
 # Newtype Implementation Patterns
 
-Deep-dive on newtype implementation: trait derivation, serde integration,
-accessor patterns, and when to use derive_more.
+Deep-dive on newtype implementation: trait derivation, serde integration, accessor patterns, and when to use derive_more.
 
 ## Basic Structure
 
@@ -12,8 +11,7 @@ accessor patterns, and when to use derive_more.
 pub struct EmailAddress(String);
 ```
 
-The inner field is **private by default** in Rust. This is critical — it forces
-construction through your validated constructor.
+The inner field is **private by default** in Rust. This is critical — it forces construction through your validated constructor.
 
 ## Trait Derivation
 
@@ -142,8 +140,7 @@ impl Port {
 }
 ```
 
-Provide `new_unchecked` for const contexts or performance-critical code where
-the caller can guarantee the invariant.
+Provide `new_unchecked` for const contexts or performance-critical code where the caller can guarantee the invariant.
 
 ### TryFrom for standard conversion
 
@@ -202,8 +199,7 @@ impl<'de> Deserialize<'de> for Port {
 }
 ```
 
-This ensures deserialized values satisfy invariants. Malformed input fails
-deserialization rather than constructing an invalid `Port`.
+This ensures deserialized values satisfy invariants. Malformed input fails deserialization rather than constructing an invalid `Port`.
 
 ### Combined transparent + validation
 
@@ -249,8 +245,7 @@ pub struct UserId(i64);
 - `FromStr` — delegates to inner's FromStr
 - `Add`, `Sub`, etc. — arithmetic operations
 
-Use `derive_more` when you have many newtypes with similar boilerplate. For
-one or two newtypes, manual impls are clearer.
+Use `derive_more` when you have many newtypes with similar boilerplate. For one or two newtypes, manual impls are clearer.
 
 ## Ecosystem Examples
 

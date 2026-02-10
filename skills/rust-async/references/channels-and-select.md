@@ -33,8 +33,7 @@ while let Some(msg) = rx.recv().await {
 - `try_send()` returns immediately; useful when you'd rather drop a message than wait
 - Channel capacity is the primary backpressure mechanism
 
-**Choosing capacity:** Start with 32. If producers frequently block, increase it. If
-memory grows unbounded, you have a throughput mismatch — fix the consumer or add more.
+**Choosing capacity:** Start with 32. If producers frequently block, increase it. If memory grows unbounded, you have a throughput mismatch — fix the consumer or add more.
 
 ### `oneshot` — Single-Producer, Single-Consumer, One Value
 
@@ -83,13 +82,11 @@ assert_eq!(rx2.recv().await.unwrap(), "hello");
 - New subscribers only see messages sent after subscribing
 - `send()` returns `Err` only if there are zero active receivers
 
-**Use cases:** Event notification, pub/sub, broadcasting configuration updates
-when every consumer must see every change.
+**Use cases:** Event notification, pub/sub, broadcasting configuration updates when every consumer must see every change.
 
 ### `watch` — Multi-Producer, Multi-Consumer (Latest Value Only)
 
-Receivers always see the most recent value. No history. Useful for shared state
-that changes infrequently.
+Receivers always see the most recent value. No history. Useful for shared state that changes infrequently.
 
 ```rust
 use tokio::sync::watch;
@@ -118,18 +115,16 @@ loop {
 
 ## The Actor Pattern
 
-The actor pattern isolates state behind a task. Other code communicates with it
-via messages (channels). This is the most common pattern for shared mutable
-resources in async Rust.
+The actor pattern isolates state behind a task. Other code communicates with it via messages (channels). This is the most common pattern for shared mutable resources in async Rust.
 
 ### Structure
 
 ```
 ┌─────────────┐     mpsc      ┌──────────────┐
-│ Handle      │──────────────▶│ Actor task    │
-│ (Clone)     │               │ (owns state)  │
-│             │◀──────────────│               │
-│             │   oneshot     │               │
+│ Handle      │──────────────▶│ Actor task   │
+│ (Clone)     │               │ (owns state) │
+│             │◀──────────────│              │
+│             │   oneshot     │              │
 └─────────────┘   (per req)   └──────────────┘
 ```
 
@@ -210,16 +205,11 @@ impl CacheHandle {
 
 ### Actor Pattern Rules
 
-1. **Spawn the task in the handle's constructor** — not inside the actor. Keep
-   `tokio::spawn` in one place.
-2. **Separate handle from actor struct** — the handle has the `Sender`, the actor
-   has the `Receiver`. They never share a struct.
-3. **Use `oneshot` for responses** — embed it in the command enum. The actor
-   sends the response; the handle awaits it.
-4. **Shutdown is automatic** — when all handles are dropped, all senders are
-   dropped, `recv()` returns `None`, the actor loop exits.
-5. **Ignore send errors on response** — use `let _ = resp.send(result)`. The
-   requester may have been cancelled.
+1. **Spawn the task in the handle's constructor** — not inside the actor. Keep `tokio::spawn` in one place.
+2. **Separate handle from actor struct** — the handle has the `Sender`, the actor has the `Receiver`. They never share a struct.
+3. **Use `oneshot` for responses** — embed it in the command enum. The actor sends the response; the handle awaits it.
+4. **Shutdown is automatic** — when all handles are dropped, all senders are dropped, `recv()` returns `None`, the actor loop exits.
+5. **Ignore send errors on response** — use `let _ = resp.send(result)`. The requester may have been cancelled.
 
 **Authority:** Ryhl, "Actors with Tokio."
 
@@ -260,13 +250,11 @@ loop {
 }
 ```
 
-The `else` branch runs when all patterns fail to match (both channels return
-`None`). Use it to detect shutdown.
+The `else` branch runs when all patterns fail to match (both channels return `None`). Use it to detect shutdown.
 
 ### Cancellation safety
 
-When `select!` completes one branch, it drops all others. A future that was
-partially executed loses its progress.
+When `select!` completes one branch, it drops all others. A future that was partially executed loses its progress.
 
 **Cancellation-safe operations** (safe to drop mid-await):
 - `mpsc::Receiver::recv()`
@@ -279,21 +267,15 @@ partially executed loses its progress.
 - `tokio::io::BufReader::read_line()` — partial line data lost
 - Any future that performs a partial write then awaits
 
-**Mitigation:** For non-cancellation-safe operations in `select!`, use
-`tokio::pin!` with manual state management, or restructure to move the
-I/O into its own task that communicates via channels.
+**Mitigation:** For non-cancellation-safe operations in `select!`, use `tokio::pin!` with manual state management, or restructure to move the I/O into its own task that communicates via channels.
 
 ## Avoiding Deadlocks in Channel Cycles
 
-If actors send messages to each other via bounded channels, you can deadlock:
-Actor A waits to send to B (B's channel full), B waits to send to A (A's channel
-full).
+If actors send messages to each other via bounded channels, you can deadlock: Actor A waits to send to B (B's channel full), B waits to send to A (A's channel full).
 
 **Rules:**
-- Break cycles by having at least one channel in the cycle be unbounded or use
-  `try_send`
+- Break cycles by having at least one channel in the cycle be unbounded or use `try_send`
 - Use `oneshot` for responses (its `send` is always immediate)
-- If actors must form a cycle, have one use `select!` on its inbound channel so
-  it can drain messages even when sending blocks
+- If actors must form a cycle, have one use `select!` on its inbound channel so it can drain messages even when sending blocks
 
 **Authority:** Ryhl, "Actors with Tokio" — deadlock section.

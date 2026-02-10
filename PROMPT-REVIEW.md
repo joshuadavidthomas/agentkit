@@ -1,22 +1,17 @@
 # Rust Skills — Review Prompt
 
-Read `PLAN.md` for the full context and design principles. Read `PROMPT.md` for
-what we're building and why.
+Read `PLAN.md` for the full context and design principles. Read `PROMPT.md` for what we're building and why.
 
 ## What you're doing
 
-Quality review of completed Rust skills. You're checking that each skill actually
-accomplishes what the plan intended — not just that it exists.
+Quality review of completed Rust skills. You're checking that each skill actually accomplishes what the plan intended — not just that it exists.
 
 ## How to work
 
-1. Load the **skill-authoring** skill — it is the authority on skill format,
-   frontmatter, description writing, progressive disclosure, and structure.
-   Defer to it on all questions of how a skill should be laid out.
+1. Load the **skill-authoring** skill — it is the authority on skill format, frontmatter, description writing, progressive disclosure, and structure. Defer to it on all questions of how a skill should be laid out.
 2. Read `PLAN.md` to understand the goals and conventions.
 3. Find skills marked as done (check **Status** fields in the plan).
-4. For each completed skill, review against the checklist below AND the
-   skill-authoring skill's guidelines.
+4. For each completed skill, review against the checklist below AND the skill-authoring skill's guidelines.
 5. Fix issues directly.
 7. Mark the skill as REVIEWED in the plan.
 
@@ -24,14 +19,12 @@ accomplishes what the plan intended — not just that it exists.
 
 ### Tone and purpose
 - [ ] Prescriptive, not descriptive. "Do this" not "here's how this works."
-- [ ] Rules cite authority (std library, API Guidelines, clippy, Effective Rust) —
-      not just assertions.
+- [ ] Rules cite authority (std library, API Guidelines, clippy, Effective Rust) — not just assertions.
 - [ ] Not teaching Rust. The agent already knows Rust. The skill changes *defaults*.
 - [ ] Every paragraph earns its token cost. Cut anything Claude already knows.
 
 ### The core message
-- [ ] Would this skill actually prevent the agent from writing `name: String` when
-      it should be a newtype?
+- [ ] Would this skill actually prevent the agent from writing `name: String` when it should be a newtype?
 - [ ] Would it prevent `is_active: bool` when it should be an enum?
 - [ ] Would it prevent `_ =>` wildcard matches?
 - [ ] Does it push enum-first thinking, not struct-first?

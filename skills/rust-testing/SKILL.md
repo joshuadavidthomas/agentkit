@@ -5,475 +5,313 @@ description: "Use when writing tests, organizing test modules, choosing between 
 
 # Testing Ecosystem and Strategies
 
-Rust has first-class testing built into the language. `#[test]`, `#[cfg(test)]`,
-and `cargo test` are not afterthoughts — they're part of the toolchain. The
-ecosystem layers on property testing, snapshot testing, benchmarking, mocking,
-and fuzzing. Know when to use each.
+Write tests to force **correctness properties** to become explicit, checkable, and cheap to run.
 
-**The central principle:** Tests are code. They deserve the same design attention
-as production code — typed, structured, deterministic, and fast. A test that's
-hard to read is a test that's hard to trust.
+## Defaults (apply unless you can justify an exception)
 
-## The Testing Pyramid for Rust
+1. **Start with std**: `#[test]` + `assert_*` + integration tests in `tests/`. Add crates only when you can name the gap.
+   **Authority:** The Rust Book ch 11.
 
-| Level | What | Tools | Speed | Coverage |
-|-------|------|-------|-------|----------|
-| **Unit** | Single function/type in isolation | `#[test]`, rstest, mockall | Milliseconds | Narrow, deep |
-| **Integration** | Public API of a crate, multiple modules together | `tests/` directory, rstest | Milliseconds–seconds | Wide, shallow |
-| **Property** | Invariants hold across random inputs | proptest | Seconds | Wide, deep |
-| **Snapshot** | Output stability (serialization, rendering, CLI) | insta | Milliseconds | Output shape |
-| **Benchmark** | Performance characteristics | criterion, divan | Seconds–minutes | Performance |
-| **Fuzz** | Crash/panic/UB discovery with adversarial inputs | cargo-fuzz, afl.rs | Minutes–hours | Security |
-| **Doc** | Examples in documentation compile and run | `///` + `cargo test` | Milliseconds | API surface |
+2. **Test behavior, not wiring**: prefer real test doubles (in-memory impls, fake clock, temp dirs) over mocks.
+   **Authority:** Meszaros, *xUnit Test Patterns*.
 
-Write mostly unit and integration tests. Add property tests for parsers,
-serializers, and anything with invariants. Use snapshot tests for output
-stability. Benchmark hot paths. Fuzz untrusted input boundaries.
+3. **One test = one property**: a test should fail for one reason. If you need multiple cases for the same property, use parameterization.
+   **Authority:** Meszaros (Focused tests).
 
-## Tool Selection
+4. **Tests are parallel by default**: assume tests run concurrently; no shared mutable globals.
+   **Authority:** `cargo test` executes tests in parallel unless `-- --test-threads=1`.
 
-Pick the right tool for the job. Don't reach for a framework when `#[test]`
-suffices.
+5. **Prefer deterministic assertions**: avoid time, randomness, and ordering sensitivity unless the point of the test is to exercise them.
 
-| Need | Tool | Add when |
-|------|------|----------|
-| Basic assertions, unit/integration tests | `#[test]` + `assert!` | Always — built in |
-| Parameterized test cases, fixtures, DI | `rstest` | 3+ test cases with shared setup |
-| Mocking trait dependencies | `mockall` | Isolating a unit from its dependencies |
-| Invariants across random inputs | `proptest` | Parsers, serializers, encode/decode roundtrips, numeric |
-| Output stability (JSON, CLI, rendered) | `insta` | Asserting on complex output that changes with refactors |
-| Performance regression detection | `criterion` or `divan` | Hot paths, algorithmic comparisons |
-| Crash/UB discovery on untrusted input | `cargo-fuzz` | Parsers, deserializers, protocol handlers |
-| Faster test runner, better output | `cargo-nextest` | Any project (drop-in replacement for `cargo test`) |
+## Pick the smallest tool that gives the confidence you need
 
-## Test Organization
+Use this as your default selection table:
 
-### Unit tests: `#[cfg(test)] mod tests` in the same file
+| You need confidence in… | Use | Add when |
+|---|---|---|
+| A function/type’s local behavior | Unit tests (`#[test]`) | Always |
+| A crate’s public API surface | Integration tests (`tests/`) | Always for libs |
+| Invariants across many inputs | **proptest** | Parsers, serializers, roundtrips, algebraic laws |
+| Output stability (complex strings/JSON/diagnostics) | **insta** | Hand-written `assert_eq!` becomes brittle |
+| Many cases / shared setup | **rstest** | 3+ cases or fixtures |
+| Trait-based mocking | **mockall** | Only when no real test double is feasible |
+| Perf regressions | **criterion** or **divan** | You have a hot path and a baseline |
+| Crash/UB discovery on untrusted input | **cargo-fuzz** | Parsers/protocols/deserializers |
+| Faster runner / better CI ergonomics | **cargo-nextest** | Any non-trivial suite |
 
-- `#[cfg(test)]` on the module — compiles only during `cargo test`
-- `use super::*` to access private items — unit tests are child modules
-- One `mod tests` per file, at the bottom
+If you’re testing async code, use `#[tokio::test]` and follow the runtime rules in **rust-async**.
 
-### Integration tests: `tests/` directory
+## Test organization (non-negotiable structure rules)
+
+### Unit tests: colocate
+
+- Put unit tests in the same module/file as the code under test.
+- Use `#[cfg(test)] mod tests { ... }` + `use super::*;`.
+
+### Integration tests: `tests/`
+
+Each file in `tests/` is a separate test **crate** (it only sees your public API).
+
+Correct layout:
 
 ```text
 my-crate/
 └── tests/
-    ├── api_tests.rs         # Each file is a separate test binary
+    ├── api_tests.rs
     └── common/
-        └── mod.rs           # Shared helpers — NOT a test file
+        └── mod.rs
 ```
 
-- Each `.rs` file in `tests/` compiles as a **separate crate** — tests the
-  public API only
-- Shared helpers: `tests/common/mod.rs`, **not** `tests/common.rs` (the latter
-  becomes a test suite with 0 tests — a common agent mistake)
-- Run a specific file: `cargo test --test api_tests`
+Incorrect → correct:
+
+```text
+# WRONG (becomes a test target with 0 tests)
+my-crate/tests/common.rs
+
+# RIGHT (a helper module, not a test target)
+my-crate/tests/common/mod.rs
+```
+
+**Authority:** The Rust Book ch 11.
 
 ### Doc tests
 
-- Hide setup with `# ` prefix (still compiled, not shown in docs)
-- `/// ```no_run` for examples that compile but shouldn't execute (network calls)
-- `/// ```ignore` only as a last resort — skips compilation entirely
+- Prefer doc tests for “happy path” API examples.
+- Use `no_run` for examples that shouldn’t execute (network/process).
+- Avoid `ignore` (it skips compilation).
+
+**Authority:** Rust Book ch 11; rustdoc behavior.
 
 ### Binary crates
 
-No `src/lib.rs` → no integration tests. Split logic into `lib.rs`, keep
-`main.rs` thin.
+If you want integration tests, keep logic in `src/lib.rs` and make `src/main.rs` thin.
 
-**Authority:** The Rust Book ch 11; Rust by Example — Testing.
+## Test style rules
 
-## Writing Good Tests
-
-### Name tests for the assertion, not the function
+### Name tests for the property
 
 ```rust
-// WRONG — names the function
-fn test_parse() { ... }
-
-// RIGHT — names the assertion
-fn parse_rejects_empty_input() { ... }
-fn parse_extracts_all_fields_from_valid_json() { ... }
+#[test]
+fn parse_rejects_empty_input() {
+    // ...
+}
 ```
 
-### Use `expect()` or `Result` returns, not bare `unwrap()` chains
+### Prefer `Result`-returning tests for `?` chains
 
 ```rust
-// WRONG — no context on failure
-let user = repo.find(id).unwrap();
-let json = serde_json::to_string(&user).unwrap();
-
-// RIGHT — expect() with a reason
-let user = repo.find(id).expect("user should exist after insert");
-
-// RIGHT — Result return for ? chains
 #[test]
-fn roundtrip() -> Result<(), Box<dyn std::error::Error>> {
-    let json = serde_json::to_string(&Config::default())?;
-    let restored: Config = serde_json::from_str(&json)?;
-    assert_eq!(Config::default(), restored);
+fn parse_uses_question_mark() -> Result<(), Box<dyn std::error::Error>> {
+    let n: u32 = "42".parse()?;
+    assert_eq!(n, 42);
     Ok(())
 }
 ```
 
-`unwrap()` is fine when intent is obvious from context. `Result`-returning
-tests cannot combine with `#[should_panic]`.
+Use `expect("…")` when a failure should carry a reason. Use bare `unwrap()` only when the reason is obvious from the surrounding lines.
 
-### Derive `Debug + PartialEq` on types under test
+### One property per test (split unrelated assertions)
 
-`assert_eq!` requires both. Missing derives produce compiler errors or
-useless failure output. Add them early.
+```rust
+// WRONG: multiple independent properties; failure is ambiguous
+#[test]
+fn user_behavior_mixed() {
+    let name = "alice";
+    assert!(!name.is_empty());
+    assert!(name.starts_with('a'));
+    assert_eq!(name.to_uppercase(), "ALICE");
+}
 
-### One assertion per test
+// RIGHT: each test asserts one thing
+#[test]
+fn name_is_non_empty() {
+    assert!(!"alice".is_empty());
+}
 
-Each test asserts one logical property. Parameterized tests (rstest) handle
-"same assertion, many inputs."
+#[test]
+fn name_uppercase_is_expected() {
+    assert_eq!("alice".to_uppercase(), "ALICE");
+}
+```
 
-## rstest: Fixtures and Parameterized Tests
+## Tool playbook (use these patterns)
 
-Use rstest when you have shared setup (fixtures) or the same assertion with
-multiple inputs (parameterized cases).
+### rstest: fixtures + parameterization
 
-### Fixtures: dependency injection for tests
+Use **rstest** when you have shared setup or “same assertion, many inputs”.
 
 ```rust
 use rstest::*;
+
+#[derive(Clone)]
+struct TestDb;
+
+impl TestDb {
+    fn new_in_memory() -> Self {
+        Self
+    }
+}
 
 #[fixture]
 fn db() -> TestDb {
     TestDb::new_in_memory()
 }
 
-#[fixture]
-fn user(db: TestDb) -> User {
-    db.insert_user("alice", "alice@example.com")
-}
-
-#[rstest]
-fn user_has_email(user: User) {
-    assert_eq!(user.email, "alice@example.com");
-}
-```
-
-Fixtures compose — `user` depends on `db`, rstest resolves the chain.
-
-### Parameterized tests: same logic, many inputs
-
-```rust
 #[rstest]
 #[case("", false)]
-#[case("user@", false)]
 #[case("user@example.com", true)]
-#[case("a@b.c", true)]
-fn email_validation(#[case] input: &str, #[case] expected: bool) {
-    assert_eq!(validate_email(input), expected);
+fn email_shape(#[case] input: &str, #[case] expected: bool, _db: TestDb) {
+    let ok = input.contains('@');
+    assert_eq!(ok, expected);
 }
-// Generates 4 independent tests
 ```
 
-### Value lists: combinatorial testing
+**Authority:** rstest docs.
 
-```rust
-#[rstest]
-fn multiplication_is_commutative(
-    #[values(0, 1, -1, 42, i32::MAX)] a: i32,
-    #[values(0, 1, -1, 42, i32::MAX)] b: i32,
-) {
-    assert_eq!(a.wrapping_mul(b), b.wrapping_mul(a));
-}
-// Generates 25 tests (5 × 5)
-```
+### mockall: mock at the trait boundary (last resort)
 
-**Authority:** rstest crate docs.
-
-## mockall: Trait-Based Mocking
-
-Use mockall to isolate a unit from its dependencies by mocking trait
-implementations. Prefer real implementations when available:
-
-```rust
-// WRONG — mocking when a real in-memory implementation exists
-let mut mock_store = MockStore::new();
-mock_store.expect_get().returning(|_| Ok(None));
-
-// RIGHT — use a real test double
-let store = InMemoryStore::new();  // Real implementation, tests behavior
-```
-
-Mock only when the dependency is truly external or expensive to instantiate.
+Only mock when you can’t build a real test double.
 
 ```rust
 use mockall::{automock, predicate::*};
 
-#[cfg_attr(test, automock)]
-pub trait UserRepo {
-    fn find(&self, id: u64) -> Option<User>;
-    fn save(&self, user: &User) -> Result<(), RepoError>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct User {
+    id: u64,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg_attr(test, automock)]
+trait UserRepo {
+    fn find(&self, id: u64) -> Option<User>;
+}
 
-    #[test]
-    fn service_returns_error_for_missing_user() {
-        let mut repo = MockUserRepo::new();
-        repo.expect_find()
-            .with(eq(42))
-            .times(1)
-            .returning(|_| None);
+struct UserService<R> {
+    repo: R,
+}
 
-        let service = UserService::new(repo);
-        let result = service.get_user(42);
-        assert!(result.is_err());
+impl<R: UserRepo> UserService<R> {
+    fn new(repo: R) -> Self {
+        Self { repo }
     }
+
+    fn exists(&self, id: u64) -> bool {
+        self.repo.find(id).is_some()
+    }
+}
+
+#[test]
+fn exists_is_false_for_missing_user() {
+    let mut repo = MockUserRepo::new();
+    repo.expect_find().with(eq(42)).times(1).return_const(None);
+
+    let svc = UserService::new(repo);
+    assert!(!svc.exists(42));
 }
 ```
 
-**Rules:**
-- `#[cfg_attr(test, automock)]` — mock type only exists during testing
-- `mockall` in `[dev-dependencies]` only
-- Prefer real implementations over mocks when feasible — mocks test wiring,
-  not behavior
-- Each `.expect_*()` call sets one expectation: argument matchers, call count,
-  return value
+**Authority:** mockall docs.
 
-**Authority:** mockall crate docs. Prefer real implementations over mocks —
-Gerard Meszaros, *xUnit Test Patterns*.
+### proptest: property tests for invariants
 
-## proptest: Property-Based Testing (Summary)
-
-Test invariants across randomly generated inputs. The framework generates
-hundreds of cases, and when one fails, it **shrinks** to the minimal
-reproducing input.
+Use **proptest** when example-based tests will miss edge cases.
 
 ```rust
 use proptest::prelude::*;
 
 proptest! {
     #[test]
-    fn roundtrip_encode_decode(input in "\\PC*") {
-        let encoded = encode(&input);
-        let decoded = decode(&encoded).unwrap();
-        prop_assert_eq!(input, decoded);
-    }
-
-    #[test]
-    fn sort_preserves_length(ref v in prop::collection::vec(any::<i32>(), 0..100)) {
-        let mut sorted = v.clone();
-        sorted.sort();
-        prop_assert_eq!(v.len(), sorted.len());
+    fn sort_preserves_length(v in prop::collection::vec(any::<i32>(), 0..100)) {
+        let mut v = v;
+        let len = v.len();
+        v.sort();
+        prop_assert_eq!(v.len(), len);
     }
 }
 ```
 
-**When to use proptest:**
-- Encode/decode, serialize/deserialize roundtrips
-- Parser accepts everything it produces
-- Algebraic properties (commutativity, associativity, idempotency)
-- Numeric invariants (e.g., `a + b >= a` for unsigned)
-- Data structure invariants after mutation
+For strategies, shrinking, and `Arbitrary`, see [references/property-testing.md](references/property-testing.md).
 
-**Authority:** proptest book; Hypothesis (Python) design principles.
+**Authority:** proptest book.
 
-For strategies, `prop_compose!`, the `Arbitrary` trait, shrinking, and
-advanced patterns, see
-[references/property-testing.md](references/property-testing.md).
+### insta: snapshot tests for complex output
 
-## insta: Snapshot Testing (Summary)
-
-Assert that output matches a stored reference. When output changes, review
-the diff and accept or reject it.
+Use snapshots when the output is large, nested, or tedious to assert by hand.
 
 ```rust
-use insta::assert_yaml_snapshot;
-
 #[test]
-fn serialize_config() {
-    let config = Config::default();
-    assert_yaml_snapshot!(config);
+fn rendered_output_snapshot() {
+    let output = format!("user={} status={}", 42, "active");
+    insta::assert_snapshot!(output);
 }
 ```
 
-First run creates a `.snap` file. Subsequent runs compare output against it.
-On mismatch, `cargo insta review` shows a diff for interactive accept/reject.
+Workflow: generate → diff → accept via `cargo insta review`.
 
-**When to use insta:**
-- Serialization output (JSON, YAML, TOML)
-- CLI output, rendered templates, error messages
-- AST/IR representations
-- Any complex output where manual assertions are fragile
-
-**Authority:** insta docs (mitsuhiko/insta).
-
-For inline snapshots, redactions, the review workflow, CI setup, and the
-**mdtest literate testing pattern** (Markdown-as-test-suite for compilers
-and analyzers), see
+For redactions, inline snapshots, CI setup, and the mdtest pattern, see
 [references/snapshot-testing.md](references/snapshot-testing.md).
 
-## Benchmarking and Fuzzing (Summary)
+**Authority:** insta docs.
 
-### criterion / divan: Statistical benchmarking
+### criterion/divan: benchmarks (never “bench” with `#[test]`)
 
-```rust
-use criterion::{criterion_group, criterion_main, Criterion};
-use std::hint::black_box;
+- Put benchmarks in `benches/`.
+- Use **criterion** for statistical rigor; use **divan** for lightweight iteration.
+- Use `black_box` to prevent optimization.
 
-fn bench_sort(c: &mut Criterion) {
-    c.bench_function("sort 1000", |b| {
-        b.iter(|| {
-            let mut v: Vec<i32> = (0..1000).rev().collect();
-            v.sort();
-            black_box(v);
-        })
-    });
-}
+See [references/benchmarking-and-fuzzing.md](references/benchmarking-and-fuzzing.md).
 
-criterion_group!(benches, bench_sort);
-criterion_main!(benches);
-```
+**Authority:** criterion/divan docs.
 
-- `black_box()` prevents compiler from optimizing away the computation
-- Benchmarks live in `benches/` with `harness = false` in `Cargo.toml`
-- criterion gives statistical analysis: mean, std dev, regression detection
+### cargo-fuzz: fuzz untrusted input boundaries
 
-### cargo-fuzz: Crash discovery
+Fuzz anything that parses bytes/strings from the outside world.
 
-```rust
-// fuzz/fuzz_targets/parse_input.rs
-#![no_main]
-use libfuzzer_sys::fuzz_target;
+See [references/benchmarking-and-fuzzing.md](references/benchmarking-and-fuzzing.md).
 
-fuzz_target!(|data: &[u8]| {
-    if let Ok(s) = std::str::from_utf8(data) {
-        let _ = my_crate::parse(s);
-    }
-});
-```
+**Authority:** Rust Fuzz Book.
 
-- Fuzz parsers, deserializers, protocol handlers — anything taking untrusted input
-- Run: `cargo +nightly fuzz run parse_input`
-- Finds panics, buffer overflows, infinite loops
+### nextest: fast runner and better CI
 
-**Authority:** criterion.rs user guide; Rust Fuzz Book.
-
-For full benchmark setup, `divan` comparison, fuzz target patterns, and CI
-integration, see
-[references/benchmarking-and-fuzzing.md](references/benchmarking-and-fuzzing.md).
-
-## Test Runner: nextest
-
-Use `cargo-nextest` as a drop-in replacement for `cargo test`. It runs each
-test as a separate process, provides better output, and is significantly faster
-for large test suites.
+Use `cargo-nextest` as a drop-in runner for unit + integration tests.
 
 ```bash
-cargo install cargo-nextest
-cargo nextest run              # run all tests
-cargo nextest run test_name    # run matching tests
-cargo nextest run -j4          # limit parallelism
-cargo nextest run --no-fail-fast  # run all even on failure
+cargo nextest run
+cargo test --doc
 ```
 
-**Why nextest over `cargo test`:**
-- Per-test process isolation — one panic doesn't affect other tests
-- Better UI with per-test timing and status
-- Faster execution through smarter parallelism
-- Retries for flaky tests (`--retries N`)
-- Slow test detection and timeout enforcement
-- CI features: partitioning, archiving, machine-readable output
-
-**Limitation:** nextest does not run doc tests. Run `cargo test --doc`
-separately for those.
-
-**Authority:** nextest docs (nexte.st).
+**Authority:** nextest docs.
 
 ## `#[should_panic]` and `#[ignore]`
 
-**`#[should_panic]`** — Always include `expected = "substring"`. Bare
-`#[should_panic]` passes on *any* panic, including unrelated bugs:
-
-```rust
-// WRONG — passes if any panic occurs, even an unrelated one
-#[test]
-#[should_panic]
-fn panics_on_invalid() { /* ... */ }
-
-// RIGHT — only passes on the specific expected panic
-#[test]
-#[should_panic(expected = "index out of bounds")]
-fn panics_on_out_of_bounds() {
-    let v = vec![1, 2, 3];
-    let _ = v[99];
-}
-```
-
-**`#[ignore]`** — Mark slow or environment-dependent tests. Run explicitly:
-`cargo test -- --ignored`. Run everything: `cargo test -- --include-ignored`.
+- `#[should_panic]` must include `expected = "…"` so unrelated panics don’t pass the test.
+- `#[ignore]` is for slow/environment-dependent tests. Run them explicitly: `cargo test -- --ignored`.
 
 ## Common Mistakes (Agent Failure Modes)
 
-- **Shared mutable state between tests** → Tests run in parallel by default.
-  Each test gets its own setup. Use fixtures (rstest) or thread-local state,
-  not `static mut`.
-- **`tests/common.rs` instead of `tests/common/mod.rs`** → The former shows
-  up as a test suite with 0 tests. Put shared helpers in a subdirectory.
-- **One giant test with 20 assertions** → Split into focused tests. When it
-  fails, you should know which invariant broke without reading the whole test.
-- **`unwrap()` chains in tests without context** → Use `expect("reason")` or
-  return `Result` with `?`. Failure messages should explain what went wrong.
-- **Mocking everything** → Mocks test wiring, not behavior. If a real
-  implementation is available (in-memory DB, test struct), use it.
-- **Property tests without shrinking-friendly strategies** → Let proptest
-  pick the strategy (use `any::<T>()`) rather than manually constructing
-  values. Shrinking finds the minimal failing case.
-- **No `#[derive(Debug, PartialEq)]` on tested types** → `assert_eq!`
-  requires both. Add them early to avoid compiler errors and useless failure
-  output.
-- **Snapshot tests in CI without `INSTA_UPDATE=no`** → In CI, set `CI=true`
-  or `INSTA_UPDATE=no` so snapshot mismatches fail instead of silently
-  updating.
-- **Benchmarks without `black_box()`** → The compiler may optimize away the
-  computation. Wrap inputs and outputs in `std::hint::black_box()`.
-- **Missing `harness = false` for criterion benchmarks** → Without it, Cargo
-  uses the default test harness and criterion won't run.
+- **Shared mutable state between tests** → tests are parallel by default; isolate setup per test.
+- **`tests/common.rs` instead of `tests/common/mod.rs`** → you created a 0-test integration target.
+- **Mocks everywhere** → you tested wiring, not behavior. Prefer real in-memory implementations.
+- **Snapshot tests that auto-update in CI** → set `INSTA_UPDATE=no` (or rely on `CI=true`) so diffs fail.
+- **Property tests with overly hand-rolled strategies** → start with `any::<T>()` / library strategies; let shrinking work.
+- **Benchmarking with `#[test]` + timers** → use criterion/divan.
+- **Fuzzing without a corpus** → keep interesting seeds and regressions in version control.
 
 ## Cross-References
 
-- **rust-idiomatic** — Newtypes and enums in test assertions, exhaustive matching
-- **rust-error-handling** — `Result` return types in tests, testing error variants
-- **rust-type-design** — Property testing for newtype/type-state invariants
-- **rust-async** — `#[tokio::test]` for async tests, rstest async support
+- **rust-idiomatic** — structuring test data with newtypes/enums; exhaustive matching of error variants
+- **rust-error-handling** — testing error variants and error chains; `Result`-returning tests
+- **rust-type-design** — property testing invariants for domain types
+- **rust-async** — `#[tokio::test]`, async timeouts, cancellation-safe tests
 
 ## Review Checklist
 
-1. **Are unit tests in `#[cfg(test)] mod tests`?** Same file as the code,
-   `use super::*`, compiled only during testing.
-
-2. **Are integration tests in `tests/` with shared helpers in `tests/common/mod.rs`?**
-   Not `tests/common.rs`. Each file in `tests/` is a separate crate.
-
-3. **Does every test name describe the assertion, not the function?**
-   `parse_rejects_empty_input`, not `test_parse`.
-
-4. **Are parameterized tests using rstest instead of copy-pasted tests?**
-   Same assertion with 3+ inputs → `#[rstest]` with `#[case]`.
-
-5. **Do types under test derive `Debug + PartialEq`?** Required for
-   `assert_eq!` to compile and produce useful output.
-
-6. **Are invariants tested with proptest, not just examples?**
-   Roundtrips, algebraic properties, data structure invariants deserve
-   property tests.
-
-7. **Are snapshot tests using insta with `cargo insta review`?** Complex
-   output assertions belong in snapshots, not hand-written `assert_eq!`.
-
-8. **Is mocking a last resort?** Real implementations (in-memory DB, test
-   doubles) over mockall. Mock only when the dependency is truly external.
-
-9. **Do benchmarks use `black_box()` and `harness = false`?** Without both,
-   criterion benchmarks either don't run or measure optimized-away code.
-
-10. **Is the test runner configured?** Use nextest for better speed and output.
-    Run `cargo test --doc` separately for doc tests.
+1. Are you using std `#[test]`/integration tests first, and only adding crates when the gap is explicit?
+2. Are unit tests colocated (`#[cfg(test)] mod tests`) and integration tests in `tests/`?
+3. Are shared integration helpers in `tests/common/mod.rs` (not `tests/common.rs`)?
+4. Does each test name the property it asserts?
+5. Does each test assert one property (or use rstest for multiple cases)?
+6. Are tests deterministic and parallel-safe (no shared mutable globals)?
+7. Are you using proptest for invariants and edge cases (parsers/roundtrips/laws)?
+8. Are you using insta for complex output, with `cargo insta review` as the acceptance workflow?
+9. Are benchmarks done with criterion/divan (not timers inside tests), and do they use `black_box`?
+10. Are untrusted input boundaries fuzzed with cargo-fuzz, with a saved corpus/regressions?

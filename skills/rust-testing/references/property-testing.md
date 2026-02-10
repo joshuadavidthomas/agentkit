@@ -1,9 +1,6 @@
 # Property-Based Testing with proptest
 
-Property tests verify that invariants hold across randomly generated inputs.
-Instead of hand-picking examples, you describe the **shape** of valid inputs
-and the **property** that must hold. proptest generates hundreds of cases and,
-when one fails, **shrinks** it to the minimal reproducing input.
+Property tests verify that invariants hold across randomly generated inputs. Instead of hand-picking examples, you describe the **shape** of valid inputs and the **property** that must hold. proptest generates hundreds of cases and, when one fails, **shrinks** it to the minimal reproducing input.
 
 ## Setup
 
@@ -41,8 +38,7 @@ proptest! {
 
 ## Strategies
 
-A strategy defines how to generate values and how to shrink them. proptest
-provides strategies for all standard types.
+A strategy defines how to generate values and how to shrink them. proptest provides strategies for all standard types.
 
 ### Built-in strategies
 
@@ -131,8 +127,7 @@ proptest! {
 }
 ```
 
-**Pattern:** Build small, composable strategy functions. Combine them into
-complex type strategies. Name them after the domain concept they generate.
+**Pattern:** Build small, composable strategy functions. Combine them into complex type strategies. Name them after the domain concept they generate.
 
 ## The `Arbitrary` Trait
 
@@ -178,31 +173,25 @@ proptest! {
 
 ## Shrinking
 
-When proptest finds a failing input, it automatically shrinks it to the minimal
-case. Shrinking uses binary search on the `ValueTree`:
+When proptest finds a failing input, it automatically shrinks it to the minimal case. Shrinking uses binary search on the `ValueTree`:
 
 1. `simplify()` → tries a "simpler" value (smaller number, shorter string)
 2. `complicate()` → steps back toward the original if simplification went too far
 3. Repeat until the minimal failing case is found
 
-**Example:** If `vec![100, 42, 99, 7, 200]` triggers a failure, proptest
-might shrink it to `vec![42]` — the smallest input that still fails.
+**Example:** If `vec![100, 42, 99, 7, 200]` triggers a failure, proptest might shrink it to `vec![42]` — the smallest input that still fails.
 
 **Rules for good shrinking:**
 - Use `any::<T>()` and built-in strategies — they have shrinking built in
 - `prop_compose!` preserves shrinking from the component strategies
-- `prop_filter` and `prop_flat_map` can interfere with shrinking — use
-  `prop_map` when possible
+- `prop_filter` and `prop_flat_map` can interfere with shrinking — use `prop_map` when possible
 - Custom `ValueTree` implementations are rarely needed
 
 ## Failure Persistence
 
-When a test fails, proptest writes the failing seed to
-`proptest-regressions/<test_file>.txt`. On subsequent runs, it replays that
-seed first, ensuring the regression is caught.
+When a test fails, proptest writes the failing seed to `proptest-regressions/<test_file>.txt`. On subsequent runs, it replays that seed first, ensuring the regression is caught.
 
-**Commit `proptest-regressions/` to version control.** These files are your
-property-test regression suite.
+**Commit `proptest-regressions/` to version control.** These files are your property-test regression suite.
 
 ## Common Property Patterns
 
@@ -282,5 +271,4 @@ Key config options:
 - `max_shrink_iters` — shrinking effort (default: large)
 - `fork` — run in a subprocess (catches segfaults, stack overflows)
 
-**Authority:** proptest book; Hypothesis (Python) design principles (proptest
-is Rust's port of the Hypothesis approach).
+**Authority:** proptest book; Hypothesis (Python) design principles (proptest is Rust's port of the Hypothesis approach).

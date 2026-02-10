@@ -79,8 +79,7 @@ fn main() {
 
 ### Rc is NOT thread-safe
 
-`Rc` does not use atomic operations. It is `!Send` and `!Sync`. Using it across
-threads won't compile. Use `Arc` instead.
+`Rc` does not use atomic operations. It is `!Send` and `!Sync`. Using it across threads won't compile. Use `Arc` instead.
 
 ### Rc creates immutable data by default
 
@@ -159,12 +158,9 @@ struct Node {
 }
 ```
 
-**Pattern:** Parent → children with `Rc` (strong). Child → parent with `Weak`.
-The parent keeps children alive. When the parent drops, children drop too (if no
-other strong references exist).
+**Pattern:** Parent → children with `Rc` (strong). Child → parent with `Weak`. The parent keeps children alive. When the parent drops, children drop too (if no other strong references exist).
 
-Access the data with `weak.upgrade()` → `Option<Rc<T>>`. Returns `None` if the
-data has been freed.
+Access the data with `weak.upgrade()` → `Option<Rc<T>>`. Returns `None` if the data has been freed.
 
 ## Cell<T> and RefCell<T> — Interior mutability
 
@@ -172,8 +168,7 @@ Interior mutability lets you mutate data behind a shared reference (`&T`). This 
 
 ### Cell<T> — for Copy types
 
-`Cell<T>` provides `get()` and `set()` with no runtime cost. Only works for `Copy`
-types because it copies the value in and out.
+`Cell<T>` provides `get()` and `set()` with no runtime cost. Only works for `Copy` types because it copies the value in and out.
 
 ```rust
 use std::cell::Cell;
@@ -189,8 +184,7 @@ impl Counter {
 
 ### RefCell<T> — for non-Copy types
 
-`RefCell<T>` enforces borrow rules at runtime instead of compile time. Violating
-them panics.
+`RefCell<T>` enforces borrow rules at runtime instead of compile time. Violating them panics.
 
 ```rust
 use std::cell::RefCell;

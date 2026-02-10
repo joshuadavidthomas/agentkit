@@ -1,8 +1,6 @@
 # Newtypes and Domain Types
 
-Newtypes wrap a single inner type to create a distinct type with its own semantics.
-They are zero-cost — the compiler erases the wrapper. Use them everywhere you have
-a primitive with domain meaning.
+Newtypes wrap a single inner type to create a distinct type with its own semantics. They are zero-cost — the compiler erases the wrapper. Use them everywhere you have a primitive with domain meaning.
 
 ## The Three Purposes
 
@@ -22,8 +20,7 @@ fn distance_remaining(total: Miles, traveled: Miles) -> Miles {
 // The Mars Climate Orbiter crash was exactly this bug.
 ```
 
-No validation needed — the invariant is identity ("this is miles"), not a data
-constraint.
+No validation needed — the invariant is identity ("this is miles"), not a data constraint.
 
 Provide explicit conversions:
 ```rust
@@ -55,8 +52,7 @@ impl Port {
 }
 ```
 
-**Critical: keep the inner field private.** If callers can construct `Port(0)` directly,
-your invariant is meaningless. Use module boundaries to enforce privacy:
+**Critical: keep the inner field private.** If callers can construct `Port(0)` directly, your invariant is meaningless. Use module boundaries to enforce privacy:
 
 ```rust
 // In a module or separate file
@@ -148,8 +144,7 @@ impl<'de> Deserialize<'de> for Port {
 }
 ```
 
-`#[serde(transparent)]` serializes/deserializes as the inner type. Use it for simple
-wrappers. Implement custom `Deserialize` when you need validation on the way in.
+`#[serde(transparent)]` serializes/deserializes as the inner type. Use it for simple wrappers. Implement custom `Deserialize` when you need validation on the way in.
 
 ### Reduce boilerplate with derive_more
 
@@ -163,13 +158,11 @@ pub struct Username(String);
 pub struct UserId(i64);
 ```
 
-`derive_more` eliminates the pass-through method boilerplate that is the main
-ergonomic cost of newtypes.
+`derive_more` eliminates the pass-through method boilerplate that is the main ergonomic cost of newtypes.
 
 ## Standard Library Evidence
 
-The std library is full of newtypes. These are not obscure patterns — they are
-fundamental Rust design:
+The std library is full of newtypes. These are not obscure patterns — they are fundamental Rust design:
 
 | Newtype | Wraps | Purpose |
 |---------|-------|---------|
@@ -183,12 +176,9 @@ fundamental Rust design:
 
 ## When NOT to Newtype
 
-- **Truly arbitrary text** with no domain constraints: user comments, log messages,
-  notes. A newtype adds indirection with no safety benefit.
+- **Truly arbitrary text** with no domain constraints: user comments, log messages, notes. A newtype adds indirection with no safety benefit.
 - **Internal temporaries** that never cross function boundaries.
-- **Types already carrying their semantics**: `Duration` doesn't need a
-  `Timeout(Duration)` wrapper unless you have multiple duration-typed fields that
-  could be confused.
+- **Types already carrying their semantics**: `Duration` doesn't need a `Timeout(Duration)` wrapper unless you have multiple duration-typed fields that could be confused.
 
 The test: "Can passing the wrong value cause a bug the compiler could catch?"
 If yes → newtype. If no → bare type is fine.

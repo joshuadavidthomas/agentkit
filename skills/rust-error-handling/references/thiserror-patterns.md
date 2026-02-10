@@ -1,8 +1,6 @@
 # thiserror Patterns
 
-`thiserror` is a derive macro for `std::error::Error`. It generates `Display`,
-`Error::source()`, and optionally `From` impls. It adds **zero** runtime cost
-beyond what you'd write by hand, and its types never appear in your public API.
+`thiserror` is a derive macro for `std::error::Error`. It generates `Display`, `Error::source()`, and optionally `From` impls. It adds **zero** runtime cost beyond what you'd write by hand, and its types never appear in your public API.
 
 ## Derive Attributes Reference
 
@@ -62,8 +60,7 @@ pub enum Error {
 
 ### `#[source]` — Error chain
 
-Marks a field as the underlying cause. Generates `Error::source()` returning
-`Some(&self.field)`.
+Marks a field as the underlying cause. Generates `Error::source()` returning `Some(&self.field)`.
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -83,13 +80,11 @@ pub enum StorageError {
 }
 ```
 
-A field named `source` is treated as `#[source]` automatically. Be explicit with
-the attribute when the field has a different name — clarity over convention.
+A field named `source` is treated as `#[source]` automatically. Be explicit with the attribute when the field has a different name — clarity over convention.
 
 ### `#[from]` — Auto-conversion
 
-Generates a `From<SourceType>` impl **and** implies `#[source]`. The variant must
-contain only the source error (plus an optional backtrace field).
+Generates a `From<SourceType>` impl **and** implies `#[source]`. The variant must contain only the source error (plus an optional backtrace field).
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -105,9 +100,7 @@ pub enum ConfigError {
 }
 ```
 
-**Constraint:** At most one variant per source type. If you need two variants from
-`io::Error` (read vs write), don't use `#[from]` — construct them manually with
-context.
+**Constraint:** At most one variant per source type. If you need two variants from `io::Error` (read vs write), don't use `#[from]` — construct them manually with context.
 
 ### `#[error(transparent)]` — Delegate Display and source
 
@@ -144,8 +137,7 @@ Callers see `Error`. The internal representation is a private implementation det
 
 ### Backtrace support
 
-Requires nightly or Rust 1.73+. A field of type `std::backtrace::Backtrace` is
-automatically detected and exposed via `Error::provide()`.
+Requires nightly or Rust 1.73+. A field of type `std::backtrace::Backtrace` is automatically detected and exposed via `Error::provide()`.
 
 ```rust
 use std::backtrace::Backtrace;
@@ -165,8 +157,7 @@ pub enum Error {
 
 ### The struct + kind pattern
 
-For errors that share context fields, use a struct wrapper with an inner kind enum.
-This avoids repeating shared fields across variants.
+For errors that share context fields, use a struct wrapper with an inner kind enum. This avoids repeating shared fields across variants.
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -188,13 +179,11 @@ pub enum ParseErrorKind {
 }
 ```
 
-Callers can match on `kind` while having guaranteed access to `path` and `line`
-on every error.
+Callers can match on `kind` while having guaranteed access to `path` and `line` on every error.
 
 ### Layered errors across modules
 
-Each module defines its own error type. Higher-level modules wrap lower-level
-errors explicitly:
+Each module defines its own error type. Higher-level modules wrap lower-level errors explicitly:
 
 ```rust
 // storage/mod.rs
@@ -216,8 +205,7 @@ pub enum ServiceError {
 }
 ```
 
-Each layer speaks its own vocabulary. `ServiceError::Storage` wraps
-`StorageError` without leaking `io::Error` to the caller.
+Each layer speaks its own vocabulary. `ServiceError::Storage` wraps `StorageError` without leaking `io::Error` to the caller.
 
 ## Implementing Helpers on Error Types
 
@@ -245,8 +233,6 @@ impl ApiError {
 ## What thiserror Does NOT Do
 
 - **No runtime overhead** — generates exactly the code you'd write by hand
-- **No types in your public API** — `thiserror` is a build dependency only;
-  generated code uses only `std` types
+- **No types in your public API** — `thiserror` is a build dependency only; generated code uses only `std` types
 - **No backtraces by default** — opt-in with a `Backtrace` field
-- **No error context/wrapping** — that's `anyhow`'s job. thiserror defines
-  the error shapes; anyhow attaches context to them.
+- **No error context/wrapping** — that's `anyhow`'s job. thiserror defines the error shapes; anyhow attaches context to them.

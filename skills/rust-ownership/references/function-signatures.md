@@ -42,8 +42,7 @@ Common `AsRef` bounds:
 - `AsRef<[u8]>` — byte operations
 - `AsRef<OsStr>` — OS string operations
 
-**Don't use `AsRef` when a simple `&T` works.** If your function only ever gets
-one type, `&str` is simpler than `impl AsRef<str>`.
+**Don't use `AsRef` when a simple `&T` works.** If your function only ever gets one type, `&str` is simpler than `impl AsRef<str>`.
 
 **Authority:** std: `fs::read_to_string(path: impl AsRef<Path>)`.
 
@@ -189,8 +188,7 @@ fn main() {
 
 ## Pattern: splitting borrows
 
-When the borrow checker complains about borrowing two parts of the same struct,
-split the borrow by accessing fields directly:
+When the borrow checker complains about borrowing two parts of the same struct, split the borrow by accessing fields directly:
 
 ```rust
 struct Item {
@@ -225,8 +223,7 @@ fn process_right(state: &mut State) {
 }
 ```
 
-This works because the compiler can see that `items` and `log` don't overlap.
-Destructuring makes this visible.
+This works because the compiler can see that `items` and `log` don't overlap. Destructuring makes this visible.
 
 ## Pattern: bind temporaries to extend their lifetime
 

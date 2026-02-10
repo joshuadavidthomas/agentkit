@@ -2,8 +2,7 @@
 
 ## Graceful Shutdown
 
-Production services must shut down cleanly: stop accepting new work, finish
-in-progress work, flush buffers, close connections. Three parts:
+Production services must shut down cleanly: stop accepting new work, finish in-progress work, flush buffers, close connections. Three parts:
 
 1. **Detect** the shutdown signal
 2. **Propagate** it to all tasks
@@ -26,8 +25,7 @@ tokio::select! {
 
 ### Propagating shutdown with `CancellationToken`
 
-`CancellationToken` (from `tokio-util`) is a broadcast signal. Clone it for
-each task. Cancel it once; every listener is notified.
+`CancellationToken` (from `tokio-util`) is a broadcast signal. Clone it for each task. Cancel it once; every listener is notified.
 
 ```rust
 use tokio_util::sync::CancellationToken;
@@ -63,13 +61,11 @@ token.cancel();
 **Advantages over `watch` channel:**
 - Semantically clear: it's a one-time signal, not a value
 - `cancelled()` returns a future that is always cancellation-safe
-- Supports child tokens: `token.child_token()` creates a token that cancels
-  when the parent does, but can also be cancelled independently
+- Supports child tokens: `token.child_token()` creates a token that cancels when the parent does, but can also be cancelled independently
 
 ### Waiting for tasks with `TaskTracker`
 
-`TaskTracker` (from `tokio-util`) collects spawned tasks and waits for all to
-complete.
+`TaskTracker` (from `tokio-util`) collects spawned tasks and waits for all to complete.
 
 ```rust
 use tokio_util::task::TaskTracker;
@@ -179,18 +175,15 @@ where
 }
 ```
 
-For production retries, use the `backoff` or `again` crate rather than rolling
-your own.
+For production retries, use the `backoff` or `again` crate rather than rolling your own.
 
 ## Backpressure
 
-Backpressure means slowing down producers when consumers can't keep up. Without
-it, memory grows unbounded.
+Backpressure means slowing down producers when consumers can't keep up. Without it, memory grows unbounded.
 
 ### Channel-based backpressure
 
-Bounded `mpsc` channels provide natural backpressure. When the channel is full,
-`send().await` yields until space is available.
+Bounded `mpsc` channels provide natural backpressure. When the channel is full, `send().await` yields until space is available.
 
 ```rust
 let (tx, mut rx) = mpsc::channel(100);
@@ -225,8 +218,7 @@ loop {
 
 ### Load shedding
 
-When overloaded, reject new work rather than queue it. Combine `try_send` with
-error responses:
+When overloaded, reject new work rather than queue it. Combine `try_send` with error responses:
 
 ```rust
 match tx.try_send(request) {
@@ -242,8 +234,7 @@ match tx.try_send(request) {
 
 ## Cancellation Safety
 
-When `tokio::select!` completes one branch, it drops all others. A future that
-was in the middle of work loses its progress.
+When `tokio::select!` completes one branch, it drops all others. A future that was in the middle of work loses its progress.
 
 ### Safe pattern: loop with select
 
@@ -311,13 +302,11 @@ tokio::select! {
 | `BufReader::read_line` | ❌ | Partial line data lost |
 | `tokio::io::copy` | ❌ | Partial transfer lost |
 
-**Rule:** If a future mutates external state incrementally (buffers, counters,
-partial writes), it is not cancellation-safe. Move it to a dedicated task.
+**Rule:** If a future mutates external state incrementally (buffers, counters, partial writes), it is not cancellation-safe. Move it to a dedicated task.
 
 ## Structured Concurrency with `JoinSet`
 
-`JoinSet` manages a dynamic set of spawned tasks, letting you await them as they
-complete:
+`JoinSet` manages a dynamic set of spawned tasks, letting you await them as they complete:
 
 ```rust
 use tokio::task::JoinSet;

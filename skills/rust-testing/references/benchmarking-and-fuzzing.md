@@ -2,9 +2,7 @@
 
 ## Criterion: Statistical Benchmarking
 
-Criterion provides statistical analysis of benchmark results, detects
-performance regressions between runs, and generates HTML reports. It replaces
-the unstable `#[bench]` attribute with a stable, more rigorous alternative.
+Criterion provides statistical analysis of benchmark results, detects performance regressions between runs, and generates HTML reports. It replaces the unstable `#[bench]` attribute with a stable, more rigorous alternative.
 
 ### Setup
 
@@ -37,9 +35,7 @@ criterion_group!(benches, bench_fibonacci);
 criterion_main!(benches);
 ```
 
-**`black_box()`** — prevents the compiler from optimizing away the computation.
-Wrap both inputs and outputs. Without it, the compiler may constant-fold the
-result or eliminate dead code, producing meaningless measurements.
+**`black_box()`** — prevents the compiler from optimizing away the computation. Wrap both inputs and outputs. Without it, the compiler may constant-fold the result or eliminate dead code, producing meaningless measurements.
 
 ```rust
 // WRONG — compiler may optimize away entirely
@@ -162,8 +158,7 @@ fn bench_configured(c: &mut Criterion) {
 
 ## divan: Lightweight Alternative
 
-divan is a newer benchmarking framework with simpler setup. It uses
-attributes instead of macros and requires less boilerplate.
+divan is a newer benchmarking framework with simpler setup. It uses attributes instead of macros and requires less boilerplate.
 
 ### Setup
 
@@ -205,9 +200,7 @@ fn bench_sort_sizes(n: usize) -> Vec<i32> {
 
 ## cargo-fuzz: Fuzz Testing
 
-Fuzz testing feeds pseudo-random data to your code to discover panics,
-crashes, and undefined behavior. It's most valuable for code that processes
-untrusted input: parsers, deserializers, protocol handlers, codecs.
+Fuzz testing feeds pseudo-random data to your code to discover panics, crashes, and undefined behavior. It's most valuable for code that processes untrusted input: parsers, deserializers, protocol handlers, codecs.
 
 ### Setup
 
@@ -241,8 +234,7 @@ fuzz_target!(|data: &[u8]| {
 });
 ```
 
-**The contract:** The fuzz target should not panic for any input. If it does,
-the fuzzer saves the crashing input to `fuzz/artifacts/` for reproduction.
+**The contract:** The fuzz target should not panic for any input. If it does, the fuzzer saves the crashing input to `fuzz/artifacts/` for reproduction.
 
 ### Structure-Aware Fuzzing
 
@@ -269,8 +261,7 @@ fuzz_target!(|input: FuzzInput| {
 });
 ```
 
-Structure-aware fuzzing is more effective than raw bytes — the fuzzer explores
-meaningful input space instead of wasting cycles on unparseable noise.
+Structure-aware fuzzing is more effective than raw bytes — the fuzzer explores meaningful input space instead of wasting cycles on unparseable noise.
 
 ### Running the Fuzzer
 
@@ -291,9 +282,7 @@ cargo +nightly fuzz run parse_input fuzz/artifacts/parse_input/crash-abc123
 
 ### Fuzz Corpus Management
 
-The fuzzer builds a corpus of interesting inputs in `fuzz/corpus/<target>/`.
-This corpus improves over time. Commit it to version control for regression
-testing:
+The fuzzer builds a corpus of interesting inputs in `fuzz/corpus/<target>/`. This corpus improves over time. Commit it to version control for regression testing:
 
 ```bash
 # Run the fuzzer (builds corpus)
@@ -334,6 +323,4 @@ Prioritize code that processes untrusted input:
 | Crypto operations | Edge cases in padding, key sizes |
 | Image/media decoders | Malformed files shouldn't crash |
 
-**Authority:** Rust Fuzz Book; cargo-fuzz docs; libFuzzer (LLVM project).
-Fuzzing has found thousands of real bugs in production Rust crates — see the
-[Trophy Case](https://github.com/rust-fuzz/trophy-case).
+**Authority:** Rust Fuzz Book; cargo-fuzz docs; libFuzzer (LLVM project). Fuzzing has found thousands of real bugs in production Rust crates — see the [Trophy Case](https://github.com/rust-fuzz/trophy-case).

@@ -1,7 +1,6 @@
 # Builder Implementation Patterns
 
-Deep-dive on builder pattern: consuming vs non-consuming, derive macros,
-validation, and typestate-builder hybrids.
+Deep-dive on builder pattern: consuming vs non-consuming, derive macros, validation, and typestate-builder hybrids.
 
 ## When to Use a Builder
 
@@ -19,8 +18,7 @@ validation, and typestate-builder hybrids.
 
 ## Non-Consuming Builder (Preferred)
 
-Builder methods take `&mut self` and return `&mut Self`. Build method takes
-`&self` (not consuming the builder).
+Builder methods take `&mut self` and return `&mut Self`. Build method takes `&self` (not consuming the builder).
 
 ```rust
 #[derive(Default)]
@@ -110,8 +108,7 @@ let post_req = template.method(Method::POST).body(data).build()?;
 
 ## Consuming Builder
 
-Builder methods take `self` by value and return `Self`. Build method also
-consumes `self`.
+Builder methods take `self` by value and return `Self`. Build method also consumes `self`.
 
 ```rust
 pub struct CommandBuilder {
@@ -187,8 +184,7 @@ pub fn build(&self) -> Result<Config, ConfigError> {
 
 ### Panic for programmer errors
 
-Some builders panic for truly impossible combinations (double-set of exclusive
-options). Use sparingly:
+Some builders panic for truly impossible combinations (double-set of exclusive options). Use sparingly:
 
 ```rust
 pub fn compression(mut self, algo: Compression) -> Self {
@@ -204,9 +200,7 @@ Consider whether the API should make the illegal state unrepresentable instead.
 
 ### Typestate for required fields
 
-Use type parameters to track which required fields are set. Build only exists
-when all requirements are met. See
-[typestate-patterns.md](typestate-patterns.md) for the full pattern.
+Use type parameters to track which required fields are set. Build only exists when all requirements are met. See [typestate-patterns.md](typestate-patterns.md) for the full pattern.
 
 ## Derive Macros
 
@@ -265,9 +259,7 @@ pub struct Server {
 // .build() only exists on ServerBuilder::<(String,), (u16,)>
 ```
 
-The type signature tracks which fields are set. `build()` is only available
-when all required fields are provided. Compile-time enforcement, no runtime
-checks.
+The type signature tracks which fields are set. `build()` is only available when all required fields are provided. Compile-time enforcement, no runtime checks.
 
 ## Real-World Examples
 
@@ -311,21 +303,15 @@ let handle = thread::Builder::new()
 
 ## Common Mistakes
 
-**Panic on missing required fields** — Use `Result` instead. Panics are for
-programmer errors (logic bugs), not user errors (missing config).
+**Panic on missing required fields** — Use `Result` instead. Panics are for programmer errors (logic bugs), not user errors (missing config).
 
-**Non-consuming builder with non-Clone fields** — Either clone in build(), use
-`Option::take()` (leaves builder in odd state), or switch to consuming builder.
+**Non-consuming builder with non-Clone fields** — Either clone in build(), use `Option::take()` (leaves builder in odd state), or switch to consuming builder.
 
-**Inconsistent return types** — All setter methods should return the same type
-(`&mut Self` or `Self`). Mixing breaks chaining.
+**Inconsistent return types** — All setter methods should return the same type (`&mut Self` or `Self`). Mixing breaks chaining.
 
-**Forgetting Default derive** — Non-consuming builders usually need
-`#[derive(Default)]` for `Builder::new()` or `Builder::default()`.
+**Forgetting Default derive** — Non-consuming builders usually need `#[derive(Default)]` for `Builder::new()` or `Builder::default()`.
 
-**Validation scattered across setters** — Prefer validating in `build()` to
-keep setters simple and predictable. Exception: early rejection of obviously
-invalid values.
+**Validation scattered across setters** — Prefer validating in `build()` to keep setters simple and predictable. Exception: early rejection of obviously invalid values.
 
 ## Pattern Comparison
 

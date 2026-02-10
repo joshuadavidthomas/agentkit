@@ -1,9 +1,6 @@
 # Snapshot Testing with insta
 
-Snapshot tests assert that output matches a stored reference. Instead of
-writing manual assertions for complex output, you capture the output once,
-review it, and then future runs detect any changes. Think of it as "golden
-file" testing with excellent tooling.
+Snapshot tests assert that output matches a stored reference. Instead of writing manual assertions for complex output, you capture the output once, review it, and then future runs detect any changes. Think of it as "golden file" testing with excellent tooling.
 
 ## Setup
 
@@ -43,8 +40,7 @@ fn config_defaults() {
 }
 ```
 
-The value must implement `serde::Serialize`. The snapshot is stored as YAML
-(or JSON, TOML, etc. depending on the macro).
+The value must implement `serde::Serialize`. The snapshot is stored as YAML (or JSON, TOML, etc. depending on the macro).
 
 ### Debug snapshots (no serde required)
 
@@ -58,8 +54,7 @@ fn parsed_ast() {
 }
 ```
 
-Uses `std::fmt::Debug`. No redaction support. Use when the type doesn't
-implement `Serialize` or when Debug output is more readable.
+Uses `std::fmt::Debug`. No redaction support. Use when the type doesn't implement `Serialize` or when Debug output is more readable.
 
 ### String snapshots
 
@@ -73,8 +68,7 @@ fn error_message() {
 }
 ```
 
-For any `impl Into<String>`. Use for CLI output, rendered templates, error
-messages — anything that produces text.
+For any `impl Into<String>`. Use for CLI output, rendered templates, error messages — anything that produces text.
 
 ## File vs Inline Snapshots
 
@@ -131,11 +125,9 @@ line two
 "###);
 ```
 
-**When to use inline:** Short output (1-5 lines) where seeing the expected
-value inline with the test improves readability.
+**When to use inline:** Short output (1-5 lines) where seeing the expected value inline with the test improves readability.
 
-**When to use file:** Complex output, multi-line structures, anything where
-inline would clutter the test.
+**When to use file:** Complex output, multi-line structures, anything where inline would clutter the test.
 
 ## The Review Workflow
 
@@ -161,8 +153,7 @@ Interactive TUI:
 
 ### Step 3: Commit
 
-Accepted snapshots update the `.snap` files (or inline source). Commit both
-the test changes and the updated snapshots.
+Accepted snapshots update the `.snap` files (or inline source). Commit both the test changes and the updated snapshots.
 
 ### Non-interactive alternatives
 
@@ -181,13 +172,11 @@ cargo insta pending-snapshots  # List what needs review
 | `INSTA_UPDATE=always` | Overwrites snapshots immediately |
 | `INSTA_UPDATE=new` | Always creates `.snap.new` files |
 
-Set `CI=true` in CI pipelines — this makes `auto` behave like `no`, so
-snapshot mismatches fail the build.
+Set `CI=true` in CI pipelines — this makes `auto` behave like `no`, so snapshot mismatches fail the build.
 
 ## Redactions
 
-Mask dynamic content (timestamps, UUIDs, random IDs) so snapshots are
-deterministic. Requires the `redactions` feature.
+Mask dynamic content (timestamps, UUIDs, random IDs) so snapshots are deterministic. Requires the `redactions` feature.
 
 ### Static redactions
 
@@ -270,15 +259,13 @@ insta::with_settings!({
 
 ## Naming Snapshots
 
-By default, insta names snapshots from the test function. Override with an
-explicit name:
+By default, insta names snapshots from the test function. Override with an explicit name:
 
 ```rust
 assert_yaml_snapshot!("custom-name", value);
 ```
 
-Useful when one test produces multiple snapshots or when the auto-generated
-name is too long.
+Useful when one test produces multiple snapshots or when the auto-generated name is too long.
 
 ## Glob Testing
 
@@ -297,19 +284,13 @@ fn test_all_fixtures() {
 }
 ```
 
-Each file gets its own snapshot. New fixture files automatically create new
-test cases.
+Each file gets its own snapshot. New fixture files automatically create new test cases.
 
-**Authority:** insta docs (mitsuhiko/insta); snapshot testing pattern from
-Jest (JavaScript) adapted for Rust's compile-time guarantees.
+**Authority:** insta docs (mitsuhiko/insta); snapshot testing pattern from Jest (JavaScript) adapted for Rust's compile-time guarantees.
 
 ## Literate Snapshot Testing: The mdtest Pattern
 
-When testing compilers, type checkers, linters, or analyzers, the dominant
-pattern is "given this input, what diagnostics/output appear?" Traditional
-snapshot testing requires separate test code, fixture files, and `.snap`
-files. The **mdtest** pattern (pioneered by ruff/ty) collapses all three
-into Markdown files where prose, input code, and assertions coexist.
+When testing compilers, type checkers, linters, or analyzers, the dominant pattern is "given this input, what diagnostics/output appear?" Traditional snapshot testing requires separate test code, fixture files, and `.snap` files. The **mdtest** pattern (pioneered by ruff/ty) collapses all three into Markdown files where prose, input code, and assertions coexist.
 
 Use this pattern when:
 - Tests are fundamentally "input → diagnostics/output"
@@ -319,8 +300,7 @@ Use this pattern when:
 
 ### How It Works
 
-A Markdown file is a test suite. Headers delimit individual tests.
-Fenced code blocks are the input. Inline comments are the assertions:
+A Markdown file is a test suite. Headers delimit individual tests. Fenced code blocks are the input. Inline comments are the assertions:
 
 ````markdown
 # Integer literals
@@ -341,8 +321,7 @@ The framework:
 1. Parses Markdown into a tree of tests (headers = boundaries)
 2. Writes code blocks to an **in-memory filesystem**
 3. Runs the tool under test (type checker, linter, compiler)
-4. Matches output diagnostics against inline assertions using a
-   two-pointer merge by line number
+4. Matches output diagnostics against inline assertions using a two-pointer merge by line number
 5. Fails on any unmatched diagnostic or unmatched assertion
 
 ### Assertion Syntax
@@ -354,8 +333,7 @@ Two assertion kinds cover most compiler/analyzer testing needs:
 reveal_type(x)  # revealed: Literal[1]
 ```
 
-**Error/diagnostic** — match by rule code, message substring, column, or
-any combination:
+**Error/diagnostic** — match by rule code, message substring, column, or any combination:
 ```python
 x: int = "foo"  # error: [invalid-assignment]
 x: int = "foo"  # error: "expected int, got str"
@@ -388,13 +366,11 @@ class C: ...
 ```
 ````
 
-Both files are written to the in-memory FS. The test reads naturally as
-a self-contained scenario.
+Both files are written to the in-memory FS. The test reads naturally as a self-contained scenario.
 
 ### Literate Merging
 
-Multiple unlabeled code blocks in one section merge into a single file,
-enabling prose between code:
+Multiple unlabeled code blocks in one section merge into a single file, enabling prose between code:
 
 ````markdown
 # Literate test
@@ -415,8 +391,7 @@ greet(42)  # error: [invalid-argument-type]
 
 ### Configuration Cascading
 
-TOML blocks configure the test environment. Configuration inherits down
-the header tree and can be overridden per section:
+TOML blocks configure the test environment. Configuration inherits down the header tree and can be overridden per section:
 
 ````markdown
 ```toml
@@ -438,15 +413,11 @@ python-version = "3.12"
 # Test C  ← back to 3.10 (no leaking between siblings)
 ````
 
-This eliminates per-test boilerplate while keeping configuration visible
-and scoped.
+This eliminates per-test boilerplate while keeping configuration visible and scoped.
 
 ### Dual Snapshot Model
 
-Inline assertions are the primary mode — precise, self-documenting, no
-external files. For comprehensive diagnostic output testing (error message
-formatting, multi-line context, fix suggestions), opt into full snapshots
-with an HTML comment directive:
+Inline assertions are the primary mode — precise, self-documenting, no external files. For comprehensive diagnostic output testing (error message formatting, multi-line context, fix suggestions), opt into full snapshots with an HTML comment directive:
 
 ````markdown
 ## Detailed error output
@@ -458,9 +429,7 @@ assert_type(x, str)  # error: [type-assertion-failure]
 ```
 ````
 
-This generates an insta `.snap` file with the complete diagnostic output,
-including source context, underlines, and informational notes. Use inline
-assertions for logic; use snapshot diagnostics for presentation.
+This generates an insta `.snap` file with the complete diagnostic output, including source context, underlines, and informational notes. Use inline assertions for logic; use snapshot diagnostics for presentation.
 
 ### Architecture for Building This
 
@@ -475,8 +444,7 @@ The ruff/ty implementation (`crates/ty_test/`) has these components:
 | **Database** | Salsa-backed incremental computation with in-memory FS |
 | **Test entry** | `datatest_stable` discovers `.md` files, generates test per file |
 
-The actual test runner file is ~50 lines of glue — all logic lives in the
-framework crate.
+The actual test runner file is ~50 lines of glue — all logic lives in the framework crate.
 
 **Test discovery** uses `datatest_stable`:
 ```rust
@@ -485,8 +453,7 @@ datatest_stable::harness! {
 }
 ```
 
-Every `.md` file under the resource directory automatically becomes a test.
-Adding a new test = creating/editing a Markdown file. No test registration.
+Every `.md` file under the resource directory automatically becomes a test. Adding a new test = creating/editing a Markdown file. No test registration.
 
 ### When to Use mdtest vs. insta
 
@@ -499,10 +466,6 @@ Adding a new test = creating/editing a Markdown file. No test registration.
 | Simple value serialization checks | **insta** |
 | Output where exact formatting matters | **insta** (or mdtest's snapshot-diagnostics mode) |
 
-The two are complementary. mdtest uses insta internally for its snapshot
-diagnostics mode. The key insight: when the dominant test pattern is
-"given this input, what diagnostics?" inline assertions in the input are
-more readable and maintainable than separate snapshot files.
+The two are complementary. mdtest uses insta internally for its snapshot diagnostics mode. The key insight: when the dominant test pattern is "given this input, what diagnostics?" inline assertions in the input are more readable and maintainable than separate snapshot files.
 
-**Authority:** ruff/ty `crates/ty_test/` (astral-sh/ruff); `datatest_stable`
-crate for file-driven test discovery.
+**Authority:** ruff/ty `crates/ty_test/` (astral-sh/ruff); `datatest_stable` crate for file-driven test discovery.

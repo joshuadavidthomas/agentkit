@@ -1,8 +1,6 @@
 # Parse, Don't Validate — Boundary Patterns
 
-The core distinction: **validation** checks data and throws away the proof.
-**Parsing** checks data and encodes the result in the type system. After parsing,
-the type guarantees validity — no downstream re-checking.
+The core distinction: **validation** checks data and throws away the proof. **Parsing** checks data and encodes the result in the type system. After parsing, the type guarantees validity — no downstream re-checking.
 
 ## The Problem with Validation
 
@@ -28,8 +26,7 @@ Every function downstream must either:
 - Trust that someone validated upstream (`unwrap()`, comments saying "safe because...")
 - Accept `Option` and handle `None` again
 
-This is **shotgun parsing** — validation scattered throughout the codebase, hoping
-every path checks everything.
+This is **shotgun parsing** — validation scattered throughout the codebase, hoping every path checks everything.
 
 ## The Parsing Pattern
 
@@ -75,8 +72,7 @@ fn process_order(items: NonEmptyVec<Item>, customer: CustomerId) -> Result<(), O
 }
 ```
 
-The **caller** is responsible for parsing at the boundary. The processing function
-receives already-valid types.
+The **caller** is responsible for parsing at the boundary. The processing function receives already-valid types.
 
 ## Boundary Architecture
 
@@ -199,13 +195,11 @@ Not everything needs a newtype. Use bare types when:
 - The value is internal and ephemeral (loop counter, temporary buffer)
 - The overhead of a newtype harms readability more than it helps correctness
 
-The test: "Would passing the wrong value here cause a bug that the compiler could
-have caught?" If yes, parse into a domain type. If no, a bare type is fine.
+The test: "Would passing the wrong value here cause a bug that the compiler could have caught?" If yes, parse into a domain type. If no, a bare type is fine.
 
 ## Common Mistakes
 
-**Parsing then discarding.** Parsing into a type but then extracting the raw value
-and passing that forward — you've lost the proof.
+**Parsing then discarding.** Parsing into a type but then extracting the raw value and passing that forward — you've lost the proof.
 
 ```rust
 // WRONG — parses then immediately discards the parse result
@@ -217,11 +211,6 @@ let email = EmailAddress::parse(raw)?;
 send_email(&email); // Callee receives proof of validity
 ```
 
-**Validating in multiple places.** If you find yourself checking the same invariant
-in multiple functions, you haven't parsed — you've scattered validation.
+**Validating in multiple places.** If you find yourself checking the same invariant in multiple functions, you haven't parsed — you've scattered validation.
 
-**"Parsing" that doesn't restrict.** A newtype with `pub fn new(s: String) -> Self`
-(no validation) isn't parsing — it's just wrapping. The type doesn't guarantee
-anything the bare type didn't. Either add invariants or don't bother with the newtype.
-Exception: newtypes for type distinction (Miles vs Kilometers) don't need validation
-because the invariant is "this is a distance in miles," not a data constraint.
+**"Parsing" that doesn't restrict.** A newtype with `pub fn new(s: String) -> Self` (no validation) isn't parsing — it's just wrapping. The type doesn't guarantee anything the bare type didn't. Either add invariants or don't bother with the newtype. Exception: newtypes for type distinction (Miles vs Kilometers) don't need validation because the invariant is "this is a distance in miles," not a data constraint.

@@ -4,8 +4,7 @@
 
 ### `spawn_blocking` — Tokio's blocking thread pool
 
-Runs a closure on a separate thread pool (~500 threads). Best for synchronous
-I/O and moderate CPU work.
+Runs a closure on a separate thread pool (~500 threads). Best for synchronous I/O and moderate CPU work.
 
 ```rust
 // Sync file I/O inside async context
@@ -32,8 +31,7 @@ let users = tokio::task::spawn_blocking(move || {
 
 ### `rayon` — CPU-parallel computation
 
-A thread pool sized to CPU core count. Designed for data-parallel computation
-via parallel iterators.
+A thread pool sized to CPU core count. Designed for data-parallel computation via parallel iterators.
 
 ```rust
 use rayon::prelude::*;
@@ -53,9 +51,7 @@ async fn compute_hashes(data: Vec<Vec<u8>>) -> Vec<String> {
 }
 ```
 
-**Pattern:** Always bridge with `rayon::spawn` + `oneshot` channel. Never call
-`rayon::join` or parallel iterators directly from async code — they block until
-the computation finishes.
+**Pattern:** Always bridge with `rayon::spawn` + `oneshot` channel. Never call `rayon::join` or parallel iterators directly from async code — they block until the computation finishes.
 
 **When to use:**
 - Image processing, compression, encryption
@@ -65,9 +61,7 @@ the computation finishes.
 
 ### Dedicated thread — long-running blocking tasks
 
-For tasks that run forever or for a very long time, spawn a dedicated OS thread.
-Neither `spawn_blocking` nor `rayon` are designed to have threads permanently
-occupied.
+For tasks that run forever or for a very long time, spawn a dedicated OS thread. Neither `spawn_blocking` nor `rayon` are designed to have threads permanently occupied.
 
 ```rust
 use std::thread;
@@ -115,8 +109,7 @@ fn main() {
 }
 ```
 
-`block_on` blocks the current thread until the future completes. Use it as the
-bridge at program boundaries (like `main`), not deep inside async code.
+`block_on` blocks the current thread until the future completes. Use it as the bridge at program boundaries (like `main`), not deep inside async code.
 
 **`#[tokio::main]` expands to this:**
 ```rust
@@ -160,8 +153,7 @@ impl BlockingClient {
 }
 ```
 
-Use `new_current_thread()` for the embedded runtime — no need for the
-multi-thread overhead when you're driving it synchronously with `block_on`.
+Use `new_current_thread()` for the embedded runtime — no need for the multi-thread overhead when you're driving it synchronously with `block_on`.
 
 **Authority:** Tokio tutorial, "Bridging with sync code."
 
@@ -204,9 +196,7 @@ impl AsyncBridge {
 }
 ```
 
-The runtime lives on its own thread. Sync code sends messages; the runtime
-processes them asynchronously. This is the most flexible pattern but has the
-most boilerplate.
+The runtime lives on its own thread. Sync code sends messages; the runtime processes them asynchronously. This is the most flexible pattern but has the most boilerplate.
 
 ## Bridging Async → Sync
 
@@ -225,8 +215,7 @@ async fn process_file(path: PathBuf) -> Result<Data> {
 
 ### For methods that need `&self`
 
-`spawn_blocking` requires `'static` data. If you need access to struct fields,
-clone what you need first:
+`spawn_blocking` requires `'static` data. If you need access to struct fields, clone what you need first:
 
 ```rust
 impl MyService {
@@ -255,8 +244,7 @@ async fn main() { }
 async fn main() { }
 ```
 
-Spawns worker threads (default: one per CPU core). Tasks can move between
-threads. Good for servers handling many concurrent connections.
+Spawns worker threads (default: one per CPU core). Tasks can move between threads. Good for servers handling many concurrent connections.
 
 ### Current-thread
 
@@ -270,8 +258,7 @@ All tasks run on a single thread. Lower overhead. Good for:
 - Embedded runtimes inside sync code
 - Tests
 
-**Caveat:** Spawned tasks only make progress during `block_on` calls. If you
-return from `block_on`, spawned tasks freeze.
+**Caveat:** Spawned tasks only make progress during `block_on` calls. If you return from `block_on`, spawned tasks freeze.
 
 ### Manual builder
 
@@ -284,5 +271,4 @@ let rt = tokio::runtime::Builder::new_multi_thread()
     .unwrap();
 ```
 
-Use the builder when you need custom thread counts, names, or when embedding
-the runtime in a larger application.
+Use the builder when you need custom thread counts, names, or when embedding the runtime in a larger application.

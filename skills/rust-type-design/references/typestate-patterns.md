@@ -1,7 +1,6 @@
 # Typestate Implementation Patterns
 
-Deep-dive on typestate: state with data, sealed bounds, fallible transitions,
-and real-world examples.
+Deep-dive on typestate: state with data, sealed bounds, fallible transitions, and real-world examples.
 
 ## Core Principle
 
@@ -38,8 +37,7 @@ impl ClosedFile {
 ```
 
 **Pros:** Simple, no generics, clear separation.
-**Cons:** Code duplication if states share methods. No way to write generic
-code over "any file state."
+**Cons:** Code duplication if states share methods. No way to write generic code over "any file state."
 
 ## Pattern 2: Generic State Parameter
 
@@ -171,8 +169,7 @@ impl Connection<Connected> {
 }
 ```
 
-**Benefit:** State-specific data is only accessible in that state.
-`session_id()` exists only on `Connection<Connected>`. No Option unwrapping.
+**Benefit:** State-specific data is only accessible in that state. `session_id()` exists only on `Connection<Connected>`. No Option unwrapping.
 
 ## Pattern 4: Sealed State Traits
 
@@ -201,8 +198,7 @@ impl ProtocolPhase for Handshake {
 // ... etc for other states
 ```
 
-**Why seal:** If external code could add states, your state machine guarantees
-break. Sealing ensures exhaustive knowledge of all states.
+**Why seal:** If external code could add states, your state machine guarantees break. Sealing ensures exhaustive knowledge of all states.
 
 ## Pattern 5: Fallible Transitions
 
@@ -230,8 +226,7 @@ impl Connection<Handshaking> {
 }
 ```
 
-**Note:** On failure, we return the original state back to the caller. The
-connection wasn't consumed — the caller can try again or do something else.
+**Note:** On failure, we return the original state back to the caller. The connection wasn't consumed — the caller can try again or do something else.
 
 **Alternative:** Return to a different state on failure:
 
@@ -308,11 +303,9 @@ impl ServerBuilder<HasPort, HasHost> {
 }
 ```
 
-**Benefit:** `build()` doesn't compile until required fields are set.
-No runtime checks, no `Option` unwrapping, no panics.
+**Benefit:** `build()` doesn't compile until required fields are set. No runtime checks, no `Option` unwrapping, no panics.
 
-**Tradeoff:** Complex types, harder to read, doesn't scale to many fields.
-Reserve for APIs where compile-time enforcement is worth the complexity.
+**Tradeoff:** Complex types, harder to read, doesn't scale to many fields. Reserve for APIs where compile-time enforcement is worth the complexity.
 
 ## Real-World Examples
 
@@ -331,8 +324,7 @@ seq.serialize_element(&3)?;
 seq.end()?;  // -> terminal, consumes SerializeSeq
 ```
 
-Can't call `serialize_seq` twice. Can't serialize elements after `end()`.
-Invalid sequences don't compile.
+Can't call `serialize_seq` twice. Can't serialize elements after `end()`. Invalid sequences don't compile.
 
 ### std::process::Command
 
@@ -348,8 +340,7 @@ let child = cmd.spawn()?;  // spawn() takes &mut self — reusable builder
 let output = cmd.output()?;  // output() also takes &mut self — can call after spawn
 ```
 
-Command uses `&mut self` for flexibility (same builder, multiple spawns), not
-consuming typestate. A stricter design would consume on spawn.
+Command uses `&mut self` for flexibility (same builder, multiple spawns), not consuming typestate. A stricter design would consume on spawn.
 
 ### http Request/Response builders
 
@@ -363,14 +354,11 @@ let request = Request::builder()
 
 ## When NOT to Use Typestate
 
-**Many states with complex transitions** — If you have 10 states with 30
-transitions, the type explosion makes code unreadable. Use a runtime enum.
+**Many states with complex transitions** — If you have 10 states with 30 transitions, the type explosion makes code unreadable. Use a runtime enum.
 
-**States change frequently during maintenance** — Each state change requires
-updating type signatures throughout the codebase.
+**States change frequently during maintenance** — Each state change requires updating type signatures throughout the codebase.
 
-**States determined at runtime** — If you don't know the state at compile time
-(loaded from config, chosen by user), you need runtime dispatch anyway.
+**States determined at runtime** — If you don't know the state at compile time (loaded from config, chosen by user), you need runtime dispatch anyway.
 
 **Typestate shines for:**
 - Linear protocols (handshake → auth → data → close)
