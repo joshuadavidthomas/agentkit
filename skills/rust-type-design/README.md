@@ -1,46 +1,34 @@
 # rust-type-design
 
-Type-driven domain modeling patterns for Rust: newtypes, typestate, builders,
-phantom types, and sealed traits.
+Type-driven domain modeling patterns for Rust: newtypes, typestate, builders, phantom types, and sealing.
 
 ## Scope
 
-This skill covers *implementation patterns* for encoding domain constraints in
-Rust's type system. It complements **rust-idiomatic**, which covers *when* to
-use these patterns.
+Use this skill when you’re modeling a domain and want the compiler to enforce invariants:
+- distinguish domain primitives via newtypes
+- make invalid states unrepresentable (typestate / phantom types)
+- stabilize construction with builders
+- prevent external trait implementations (sealed traits)
 
-| Pattern | Purpose |
-|---------|---------|
-| Newtype | Distinguish primitives, enforce invariants, hide representation |
-| Typestate | State machine encoded in types — invalid transitions don't compile |
-| Builder | Incremental construction of complex values |
-| Phantom types | Type-level tags without runtime representation |
-| Sealed traits | Prevent external trait implementations |
+This skill complements **rust-idiomatic** (which sets the defaults and “when”).
 
-## References
+## References in this skill
 
-Deeper implementation guides in `references/`:
+Deep dives live in `references/`:
+- `newtype-patterns.md` — trait impl/accessors, TryFrom/FromStr, serde + derive_more integration
+- `typestate-patterns.md` — sealed state sets, state-with-data, fallible transitions, typestate-builders
+- `builder-patterns.md` — consuming vs non-consuming, validation strategy, derive-macro pointers
 
-- `newtype-patterns.md` — Trait impls, serde, derive_more, accessor patterns
-- `typestate-patterns.md` — State with data, fallible transitions, sealed bounds
-- `builder-patterns.md` — Derive macros, validation, consuming vs non-consuming
+## Attribution & license notes
 
-## Attribution
+This skill synthesizes guidance from:
 
-This skill synthesizes patterns from:
+- [Rust API Guidelines](https://github.com/rust-lang/api-guidelines) — API design checklist (MIT OR Apache-2.0)
+- [Rust Design Patterns](https://github.com/rust-unofficial/patterns) — newtype/builder/typestate patterns (MPL-2.0)
+- [“The Typestate Pattern in Rust”](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
+- [“Parse, Don’t Validate”](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/) by Alexis King
+- [“Making Illegal States Unrepresentable”](https://corrode.dev/blog/illegal-states/) by corrode.dev
+- [Effective Rust](https://www.lurklurk.org/effective-rust/) by David Drysdale (CC BY 4.0)
+- [“Aiming for Correctness with Types”](https://fasterthanli.me/articles/aiming-for-correctness-with-types) by fasterthanlime
 
-- **Rust API Guidelines** — [C-NEWTYPE], [C-CUSTOM-TYPE], [C-BUILDER], [C-SEALED]
-  (MIT/Apache-2.0, rust-lang)
-- **Rust Design Patterns** — Newtype, Builder chapters
-  (MPL-2.0, rust-unofficial)
-- **The Typestate Pattern in Rust** — Cliff L. Biffle (cliffle.com)
-- **Make Illegal States Unrepresentable** — corrode.dev
-- **Effective Rust** — David Drysdale, Chapter 1 (Types)
-- **Parse, Don't Validate** — Alexis King (lexi-lambda.github.io)
-- **Aiming for Correctness with Types** — Amos/fasterthanlime
-
-Standard library evidence: `PathBuf`, `String`, `NonZero<T>`, `PhantomData`,
-`std::process::Command`, `thread::Builder`.
-
-Ecosystem evidence: `serde::Serializer` (typestate), `url::Url` (newtype),
-`reqwest::ClientBuilder` (builder), typed ID crates (phantom types).
+Standard library evidence examples referenced: `NonZero*`, `PathBuf`, `PhantomData`, `std::process::Command`, `std::thread::Builder`.
