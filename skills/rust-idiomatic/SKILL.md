@@ -1,6 +1,6 @@
 ---
 name: rust-idiomatic
-description: "Use for any Rust work. The paradigm shift skill — encodes the core 'think in Rust' defaults that agents consistently get wrong. Covers: newtypes for domain strings, enums over booleans, exhaustive matching (no wildcard _ arms), domain error variants (no Error(String)), parse don't validate, enums as primary modeling tool, enum vs trait object decision, borrow by default. Activates on: Rust code review, new Rust project, modeling domain types, choosing between struct/enum/trait, bareString or bool in signatures, writing match arms."
+description: "Use for any Rust implementation or review when you see non-domain primitives (bare String/bool), kind+Option structs, wildcard enum matches (_ =>), Error(String), runtime validation, or dyn Trait used for a closed set. Sets enum-first, newtype-heavy, parse-don't-validate defaults."
 ---
 
 # Think in Rust
@@ -21,13 +21,15 @@ username from a URL. Wrap it.
 
 ```rust
 // WRONG
-fn send_email(to: String, subject: String, body: String) { .. }
+fn send_email(to: String, subject: String, body: String) { todo!() }
+```
 
+```rust
 // RIGHT
 struct EmailAddress(String);
 struct Subject(String);
 
-fn send_email(to: &EmailAddress, subject: &Subject, body: &str) { .. }
+fn send_email(to: &EmailAddress, subject: &Subject, body: &str) { todo!() }
 ```
 
 Newtypes are zero-cost. The compiler optimizes them away. Use them freely.
@@ -49,6 +51,9 @@ and lets you change the representation later.
 **Authority:** Rust API Guidelines [C-NEWTYPE]. std: `PathBuf`, `OsString`,
 `NonZero<u32>`. Ecosystem: `url::Url`, `semver::Version`, `http::Uri`.
 
+For implementation patterns (privacy, trait impls, serde), see
+[references/newtypes-and-domain-types.md](references/newtypes-and-domain-types.md).
+
 ### 2. Every boolean parameter is a lie — use an enum
 
 `true` and `false` carry no meaning at the call site. Enums are self-documenting
@@ -56,14 +61,16 @@ and extensible.
 
 ```rust
 // WRONG
-fn print_page(double_sided: bool, color: bool) { .. }
+fn print_page(double_sided: bool, color: bool) { todo!() }
 print_page(true, false); // Which is which?
+```
 
+```rust
 // RIGHT
 enum Sides { Single, Double }
 enum Output { Color, BlackAndWhite }
 
-fn print_page(sides: Sides, output: Output) { .. }
+fn print_page(sides: Sides, output: Output) { todo!() }
 print_page(Sides::Double, Output::BlackAndWhite); // Reads like prose
 ```
 
@@ -182,17 +189,24 @@ the result in the type**. After parsing, the type guarantees validity — no re-
 ```rust
 // VALIDATION — checks but forgets
 fn process_config(dirs: Vec<PathBuf>) -> Result<(), Error> {
-    if dirs.is_empty() { return Err(Error::NoDirs); }
-    let first = &dirs[0]; // Re-checking emptiness
-    // ...
-}
+    if dirs.is_empty() {
+        return Err(Error::NoDirs);
+    }
 
+    let first = &dirs[0]; // Re-checking emptiness elsewhere
+    let _ = first;
+    Ok(())
+}
+```
+
+```rust
 // PARSING — checks and remembers
 fn process_config(dirs: Vec<PathBuf>) -> Result<(), Error> {
-    let dirs = NonEmptyVec::try_from(dirs)
-        .map_err(|_| Error::NoDirs)?;
+    let dirs = NonEmptyVec::try_from_vec(dirs).map_err(|_| Error::NoDirs)?;
+
     let first = dirs.first(); // Guaranteed to exist. No unwrap.
-    // ...
+    let _ = first;
+    Ok(())
 }
 ```
 
@@ -252,6 +266,9 @@ enum Connection {
 **Authority:** std: `IpAddr`, `Cow`, `Option`, `Result`, `Ordering`.
 Effective Rust Item 1.
 
+For more enum modeling examples, see
+[references/enums-as-modeling-tool.md](references/enums-as-modeling-tool.md).
+
 ### 8. Enums for closed sets, trait objects for open sets
 
 **Closed set** — you know all the variants at compile time: HTTP methods, AST node
@@ -277,7 +294,7 @@ trait Storage: Send + Sync {
     fn put(&self, key: &str, value: &[u8]) -> Result<(), StorageError>;
 }
 
-fn create_cache(backend: Box<dyn Storage>) -> Cache { .. }
+fn create_cache(backend: Box<dyn Storage>) -> Cache { todo!() }
 ```
 
 **When agents get this wrong:** They default to `dyn Trait` for everything — a habit
@@ -299,10 +316,12 @@ a default.
 
 ```rust
 // WRONG — takes ownership unnecessarily
-fn contains_admin(users: Vec<User>) -> bool { .. }
+fn contains_admin(users: Vec<User>) -> bool { todo!() }
+```
 
+```rust
 // RIGHT — borrows the data it only needs to read
-fn contains_admin(users: &[User]) -> bool { .. }
+fn contains_admin(users: &[User]) -> bool { todo!() }
 ```
 
 **Take ownership when:**
@@ -317,7 +336,17 @@ fn contains_admin(users: &[User]) -> bool { .. }
 For function signatures, prefer `&str` over `&String`, `&[T]` over `&Vec<T>`,
 `&Path` over `&PathBuf`. Accept the most general borrowed form.
 
-**Authority:** Effective Rust Items 14-15. Rust API Guidelines [C-CALLER-DECIDE].
+**Authority:** Effective Rust Items 14-15. Rust API Guidelines [C-CALLER-CONTROL].
+
+## Common Mistakes (Agent Failure Modes)
+
+- **Public newtype fields (`pub struct Email(pub String)`)** → Make the field private and force construction through `parse`/`new` so invariants can't be bypassed.
+- **Boolean flags leaking into APIs** → Replace with enums, even when there are only two states today.
+- **"Kind" field + `Option` payload fields** → Replace with an enum carrying per-variant data; delete the `Option` fields.
+- **Wildcard matches on your own enums (`_ =>`)** → List every variant; adding a variant should break the build.
+- **Validation that returns `Result<(), E>`** → Parse once at the boundary into a domain type; pass the domain type forward.
+- **`Error(String)` / `anyhow::Error` in a library** → Define a structured error enum; reserve `anyhow` for application boundaries.
+- **Taking ownership by default (`String`, `Vec<T>`, `PathBuf`)** → Borrow (`&str`, `&[T]`, `&Path`) unless you store/return/transfer ownership.
 
 ## Review Checklist
 
