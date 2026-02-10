@@ -1,10 +1,11 @@
 ---
 # agentkit-t4fi
 title: Build rust-idiomatic skill
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-02-10T11:34:03Z
-updated_at: 2026-02-10T11:34:03Z
+updated_at: 2026-02-10T11:44:47Z
 parent: agentkit-jghk
 ---
 
