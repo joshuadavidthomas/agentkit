@@ -123,7 +123,7 @@ philosophy. Combinator quick reference. Boundary rules (where to log vs return).
 
 ### 5. `rust-type-design` — Type-Driven Domain Modeling
 
-**Status**: DONE
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Newtype pattern, type-state, phantom types, builder pattern, "make invalid
 states unrepresentable," domain modeling, encoding invariants.
