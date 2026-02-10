@@ -86,7 +86,7 @@ checklist.
 
 ### 3. `rust-traits` — Trait Design and Dispatch
 
-**Status**: TODO
+**Status**: DONE
 
 **Triggers:** Designing trait hierarchies, static vs dynamic dispatch, object safety
 errors, E0277, trait coherence/orphan issues, when to use generics vs trait objects vs
