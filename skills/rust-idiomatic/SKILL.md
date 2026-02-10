@@ -200,15 +200,16 @@ fn process_config(dirs: Vec<PathBuf>) -> Result<(), Error> {
 ```
 
 ```rust
-// PARSING — checks and remembers
+// PARSING — checks and *keeps the proof in a binding*
 fn process_config(dirs: Vec<PathBuf>) -> Result<(), Error> {
-    let dirs = NonEmptyVec::try_from_vec(dirs).map_err(|_| Error::NoDirs)?;
-
-    let first = dirs.first(); // Guaranteed to exist. No unwrap.
-    let _ = first;
+    let (first, _rest) = dirs.split_first().ok_or(Error::NoDirs)?;
+    let _ = first; // Guaranteed to exist
     Ok(())
 }
 ```
+
+If the invariant must cross function boundaries, wrap it in a domain type (e.g.
+`NonEmptyVec<T>`). See [references/parse-dont-validate.md](references/parse-dont-validate.md).
 
 **The pattern:** Convert less-structured input to more-structured types at system
 boundaries (CLI args, HTTP requests, config files, database rows). Once converted,
@@ -348,6 +349,13 @@ For function signatures, prefer `&str` over `&String`, `&[T]` over `&Vec<T>`,
 - **`Error(String)` / `anyhow::Error` in a library** → Define a structured error enum; reserve `anyhow` for application boundaries.
 - **Taking ownership by default (`String`, `Vec<T>`, `PathBuf`)** → Borrow (`&str`, `&[T]`, `&Path`) unless you store/return/transfer ownership.
 
+## Cross-References
+
+- **rust-type-design** — Newtype patterns, typestate, phantom types, builder pattern
+- **rust-error-handling** — Full error strategy (library vs app, thiserror vs anyhow)
+- **rust-ownership** — Borrow checker errors, smart pointer decisions, lifetime design
+- **rust-traits** — Trait design, static vs dynamic dispatch, object safety
+
 ## Review Checklist
 
 Run through this list when reviewing Rust code — yours or the agent's.
@@ -378,10 +386,3 @@ Run through this list when reviewing Rust code — yours or the agent's.
 
 10. **`clone()` to satisfy the borrow checker?** → Check if you can restructure
     to borrow instead. Clone is fine when intentional, not when it's a band-aid.
-
-## Cross-References
-
-- **rust-type-design** — Newtype patterns, typestate, phantom types, builder pattern
-- **rust-error-handling** — Full error strategy (library vs app, thiserror vs anyhow)
-- **rust-ownership** — Borrow checker errors, smart pointer decisions, lifetime design
-- **rust-traits** — Trait design, static vs dynamic dispatch, object safety

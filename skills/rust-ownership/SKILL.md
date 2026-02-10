@@ -307,6 +307,14 @@ model, not the symptom.
 - **Fighting the borrow checker with unsafe** → If safe Rust won't compile your
   pattern, the pattern is probably wrong. Restructure first.
 
+## Cross-References
+
+- **rust-idiomatic** — Rule 9 (borrow by default), the foundational defaults
+- **rust-type-design** — Typestate transitions consume `self`, builder ownership patterns
+- **rust-error-handling** — Owned vs borrowed data in error types
+- **rust-traits** — Trait object lifetimes (`Box<dyn Trait + 'a>`), Send/Sync bounds
+- **rust-async** — `'static` bounds on spawned futures, Send requirements
+
 ## Review Checklist
 
 1. **Does the function take ownership it doesn't need?** → Borrow instead.
@@ -339,11 +347,3 @@ model, not the symptom.
 
 10. **Is unsafe used to work around the borrow checker?** → Almost never correct.
     Restructure the code instead.
-
-## Cross-References
-
-- **rust-idiomatic** — Rule 9 (borrow by default), the foundational defaults
-- **rust-type-design** — Typestate transitions consume `self`, builder ownership patterns
-- **rust-error-handling** — Owned vs borrowed data in error types
-- **rust-traits** — Trait object lifetimes (`Box<dyn Trait + 'a>`), Send/Sync bounds
-- **rust-async** — `'static` bounds on spawned futures, Send requirements

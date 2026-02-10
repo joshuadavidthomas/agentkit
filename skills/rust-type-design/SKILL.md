@@ -265,6 +265,13 @@ If you have a struct with a `kind` field plus variant-only `Option` fields: dele
 - **Phantom type parameter without `PhantomData`** → you’re not actually carrying the type information.
 - **Typestate explosion** → prefer a runtime enum when states/transitions are large or runtime-driven.
 
+## Cross-references
+
+- **rust-idiomatic** — the modeling defaults (enum-first, newtype-heavy)
+- **rust-ownership** — consuming `self`, borrowing in builder APIs
+- **rust-traits** — trait design, object safety, and sealing patterns
+- **rust-error-handling** — error types for fallible construction and parsing
+
 ## Review checklist
 
 1. Is a primitive type (`String`, `i64`, `u16`, `bool`) carrying domain meaning? Wrap it in a newtype.
@@ -275,10 +282,3 @@ If you have a struct with a `kind` field plus variant-only `Option` fields: dele
 6. Are you trying to distinguish identical representations (units, validated/unvalidated, permissions)? Use phantom types.
 7. Do you need to prevent external impls (typestate bounds, exhaustive dispatch)? Seal the trait.
 8. Did you model variants as `kind + Option fields`? Replace with an enum carrying per-variant data.
-
-## Cross-references
-
-- **rust-idiomatic** — the modeling defaults (enum-first, newtype-heavy)
-- **rust-ownership** — consuming `self`, borrowing in builder APIs
-- **rust-traits** — trait design, object safety, and sealing patterns
-- **rust-error-handling** — error types for fallible construction and parsing

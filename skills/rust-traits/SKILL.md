@@ -304,6 +304,14 @@ For the broader catalog (conditional impls, newtype delegation, closures vs trai
 - **`Hash`/`Eq` inconsistency** → If you manually implement either, manually implement both to keep them consistent.
 - **Returning `Box<dyn Trait>` from trait methods by default** → If you have static dispatch, prefer an associated type or return-position `impl Trait` (RPITIT) to avoid allocation. If you need `dyn Trait`, accept the box and document the cost.
 
+## Cross-References
+
+- **rust-idiomatic** — Enum-first modeling and “dyn only for open sets” defaults
+- **rust-type-design** — Newtype boundaries, typestate, invariants
+- **rust-ownership** — Trait object lifetimes, `Send`/`Sync` bounds, smart pointers
+- **rust-error-handling** — `Error` as a trait, `From` conversions, `Box<dyn Error>`
+- **rust-async** — `Send`/`Sync` bounds on futures, `Future` trait, async trait methods
+
 ## Review Checklist
 
 1. **Closed set?** Use an `enum`.
@@ -316,11 +324,3 @@ For the broader catalog (conditional impls, newtype delegation, closures vs trai
 8. **Orphan rule hit?** Newtype it.
 9. **Need a marker trait as a proof?** Seal it.
 10. **Any blanket impls?** Check coherence fallout (future impl space).
-
-## Cross-References
-
-- **rust-idiomatic** — Enum-first modeling and “dyn only for open sets” defaults
-- **rust-type-design** — Newtype boundaries, typestate, invariants
-- **rust-ownership** — Trait object lifetimes, `Send`/`Sync` bounds, smart pointers
-- **rust-error-handling** — `Error` as a trait, `From` conversions, `Box<dyn Error>`
-- **rust-async** — `Send`/`Sync` bounds on futures, `Future` trait, async trait methods

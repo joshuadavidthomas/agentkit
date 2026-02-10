@@ -443,6 +443,14 @@ impl ApiError {
 - **`Box<dyn Error>` as the public error type** → Callers can't match without
   downcasting. Use a concrete enum.
 
+## Cross-References
+
+- **rust-idiomatic** — Rule 5 (error variants as domain facts), the foundational defaults
+- **rust-type-design** — Newtype errors, parse-don't-validate at boundaries
+- **rust-ownership** — Owned vs borrowed data in error types, `Send + Sync` bounds
+- **rust-traits** — `Error` trait, `From` implementations, trait objects for error erasure
+- **rust-async** — `?` in async functions, `JoinError` handling, error propagation across tasks
+
 ## Review Checklist
 
 1. **Library or application?** Libraries use `thiserror` enums. Applications use
@@ -474,11 +482,3 @@ impl ApiError {
 
 10. **Is there a `Result` type alias?** `pub type Result<T> = std::result::Result<T, Error>;`
     reduces boilerplate within each module.
-
-## Cross-References
-
-- **rust-idiomatic** — Rule 5 (error variants as domain facts), the foundational defaults
-- **rust-type-design** — Newtype errors, parse-don't-validate at boundaries
-- **rust-ownership** — Owned vs borrowed data in error types, `Send + Sync` bounds
-- **rust-traits** — `Error` trait, `From` implementations, trait objects for error erasure
-- **rust-async** — `?` in async functions, `JoinError` handling, error propagation across tasks

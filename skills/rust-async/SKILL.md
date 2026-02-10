@@ -23,13 +23,13 @@ This is the first question. The answer determines your entire approach.
 | Network I/O, timers, async DB | `async fn` + `.await` | Non-blocking; yields at I/O boundaries |
 | File system I/O, blocking DB (diesel) | `spawn_blocking` | File I/O is blocking on most OSes |
 | Expensive computation (parsing, crypto, compression) | `rayon` or `spawn_blocking` | CPU doesn't yield; starves the executor |
-| Long-running loop (event listener, connection manager) | Dedicated `std::thread::spawn` | Never returns; would permanently consume a pool thread |
+| Busy CPU loop / polling loop (no `.await`) | Dedicated thread or redesign to yield | A task that never yields starves runtime workers |
 
 **Decision:**
 - I/O-bound → `async`/`.await` with tokio
 - CPU-bound, many parallel tasks → `rayon`
 - CPU-bound, simple/few → `spawn_blocking`
-- Runs forever → dedicated thread
+- Runs forever without `.await` → dedicated thread or redesign
 
 For deep dives on `spawn_blocking` vs `rayon` vs dedicated threads, and
 sync↔async bridging, see
@@ -66,9 +66,9 @@ a long time without reaching an `.await`."
 
 ### Rule 2: Don't hold mutex guards across `.await`
 
-A locked `std::sync::Mutex` held across `.await` can deadlock the runtime.
-The task yields while holding the lock; another task on the same thread tries to
-lock it; the thread deadlocks because it can never switch back.
+Holding a `std::sync::MutexGuard` across `.await` is a correctness and latency risk.
+If another task tries to lock it, the runtime worker thread blocks, stalling unrelated
+futures. It can also create logical deadlocks if the awaited operation needs the same lock.
 
 ```rust
 // WRONG — MutexGuard held across await
@@ -276,8 +276,8 @@ let result = handle.await.unwrap();
 
 ### `tokio::spawn_blocking` — offload blocking work
 
-Runs a closure on a dedicated thread pool (~500 threads). Use for synchronous
-I/O or moderate CPU work.
+Runs a closure on Tokio's blocking thread pool (default max is 512 threads; configurable).
+Use for synchronous I/O or moderate CPU work.
 
 ```rust
 let result = tokio::task::spawn_blocking(|| {
@@ -376,6 +376,13 @@ backpressure, cancellation safety reference, and `JoinSet`, see
 - **Blocking CPU work on the async runtime** → Starves other tasks. Use
   `spawn_blocking` for moderate work, `rayon` for heavy parallelism.
 
+## Cross-References
+
+- **rust-ownership** — `'static` bounds on spawned futures, `Arc`/`Rc` choice, `Send`/`Sync`
+- **rust-traits** — `Send`, `Sync`, `Future` trait, object safety with async
+- **rust-error-handling** — `anyhow` in async contexts, `?` in async functions, `JoinError` handling
+- **rust-idiomatic** — Enum-based message types for actor channels, newtype wrappers for state
+
 ## Review Checklist
 
 1. **Is every blocking call off the runtime?** `std::fs`, `std::thread::sleep`,
@@ -407,10 +414,3 @@ backpressure, cancellation safety reference, and `JoinSet`, see
 
 10. **Is graceful shutdown implemented?** `CancellationToken` or `watch` channel
     for signaling, `TaskTracker` or `JoinHandle` collection for waiting.
-
-## Cross-References
-
-- **rust-ownership** — `'static` bounds on spawned futures, `Arc`/`Rc` choice, `Send`/`Sync`
-- **rust-traits** — `Send`, `Sync`, `Future` trait, object safety with async
-- **rust-error-handling** — `anyhow` in async contexts, `?` in async functions, `JoinError` handling
-- **rust-idiomatic** — Enum-based message types for actor channels, newtype wrappers for state
