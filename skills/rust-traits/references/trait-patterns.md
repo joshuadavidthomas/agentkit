@@ -1,12 +1,10 @@
 # Trait Patterns
 
-Catalog of trait design patterns in idiomatic Rust. Loaded from **rust-traits** when
-you need implementation details beyond the SKILL.md pattern summaries.
+Catalog of trait design patterns in idiomatic Rust. Loaded from **rust-traits** when you need implementation details beyond the SKILL.md pattern summaries.
 
 ## Sealed Trait
 
-Prevents external crates from implementing your trait. Gives you the same
-exhaustiveness guarantee as an enum but with trait dispatch ergonomics.
+Prevents external crates from implementing your trait. Gives you the same exhaustiveness guarantee as an enum but with trait dispatch ergonomics.
 
 ```rust
 mod private {
@@ -44,25 +42,19 @@ impl Format for Yaml {
 - The trait is designed for user extension (plugins, strategies, test doubles)
 - You're publishing a crate and want ecosystem adoption
 
-**Authority:** Rust API Guidelines [C-SEALED]. std: `Pattern`, `Termination`,
-`SliceIndex` are effectively sealed.
+**Authority:** Rust API Guidelines [C-SEALED]. std: `Pattern`, `Termination`, `SliceIndex` are effectively sealed.
 
 ## Extension Trait
 
-Adds methods to types or traits you don't own. Two variants: **blanket Ext** (adds
-methods to every implementor of a trait, e.g., `AsyncReadExt` for all `AsyncRead`)
-and **sealed Ext** (adds methods to a specific type, e.g., Axum's `RequestExt`).
+Adds methods to types or traits you don't own. Two variants: **blanket Ext** (adds methods to every implementor of a trait, e.g., `AsyncReadExt` for all `AsyncRead`) and **sealed Ext** (adds methods to a specific type, e.g., Axum's `RequestExt`).
 
 This pattern is pervasive — Tokio, futures, Tower, itertools, and Axum all use it.
 
-For the full reference (both variants, implementation guide, combinator return types,
-Ext vs newtype decision, naming conventions), see
-[extension-traits.md](extension-traits.md).
+For the full reference (both variants, implementation guide, combinator return types, Ext vs newtype decision, naming conventions), see [extension-traits.md](extension-traits.md).
 
 ## Marker Trait
 
-A trait with no methods. Signals a property the compiler or downstream code can
-check at compile time.
+A trait with no methods. Signals a property the compiler or downstream code can check at compile time.
 
 ```rust
 /// Types that have been validated and are safe to persist.
@@ -98,9 +90,7 @@ impl<T: Display> Greet for T {
 }
 ```
 
-**Coherence implications:** Once you add a blanket impl, no one (including you)
-can add a more specific impl that overlaps. This is deliberate — it prevents
-ambiguity — but means blanket impls should be added carefully.
+**Coherence implications:** Once you add a blanket impl, no one (including you) can add a more specific impl that overlaps. This is deliberate — it prevents ambiguity — but means blanket impls should be added carefully.
 
 ```rust
 // After the blanket impl above, this is ILLEGAL:
@@ -144,13 +134,11 @@ impl<T: Clone + Debug> Wrapper<T> {
 }
 ```
 
-**Authority:** std: `Vec<T>` implements `Clone` only when `T: Clone`.
-`Option<T>` implements `Ord` only when `T: Ord`.
+**Authority:** std: `Vec<T>` implements `Clone` only when `T: Clone`. `Option<T>` implements `Ord` only when `T: Ord`.
 
 ## Newtype Delegation
 
-When a newtype wraps a type that implements traits you want, delegate explicitly
-instead of using `Deref`.
+When a newtype wraps a type that implements traits you want, delegate explicitly instead of using `Deref`.
 
 ```rust
 struct UserId(u64);
@@ -177,10 +165,7 @@ impl UserId {
 }
 ```
 
-**Why not `Deref`:** `Deref` coercion happens implicitly and makes the newtype
-transparent to method resolution. A `UserId` would silently act like a `u64`,
-defeating the purpose of the newtype. Use `Deref` only for smart pointer types
-(`Box`, `Arc`, `MutexGuard`, your own smart pointer).
+**Why not `Deref`:** `Deref` coercion happens implicitly and makes the newtype transparent to method resolution. A `UserId` would silently act like a `u64`, defeating the purpose of the newtype. Use `Deref` only for smart pointer types (`Box`, `Arc`, `MutexGuard`, your own smart pointer).
 
 **Authority:** Effective Rust Item 12 (Deref anti-patterns). clippy: `deref_addrof`.
 
@@ -203,17 +188,13 @@ fn filter<T>(items: &[T], predicate: impl Fn(&T) -> bool) -> Vec<&T> {
 let adults = filter(&users, |u| u.age >= 18);
 ```
 
-**Use a trait when:** the strategy has state, multiple methods, or needs to be
-named/stored. **Use a closure when:** it's a single operation and inline definition
-is natural.
+**Use a trait when:** the strategy has state, multiple methods, or needs to be named/stored. **Use a closure when:** it's a single operation and inline definition is natural.
 
-**Authority:** std: `Iterator::filter`, `sort_by`, `map` all take closures.
-`Read`, `Write` are traits because they have multiple methods and state.
+**Authority:** std: `Iterator::filter`, `sort_by`, `map` all take closures. `Read`, `Write` are traits because they have multiple methods and state.
 
 ## Supertraits with Defaults
 
-Combine supertrait requirements with default method implementations to give
-implementors rich behavior from minimal input.
+Combine supertrait requirements with default method implementations to give implementors rich behavior from minimal input.
 
 ```rust
 trait Named {
@@ -247,9 +228,7 @@ trait Container {
 }
 ```
 
-This is partially stabilized. As of Rust 1.65+, GATs (generic associated types) are
-stable, but associated type defaults require `#![feature(associated_type_defaults)]`.
-In stable Rust, use a concrete type or make implementors specify it explicitly.
+Associated type defaults are unstable on stable Rust (as of Rust 1.90) and require `#![feature(associated_type_defaults)]` on nightly. On stable Rust, use a concrete type or make implementors specify it explicitly.
 
 ## Generic Associated Types (GATs)
 
@@ -283,8 +262,6 @@ impl<'data> LendingIterator for WindowIter<'data> {
 }
 ```
 
-**Use GATs when:** an associated type needs to borrow from `self` or is parameterized
-over a lifetime/type that varies per method call.
+**Use GATs when:** an associated type needs to borrow from `self` or is parameterized over a lifetime/type that varies per method call.
 
-**Don't use GATs when:** a simple associated type or generic parameter suffices. GATs
-add complexity — reach for them only when simpler alternatives fail.
+**Don't use GATs when:** a simple associated type or generic parameter suffices. GATs add complexity — reach for them only when simpler alternatives fail.

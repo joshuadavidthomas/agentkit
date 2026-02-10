@@ -5,323 +5,214 @@ description: "Use when designing trait hierarchies, choosing between generics/tr
 
 # Trait Design and Dispatch
 
-Traits define shared behavior. The agent's job is choosing the **right dispatch
-mechanism** — enum, generic, or trait object — and designing traits that are
-object-safe when they need to be, sealed when they should be, and minimal always.
+Do not default to `dyn Trait`. Pick the dispatch mechanism first, then design the trait to fit it.
 
-The core failure mode: defaulting to `dyn Trait` for everything. This is an
-interface-oriented habit from Java/C#/TypeScript. In Rust, enums are cheaper
-and generics are faster. Trait objects are the *last* tool, not the first.
+The Rust default order:
+
+1. **Closed set** → model it as an `enum`.
+2. **Open set, concrete type known at the call site** → use generics / `impl Trait`.
+3. **True type erasure** (plugins, heterogeneous collections) → use `dyn Trait`.
+
+This is the same ecosystem guidance as **rust-idiomatic** Rules 7–8, applied to trait design.
 
 ## The Central Decision: How to Dispatch
 
-Every time you need polymorphism, ask three questions in order:
+Make the dispatch choice explicitly. Use this decision path:
 
 ```
 1. Is the set of variants known at compile time?
-   ├─ Yes → Use an enum. Stop here.
-   └─ No (or "users add variants") → Continue.
+   ├─ Yes → Use an enum. Stop.
+   └─ No  → Continue.
 
-2. Can the concrete type be known at each call site?
+2. Is the concrete type known at each call site?
    ├─ Yes → Use generics (static dispatch).
-   └─ No (heterogeneous collection, plugin, type erasure) → Continue.
-
-3. You need dynamic dispatch → Use dyn Trait (trait object).
+   └─ No  → Use dyn Trait (dynamic dispatch).
 ```
 
-| Mechanism | Dispatch | Allocation | Exhaustive match | Use when |
-|-----------|----------|------------|-----------------|----------|
-| `enum` | None (direct) | Stack | Yes | Closed set, per-variant data, state machines |
-| `impl Trait` / `<T: Trait>` | Static (monomorphized) | None | N/A | Open set, max performance, known at call site |
-| `dyn Trait` | Dynamic (vtable) | Heap (usually) | No | Heterogeneous collections, plugins, type erasure |
+| Mechanism | Dispatch | Allocation | Exhaustive handling | Use when |
+|-----------|----------|------------|---------------------|----------|
+| `enum` | `match` (direct) | None | Yes | Closed set, per-variant data, state machines |
+| Generics (`impl Trait`, `T: Trait`) | Static (monomorphized) | None | N/A | Open set, type known at call site |
+| `dyn Trait` | Dynamic (vtable) | Sometimes | No | Type erasure: plugins, heterogeneous collections |
 
-### Enum: the default for closed sets
+Rules of thumb:
+- Prefer `&dyn Trait` for parameters when you truly need dynamic dispatch and don't need ownership.
+- Prefer `Box<dyn Trait>` only when you must own/store/return the erased type.
 
-If you can list every variant, use an enum. Enums give you exhaustive matching,
-per-variant data, zero allocation, and no vtable overhead. See **rust-idiomatic**
-Rules 7-8 for modeling guidance.
+For the deep trade-offs (monomorphization costs, lifetime bounds on trait objects, performance notes), see [references/dispatch-patterns.md](references/dispatch-patterns.md).
 
-```rust
-// AST nodes, config formats, HTTP methods, command types → enum
-enum Expr {
-    Literal(i64),
-    BinOp { op: Op, lhs: Box<Expr>, rhs: Box<Expr> },
-    UnaryOp { op: Op, operand: Box<Expr> },
-}
-```
+## Object Safety (dyn-compatibility) Quick Reference
 
-### Generics: the default for open sets
+If you want `dyn Trait`, the trait must be object-safe.
 
-When the set is open but the concrete type is known at each call site, use generics.
-The compiler monomorphizes — one copy per concrete type, fully inlined, zero runtime
-cost.
+**Authority:** Rust Reference (object safety / dyn compatibility).
 
-```rust
-fn serialize<S: Serializer>(value: &MyType, serializer: S) -> Result<S::Ok, S::Error> {
-    // Compiler generates a version for JsonSerializer, BincodeSerializer, etc.
-    todo!()
-}
-```
+A trait is object-safe if:
 
-**Use `impl Trait` in argument position** as shorthand when you don't need to name
-the type parameter:
-
-```rust
-fn process(reader: impl Read) -> io::Result<Vec<u8>> { todo!() }
-// Equivalent to: fn process<R: Read>(reader: R) -> io::Result<Vec<u8>>
-```
-
-**Use `impl Trait` in return position** to return an unnamed concrete type:
-
-```rust
-fn make_iter(v: &[i32]) -> impl Iterator<Item = &i32> {
-    v.iter().filter(|&&x| x > 0)
-}
-// Caller can't name the type, but it's still static dispatch.
-```
-
-### Trait objects: when you must erase the type
-
-Use `dyn Trait` only when you need a heterogeneous collection, a plugin interface,
-or deliberate type erasure for API simplicity.
-
-```rust
-// Plugin system — users add backends at runtime
-fn create_cache(backend: Box<dyn Storage>) -> Cache { todo!() }
-
-// Heterogeneous collection — different concrete types in one Vec
-let handlers: Vec<Box<dyn Handler>> = vec![
-    Box::new(LogHandler),
-    Box::new(AuthHandler),
-    Box::new(MetricsHandler),
-];
-```
-
-**Cost of trait objects:** vtable indirection on every method call, heap allocation
-(usually `Box`), no inlining, no monomorphization. This matters in hot paths.
-
-For the full dispatch reference (monomorphization trade-offs, `impl Trait` edge
-cases, `dyn Trait` with lifetimes, performance comparison), see
-[references/dispatch-patterns.md](references/dispatch-patterns.md).
-
-## Object Safety Quick Reference
-
-A trait is object-safe (dyn-compatible) when it can be used as `dyn Trait`. If the
-compiler rejects `dyn YourTrait`, one of these rules is violated.
-
-### Object safety rules
-
-A trait is object-safe if **all** of these hold:
-
-1. **No `Self: Sized` supertrait.** `trait Foo: Sized` prevents `dyn Foo`.
-2. **No associated constants** (stable Rust).
-3. **Every method is dispatchable** — meaning all of:
-   - Receiver is `&self`, `&mut self`, `Box<Self>`, `Rc<Self>`, `Arc<Self>`, or `Pin<&Self>`.
+1. It does **not** require `Self: Sized` as a supertrait.
+2. It has **no associated constants**.
+3. Every method that is callable on `dyn Trait` is dispatchable:
    - No generic type parameters on the method.
-   - Return type does not use `Self` (except behind indirection: `Box<Self>` is fine).
-   - No `where Self: Sized` bound (which opts the method *out* of dispatch — see below).
+   - Does not return bare `Self`.
+   - Uses an object-safe receiver: `&self`, `&mut self`, `self: Box<Self>`, `self: Arc<Self>`, `self: Rc<Self>`, `self: Pin<&Self>`, `self: Pin<&mut Self>`, etc.
 
-### Opt out individual methods with `Self: Sized`
+### Keep the trait object-safe by opting out specific methods
 
-Methods that violate object safety can be excluded from the vtable. The trait stays
-object-safe, but those methods are unavailable on `dyn Trait`.
+If one method would break object safety, keep the trait dyn-compatible and opt the method out:
 
 ```rust
-trait Cloneable {
-    fn clone_box(&self) -> Box<dyn Cloneable>;
+trait Service {
+    fn handle(&self, request: &str) -> String;
 
-    // This method breaks object safety (returns Self),
-    // but the Self: Sized bound opts it out.
     fn into_inner(self) -> Self
     where
         Self: Sized;
 }
-// dyn Cloneable works — into_inner just isn't callable on it.
 ```
 
-**Authority:** std uses this pattern extensively: `Iterator::collect`, `Iterator::zip`,
-and 50+ other methods have `where Self: Sized` to keep `dyn Iterator` usable.
+This pattern is standard library practice (many `Iterator` methods are `where Self: Sized` so `dyn Iterator` stays usable).
 
-### Common object safety errors
+### E0038: "the trait cannot be made into an object"
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| E0038: "the trait cannot be made into an object" | Generic method, `Self` in return, associated const | Add `where Self: Sized` to the offending method, or redesign |
-| "method has generic type parameters" | `fn foo<T>(&self, t: T)` | Take `&dyn OtherTrait` instead, or add `Self: Sized` |
-| "method references the `Self` type in its return type" | `fn clone(&self) -> Self` | Return `Box<Self>` or add `Self: Sized` |
+Do this, in order:
+
+1. Re-check your dispatch choice. If the set is closed or known, switch to an `enum` or generics.
+2. If you truly need `dyn Trait`, remove the object-safety violations:
+   - Move generic methods behind `where Self: Sized`.
+   - Replace `fn clone(&self) -> Self` with a boxed/cloned-erasure pattern.
+   - Remove associated constants.
 
 ## Associated Types vs Generic Parameters
 
-This is the most confused trait design decision. The rule is simple:
+Use this decision rule:
 
-**Associated type** — one implementation per type. The type is *determined by* the
-implementor.
+- **Associated type** when each implementor has **one** natural choice.
+- **Generic parameter** when a type may implement the trait in **multiple** ways.
 
 ```rust
-trait Iterator {
-    type Item;  // Each iterator has exactly ONE Item type.
+// Associated type: one Item per iterator type.
+trait MyIterator {
+    type Item;
     fn next(&mut self) -> Option<Self::Item>;
 }
-// Vec<i32>::IntoIter always yields i32. No choice.
-```
 
-**Generic parameter** — multiple implementations per type. The type is *chosen by*
-the caller or the impl.
-
-```rust
-trait Add<Rhs = Self> {
+// Generic parameter: a type can implement Add for different RHS types.
+trait MyAdd<Rhs> {
     type Output;
     fn add(self, rhs: Rhs) -> Self::Output;
 }
-// Point can impl Add<Point> AND Add<Vector> — different Rhs types.
 ```
 
-**Decision rule:** If asking "can this type implement this trait in more than one
-way?", the answer determines the design. One way → associated type. Multiple ways
-→ generic parameter.
-
-**Authority:** Rust API Guidelines [C-OBJECT]. std: `Iterator` (associated),
-`Add`/`Mul`/`From` (generic), `AsRef` (generic — one type can AsRef many targets).
+**Authority:** std library precedent (`Iterator` uses an associated `Item`, `Add` uses a generic `Rhs`), Rust API Guidelines (trait design sections).
 
 ## Trait Design Rules
 
 ### Rule 1: Minimize required methods
 
-Define the smallest set of methods that implementors *must* provide. Everything else
-gets a default implementation built on those primitives.
+Make implementors provide a small primitive set. Build everything else as default methods.
+
+**Authority:** `Iterator` requires `next()` and supplies dozens of default methods.
 
 ```rust
 trait Summary {
-    // REQUIRED — implementor must provide
     fn core_text(&self) -> &str;
 
-    // DEFAULT — free for implementors, overridable
     fn summarize(&self) -> String {
-        format!("{}...", &self.core_text()[..100.min(self.core_text().len())])
+        let text = self.core_text();
+        let mut chars = text.chars();
+        let mut prefix: String = chars.by_ref().take(100).collect();
+        if chars.next().is_some() {
+            prefix.push('…');
+        }
+        prefix
     }
 }
 ```
 
-**Authority:** std: `Iterator` requires only `next()`, provides 70+ default methods.
-Rust API Guidelines [C-OBJECT] ("traits that can be used as trait objects… should have a
-small number of methods").
+### Rule 2: Implement common standard traits for *value/domain* types
 
-### Rule 2: Implement standard traits eagerly
+For domain/value types (IDs, commands, config enums, small records), derive the traits downstream code expects.
 
-Every type should derive or implement the standard traits that apply. Missing traits
-frustrate downstream users who can't print, compare, hash, or collect your types.
+Do **not** blindly force these traits onto resource/handle types (files, sockets, locks) where the semantics are wrong.
 
-**Minimum for most types:** `Debug`, `Clone`, `PartialEq`, `Eq`
+**Authority:** Rust API Guidelines [C-COMMON-TRAITS], clippy lints, std conventions.
 
-| Also implement | When |
-|---------------|------|
-| `Hash` | Type implements `Eq` (enables `HashMap`/`HashSet` keys) |
-| `Copy` | Type is small, stack-only, and bitwise-copyable |
-| `Default` | A sensible zero/empty value exists |
-| `Display` | Type is user-facing |
-| `Ord` + `PartialOrd` | Ordering is meaningful |
-| `Send` + `Sync` | Automatic unless you use `Rc`, raw pointers, etc. |
-| `From`/`TryFrom` | Natural conversions exist |
-| `FromIterator` | Type is a collection |
+Default checklist for value types:
+- `Debug`
+- `Clone` (unless intentionally non-cloneable)
+- `PartialEq`/`Eq` (when equality is meaningful)
+- `Hash` when `Eq` is used as a `HashMap` key
+- `Ord`/`PartialOrd` when ordering is meaningful
+- `Display` for user-facing strings (don’t reuse `Debug`)
 
-**Consistency rules:**
-- `Eq` implies `Hash` must agree: if `a == b` then `hash(a) == hash(b)`.
-- `Ord` implies `PartialOrd`, `Eq`, `PartialEq` — derive all four together.
-- `Copy` implies `Clone` — derive both. Only for types where implicit copying is cheap.
-- Implement `From<T>`, never `Into<T>` — the blanket impl gives you `Into` for free.
-- Implement `TryFrom<T>`, never `TryInto<T>` — same reason.
+For the full checklist + consistency invariants (`Eq`↔`Hash`, `Ord` implies `Eq`, conversion trait hierarchy, `Deref` rules), see [references/standard-traits.md](references/standard-traits.md).
 
-**Authority:** Rust API Guidelines [C-COMMON-TRAITS]. Effective Rust Item 10.
+### Rule 3: Respect coherence (orphan rule)
 
-For the full standard traits reference (conversion hierarchy, when to derive vs
-implement manually, `Deref` rules), see
-[references/standard-traits.md](references/standard-traits.md).
+You can implement a trait only if you own the trait **or** you own the type.
 
-### Rule 3: Respect the orphan rule
-
-You can only implement a trait if you own the trait **or** you own the type. You
-cannot implement a foreign trait for a foreign type.
+If you need `impl ForeignTrait for ForeignType`, wrap the type in a newtype.
 
 ```rust
-// ✅ You own the trait
-trait MyTrait {}
-impl MyTrait for Vec<i32> {}
+use std::fmt::{self, Display};
 
-// ✅ You own the type
-struct MyType;
-impl Display for MyType { /* ... */ todo!() }
-
-// ❌ Both foreign — orphan violation
-impl Display for Vec<i32> { /* ... */ } // ERROR
-```
-
-**Workaround:** Wrap the foreign type in a newtype (see **rust-idiomatic** Rule 1,
-**rust-type-design** Pattern 1):
-
-```rust
 struct PrettyVec(Vec<i32>);
-impl Display for PrettyVec { /* ... */ todo!() }
+
+impl Display for PrettyVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 ```
 
-### Rule 4: Use supertraits to compose requirements
+**Authority:** Rust Reference (coherence / orphan rules). **rust-idiomatic** Rule 1.
 
-When a trait requires behavior from another trait, declare it as a supertrait bound.
+### Rule 4: Use supertraits only when the *trait* requires them
+
+If your trait’s methods or invariants require `Debug`, `Send`, `Sync`, etc., put them on the trait. Otherwise, put bounds on the functions that need them.
 
 ```rust
-trait Drawable: Clone + Debug {
+use std::fmt::Debug;
+
+trait Drawable: Debug {
     fn draw(&self);
 }
-// Every Drawable must also be Clone + Debug.
-// Implementors must satisfy all three.
 ```
 
-Don't over-constrain. Add supertrait bounds only when the trait's *own methods*
-or *own invariants* require them. If only some callers need `Clone`, put the bound
-on those functions, not on the trait.
+### Rule 5: Prefer `&self` / `&mut self` receivers
 
-### Rule 5: Prefer `&self` receivers in trait methods
-
-Traits with `self` (by value) receivers consume the implementor. This prevents trait
-objects (unless boxed) and limits flexibility. Use `&self` or `&mut self` unless the
-method genuinely consumes the value.
+A by-value `self` receiver makes dyn usage harder and forces moves.
 
 ```rust
-// WRONG — consumes self, prevents reuse and trait objects
-trait Transform {
-    fn apply(self) -> Output;
+// WRONG for most traits: consumes the implementor
+trait TransformWrong {
+    fn apply(self, input: i32) -> i32;
 }
 
-// RIGHT — borrows, works everywhere including dyn Trait
+// RIGHT for most traits: works for borrowed values and dyn Trait
 trait Transform {
-    fn apply(&self) -> Output;
+    fn apply(&self, input: i32) -> i32;
 }
 ```
 
-**Exception:** Conversion methods (`into_*`) and typestate transitions correctly
-consume `self`. See **rust-type-design** Pattern 2.
+Consume `self` intentionally when that is the domain model (conversion APIs, builders, typestate transitions). When you consume `self` but still want dynamic dispatch, use `self: Box<Self>`.
 
 ## Error → Design Question
 
-When you hit a trait-related compiler error, ask what the error is telling you about
-your design.
+When you hit a trait-related compiler error, treat it as a design signal.
 
-| Error | Compiler Says | Ask Instead |
-|-------|--------------|-------------|
-| E0277 | trait bound not satisfied | Does this type actually need this capability? Should you add a bound or change the type? |
-| E0038 | trait cannot be made into an object | Do you actually need `dyn Trait`? Often an enum or generic is better. If you do, fix the object safety violation. |
-| E0119 | conflicting implementations | Is one impl too broad? Use more specific bounds or the newtype pattern. |
-| E0210 | orphan rule violation | Wrap the foreign type in a newtype. |
-| E0658 | unstable feature (GATs, etc.) | Check your edition and Rust version. GATs are stable since 1.65. |
+| Error | Compiler says | Do this |
+|-------|--------------|---------|
+| E0277 | trait bound not satisfied | Don’t pile on bounds. Decide which layer needs the capability, or change the type so the capability exists. |
+| E0038 | trait cannot be made into an object | Re-check dispatch choice first. If `dyn` is required, fix object-safety violations. |
+| E0119 | conflicting implementations | Your impls overlap. Narrow bounds, remove a blanket impl, or introduce a newtype boundary. |
+| E0210 | orphan rule violation | Newtype the foreign type (or move the impl into the crate that owns the trait/type). |
 
-## Pattern Catalog
+## Pattern Catalog (use when the decision framework says “traits”)
 
-These patterns appear frequently in well-designed Rust code. Each solves a specific
-design problem.
+### Sealed trait (prevent external impls)
 
-### Sealed trait — prevent external implementations
-
-Use when you need exhaustive dispatch over trait implementors (similar to enum) but
-want the ergonomics of trait methods.
+Seal traits when external implementations would violate invariants or you need a closed set of implementors.
 
 ```rust
 mod private {
@@ -342,140 +233,93 @@ impl State for Active { fn name(&self) -> &'static str { "active" } }
 impl State for Inactive { fn name(&self) -> &'static str { "inactive" } }
 ```
 
-**Authority:** Rust API Guidelines [C-SEALED]. std sealing patterns.
+**Authority:** Rust API Guidelines [C-SEALED].
 
-### Extension trait — add methods to types or traits you don't own
+### Extension trait (add convenience methods)
 
-Two variants exist:
-
-**Blanket Ext** — adds convenience methods to every implementor of a base trait.
-The dominant pattern in Tokio, futures, Tower, and itertools.
+Use extension traits to keep a core trait minimal while offering a rich convenience API via defaults.
 
 ```rust
-pub trait AsyncReadExt: AsyncRead {
-    fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Read<'a, Self>
-    where Self: Unpin,
+pub trait IteratorExt: Iterator {
+    fn collect_vec(self) -> Vec<Self::Item>
+    where
+        Self: Sized,
     {
-        read(self, buf)
+        self.collect()
     }
-    // ... all methods have default impls
 }
-impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}  // blanket impl
+
+impl<I: Iterator + ?Sized> IteratorExt for I {}
 ```
 
-**Sealed Ext** — adds methods to a specific foreign type. Used by Axum's
-`RequestExt`.
+For full patterns (blanket Ext vs sealed Ext, return-type combinators, ecosystem examples), see [references/extension-traits.md](references/extension-traits.md).
 
-Convention: name the trait `{Base}Ext` (e.g., `AsyncReadExt`, `StreamExt`,
-`PathExt`). Re-export from crate root or a prelude module.
+### Marker trait (proof of an invariant)
 
-For the full reference (both variants, implementation guide, combinator patterns,
-Ext vs newtype decision), see
-[references/extension-traits.md](references/extension-traits.md).
+Marker traits are most useful as proofs, not capabilities.
 
-### Marker trait — compile-time capability tags
-
-Traits with no methods that signal a property. The compiler uses them for safety
-guarantees.
+If a marker trait means “this invariant holds”, do not allow downstream crates to assert it. Seal it (or keep it private) and implement it only at the point you establish the invariant.
 
 ```rust
-// std examples
-trait Send {}   // Safe to transfer between threads
-trait Sync {}   // Safe to share references between threads
-trait Copy {}   // Bitwise copy is valid
-trait Eq {}     // Reflexive equality (x == x)
-trait Sized {}  // Size known at compile time
+mod private {
+    pub trait Sealed {}
+}
+
+pub trait Validated: private::Sealed {}
+
+pub struct ValidEmail(String);
+
+impl private::Sealed for ValidEmail {}
+impl Validated for ValidEmail {}
 ```
 
-Define your own when you need to tag types with a capability:
+### Blanket impl (be careful: coherence impact)
+
+Blanket impls are powerful but restrict future impl space.
 
 ```rust
-trait Validated {}  // Marks types that have passed validation
+use std::fmt::Display;
 
-fn store<T: Validated>(data: T) { /* ... */ todo!() }
-```
+trait Loggable {
+    fn log(&self);
+}
 
-### Blanket implementation — implement for all qualifying types
-
-Use to provide automatic behavior for all types meeting a bound.
-
-```rust
 impl<T: Display> Loggable for T {
     fn log(&self) {
-        println!("[LOG] {}", self);
+        println!("[LOG] {self}");
     }
 }
-// Every Display type is now Loggable for free.
 ```
 
-**Caution:** Blanket impls are powerful but limit what other impls can exist (due to
-coherence). Use them deliberately.
-
-For the full pattern catalog (GATs, supertraits with defaults, newtype delegation,
-trait aliases, conditional impls, closure-based strategies), see
-[references/trait-patterns.md](references/trait-patterns.md).
+For the broader catalog (conditional impls, newtype delegation, closures vs traits, GATs, etc.), see [references/trait-patterns.md](references/trait-patterns.md).
 
 ## Common Mistakes (Agent Failure Modes)
 
-- **`dyn Trait` as the default** → Use enum for closed sets, generics for open sets.
-  Trait objects are the last resort, not the first.
-- **Generic parameter where associated type belongs** → If there's exactly one
-  implementation per type, use an associated type.
-- **Missing standard trait impls** → Every type should derive `Debug`, `Clone`,
-  `PartialEq`, `Eq` at minimum. Missing `Hash` when you have `Eq` breaks `HashMap`.
-- **`impl Into<T>` instead of `impl From<T>`** → Implement `From`; the blanket impl
-  gives you `Into` for free.
-- **`Deref` for field access (fake inheritance)** → `Deref` is for smart pointers only.
-  Use `AsRef` or explicit delegation for composition.
-- **Over-constrained trait bounds** → Don't add bounds the function doesn't use.
-  `T: Clone + Debug + Send + Sync + 'static` when you only call one method is noise
-  that restricts callers.
-- **Forgetting `Self: Sized` escape hatch** → When one method breaks object safety
-  but you still need `dyn Trait`, add `where Self: Sized` to that method.
-- **Orphan rule workaround with `impl<T> MyTrait for T`** → Blanket impls can
-  conflict with specific impls. Consider newtype or more specific bounds.
-- **`Hash` disagrees with `Eq`** → If you implement `Eq` manually, implement `Hash`
-  manually too. They must agree: `a == b` implies `hash(a) == hash(b)`.
-- **Returning `impl Trait` from trait methods** → Not yet stable for all patterns.
-  Use associated types or `Box<dyn Trait>` in trait definitions.
+- **`dyn Trait` as the default** → Follow the dispatch decision path. Most of the time the right answer is `enum` or generics.
+- **Forcing `dyn Trait` to “be flexible”** → `dyn` is *less* flexible: you lose exhaustiveness, inlining, and usually allocate.
+- **Generic parameter where an associated type belongs** → One impl per type → associated type.
+- **Over-constrained bounds** → Every bound restricts callers. Require only what the function actually uses.
+- **`Deref` for newtype delegation** → `Deref` is for smart pointers. Use `AsRef`, `From`/`TryFrom`, or explicit methods.
+- **Marker trait used as proof but publicly implementable** → Seal it.
+- **`Hash`/`Eq` inconsistency** → If you manually implement either, manually implement both to keep them consistent.
+- **Returning `Box<dyn Trait>` from trait methods by default** → If you have static dispatch, prefer an associated type or return-position `impl Trait` (RPITIT) to avoid allocation. If you need `dyn Trait`, accept the box and document the cost.
 
 ## Review Checklist
 
-1. **Enum or trait?** If the set of variants is known, use an enum. Don't reach for
-   `dyn Trait` when you can list every type.
-
-2. **Generic or trait object?** Use generics when the concrete type is known at the
-   call site. Use `dyn Trait` only for heterogeneous collections, plugins, or type
-   erasure.
-
-3. **Associated type or generic parameter?** One impl per type → associated type.
-   Multiple impls per type → generic parameter.
-
-4. **Is the trait object-safe?** If you need `dyn Trait`, check: no generic methods,
-   no `Self` in return position (except `Box<Self>`), no `Self: Sized` supertrait.
-
-5. **Are standard traits implemented?** At minimum: `Debug`, `Clone`, `PartialEq`,
-   `Eq`. Add `Hash` if `Eq` is present. Add `Default` if a zero value exists.
-
-6. **Does `Hash` agree with `Eq`?** If either is manually implemented, both must be.
-   `a == b` must imply `hash(a) == hash(b)`.
-
-7. **Are trait bounds minimal?** Every bound on a generic restricts callers. Only
-   require bounds the function actually uses.
-
-8. **Are `From` impls used instead of `Into`?** Implement `From<T>` — never
-   implement `Into<T>` directly.
-
-9. **Is `Deref` used only for smart pointers?** `Deref` on a newtype for field access
-   is an anti-pattern. Use `AsRef` or explicit methods.
-
-10. **Should the trait be sealed?** If external implementations would break invariants
-    or you need exhaustive dispatch, seal it.
+1. **Closed set?** Use an `enum`.
+2. **Open set + concrete type known at the call site?** Use generics / `impl Trait`.
+3. **Only then:** use `dyn Trait` for plugins, heterogeneous collections, or type erasure.
+4. **Need `dyn Trait`?** Verify object safety; push non-object-safe methods behind `where Self: Sized`.
+5. **Associated type vs generic param:** one impl per type → associated; multiple impls per type → generic param.
+6. **Bounds minimal?** Every bound must be used.
+7. **New domain/value type:** derive/implement the standard traits downstream needs (Debug/Clone/Eq/Hash/Ord/etc.) unless semantics forbid it.
+8. **Orphan rule hit?** Newtype it.
+9. **Need a marker trait as a proof?** Seal it.
+10. **Any blanket impls?** Check coherence fallout (future impl space).
 
 ## Cross-References
 
-- **rust-idiomatic** — Rules 7-8 (enums for closed sets, trait objects for open sets)
-- **rust-type-design** — Sealed traits, typestate bounds, phantom types
-- **rust-ownership** — Trait object lifetimes (`Box<dyn Trait + 'a>`), `Send`/`Sync` bounds
-- **rust-error-handling** — `Error` trait, `From` impls, `Box<dyn Error>` erasure
-- **rust-async** — `Send`/`Sync` bounds on futures, trait objects in async contexts
+- **rust-idiomatic** — Enum-first modeling and “dyn only for open sets” defaults
+- **rust-type-design** — Newtype boundaries, typestate, invariants
+- **rust-ownership** — Trait object lifetimes, `Send`/`Sync` bounds, smart pointers
+- **rust-error-handling** — `Error` as a trait, `From` conversions, `Box<dyn Error>`

@@ -1,13 +1,10 @@
 # Dispatch Patterns
 
-Deep reference for choosing between static dispatch (generics), dynamic dispatch
-(trait objects), and enum dispatch. Loaded from **rust-traits** when you need
-implementation details beyond the decision framework.
+Deep reference for choosing between static dispatch (generics), dynamic dispatch (trait objects), and enum dispatch. Loaded from **rust-traits** when you need implementation details beyond the decision framework.
 
 ## Static Dispatch (Generics / `impl Trait`)
 
-The compiler generates a specialized copy of the function for each concrete type
-used. This is called **monomorphization**.
+The compiler generates a specialized copy of the function for each concrete type used. This is called **monomorphization**.
 
 ### How monomorphization works
 
@@ -46,8 +43,7 @@ fn process(reader: impl Read) -> io::Result<Vec<u8>> { todo!() }
 fn process<R: Read>(reader: R) -> io::Result<Vec<u8>> { todo!() }
 ```
 
-Use `impl Trait` when you don't need to name the type parameter (e.g., for
-turbofish `::<R>` or to use it in multiple positions).
+Use `impl Trait` when you don't need to name the type parameter (e.g., for turbofish `::<R>` or to use it in multiple positions).
 
 Use the named parameter when:
 - The same type appears in multiple positions: `fn foo<T: Clone>(a: T, b: T)`
@@ -56,8 +52,7 @@ Use the named parameter when:
 
 ### `impl Trait` in return position
 
-Returns an opaque type — the caller can't name it, but it's still a concrete
-single type resolved at compile time.
+Returns an opaque type — the caller can't name it, but it's still a concrete single type resolved at compile time.
 
 ```rust
 fn evens(v: &[i32]) -> impl Iterator<Item = &i32> {
@@ -79,8 +74,7 @@ fn make_iter(ascending: bool) -> impl Iterator<Item = i32> {
 }
 ```
 
-**Fix:** Use `Box<dyn Iterator<Item = i32>>` when you need to return different
-concrete types, or restructure to avoid the branch.
+**Fix:** Use `Box<dyn Iterator<Item = i32>>` when you need to return different concrete types, or restructure to avoid the branch.
 
 ### Multiple trait bounds
 
@@ -105,8 +99,7 @@ Use `where` clauses when:
 
 ## Dynamic Dispatch (`dyn Trait`)
 
-A trait object (`dyn Trait`) erases the concrete type. Method calls go through a
-vtable — a struct of function pointers generated for each concrete type.
+A trait object (`dyn Trait`) erases the concrete type. Method calls go through a vtable — a struct of function pointers generated for each concrete type.
 
 ### Memory layout
 
@@ -142,8 +135,7 @@ let items: Vec<Box<dyn Trait>> = vec![...];
 
 ### Trait object lifetimes
 
-Trait objects have implicit lifetime bounds. The compiler adds `'static` by default
-in some positions:
+Trait objects have implicit lifetime bounds. The compiler adds `'static` by default in some positions:
 
 ```rust
 // Box<dyn Trait> means Box<dyn Trait + 'static> in most contexts
@@ -161,9 +153,7 @@ struct Container<'a> {
 }
 ```
 
-**Rule:** If a trait object lives in a struct or is stored, it's usually
-`Box<dyn Trait + Send + Sync + 'static>`. If it's a function parameter, let
-lifetime elision handle it.
+**Rule:** If a trait object lives in a struct or is stored, it's usually `Box<dyn Trait + Send + Sync + 'static>`. If it's a function parameter, let lifetime elision handle it.
 
 ### Multiple traits in a trait object
 
@@ -191,8 +181,7 @@ Box<dyn ReadWrite>  // ✅ Works
 
 ## Enum Dispatch
 
-For closed sets, enums outperform both generics (no code bloat) and trait objects
-(no vtable, no allocation).
+For closed sets, enums outperform both generics (no code bloat) and trait objects (no vtable, no allocation).
 
 ```rust
 enum Shape {
@@ -218,14 +207,11 @@ impl Shape {
 - Exhaustive matching — compiler catches missing variants
 - Per-variant data without `Any` downcasting
 
-**Disadvantage:** Adding a variant requires modifying every `match`. This is a
-*feature* for closed sets (compiler-enforced completeness) but a maintenance cost
-for semi-open sets.
+**Disadvantage:** Adding a variant requires modifying every `match`. This is a *feature* for closed sets (compiler-enforced completeness) but a maintenance cost for semi-open sets.
 
 ### The `enum_dispatch` crate
 
-If you have both a trait and an enum and want to avoid boilerplate `match` arms
-that just delegate:
+If you have both a trait and an enum and want to avoid boilerplate `match` arms that just delegate:
 
 ```rust
 use enum_dispatch::enum_dispatch;
@@ -242,8 +228,7 @@ enum Shape {
 }
 ```
 
-This generates the `match`-based `impl Area for Shape` automatically. Use it when
-you have many methods and many variants. Don't reach for it for small enums.
+This generates the `match`-based `impl Area for Shape` automatically. Use it when you have many methods and many variants. Don't reach for it for small enums.
 
 ## Performance Comparison
 
@@ -256,9 +241,7 @@ you have many methods and many variants. Don't reach for it for small enums.
 | Cache behavior | Variant data inline | Good (specialized) | Pointer chase |
 | Compile time impact | Minimal | Higher (monomorphization) | Minimal |
 
-**When the difference matters:** Hot loops processing millions of items. In application
-glue code (config, setup, one-off decisions), the difference is negligible — optimize
-for clarity.
+**When the difference matters:** Hot loops processing millions of items. In application glue code (config, setup, one-off decisions), the difference is negligible — optimize for clarity.
 
 ## Decision Examples
 

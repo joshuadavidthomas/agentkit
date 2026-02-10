@@ -1,16 +1,12 @@
 # Extension Traits
 
-The Ext pattern adds methods to types or traits you don't own — or separates a
-minimal core trait from a rich convenience API. This is one of the most common
-patterns in the Rust ecosystem. If you've used `.read_to_string()` on a Tokio
-`AsyncRead` or `.map()` on a `Stream`, you've used an extension trait.
+The Ext pattern adds methods to types or traits you don't own — or separates a minimal core trait from a rich convenience API. This is one of the most common patterns in the Rust ecosystem. If you've used `.read_to_string()` on a Tokio `AsyncRead` or `.map()` on a `Stream`, you've used an extension trait.
 
 ## The Two Variants
 
 ### 1. Blanket Ext — add methods to every implementor of a trait
 
-The dominant pattern in Tokio, Tower, futures, and itertools. A trait with a
-supertrait bound, all default methods, and an empty blanket impl.
+The dominant pattern in Tokio, Tower, futures, and itertools. A trait with a supertrait bound, all default methods, and an empty blanket impl.
 
 ```rust
 // Core trait — minimal, defines the capability
@@ -46,28 +42,20 @@ impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}
 ```
 
 **How it works:**
-1. The supertrait bound (`AsyncReadExt: AsyncRead`) ensures only `AsyncRead` types
-   get the extension methods.
+1. The supertrait bound (`AsyncReadExt: AsyncRead`) ensures only `AsyncRead` types get the extension methods.
 2. Every method has a default implementation — there are **no required methods**.
-3. The blanket `impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}` activates the
-   defaults for all qualifying types, including trait objects (`?Sized`).
-4. Default methods typically delegate to free functions that return concrete
-   future/combinator types — zero-cost, no `Box<dyn Future>`.
+3. The blanket `impl<R: AsyncRead + ?Sized> AsyncReadExt for R {}` activates the defaults for all qualifying types, including trait objects (`?Sized`).
+4. Default methods typically delegate to free functions that return concrete future/combinator types — zero-cost, no `Box<dyn Future>`.
 
 **Why separate the traits?**
-- **Core stays minimal.** Implementors of `AsyncRead` only write `poll_read`. They
-  don't have to think about `read_to_string` or `read_exact`.
-- **Extensions are free.** Every type that implements the core trait automatically
-  gets the convenience methods.
-- **Backward compatible.** Adding methods to the Ext trait doesn't break existing
-  core trait implementors.
-- **Coherence-safe.** You can define extension methods for a foreign trait without
-  violating the orphan rule.
+- **Core stays minimal.** Implementors of `AsyncRead` only write `poll_read`. They don't have to think about `read_to_string` or `read_exact`.
+- **Extensions are free.** Every type that implements the core trait automatically gets the convenience methods.
+- **Backward compatible.** Adding methods to the Ext trait doesn't break existing core trait implementors.
+- **Coherence-safe.** You can define extension methods for a foreign trait without violating the orphan rule.
 
 ### 2. Sealed Ext — add methods to a specific type
 
-Used when extension methods target one concrete type (or a small set). Axum uses
-this for `RequestExt`.
+Used when extension methods target one concrete type (or a small set). Axum uses this for `RequestExt`.
 
 ```rust
 mod sealed {
@@ -101,8 +89,7 @@ impl RequestExt for Request<Body> {
 **When to use this over blanket:**
 - You're extending a specific foreign type, not a whole trait hierarchy
 - You want to prevent external implementations
-- You need `impl Trait` in return position (requires `Sized`, which blanket `?Sized`
-  impls can't provide)
+- You don't want these methods available on every implementor of some base trait
 
 ## Choosing Between the Variants
 
@@ -113,11 +100,9 @@ impl RequestExt for Request<Body> {
 | Need trait object support? | Yes (`?Sized`) | No (`Sized` required) |
 | Who can implement? | Anyone (via base trait) | Only you |
 | Can you add methods later? | Yes (non-breaking) | Yes (non-breaking) |
-| `impl Trait` in return position? | No (needs `Sized`) | Yes |
+| `impl Trait` in return position? | Yes, but the method must be `where Self: Sized` (so it won't work on `dyn`) | Yes |
 
-**Rule of thumb:** If you're defining a core trait that others implement, use a
-blanket Ext. If you're adding convenience methods to a specific foreign type, use
-a sealed Ext.
+**Rule of thumb:** If you're defining a core trait that others implement, use a blanket Ext. If you're adding convenience methods to a specific foreign type, use a sealed Ext.
 
 ## Ecosystem Examples
 
@@ -134,8 +119,7 @@ a sealed Ext.
 | `axum` | `RequestExt` | `Request<Body>` | Sealed |
 | `axum` | `RequestPartsExt` | `request::Parts` | Sealed |
 
-Note: `itertools::Itertools` breaks the `{Name}Ext` convention — it just uses
-the crate name. Both styles work; `{Base}Ext` is more common.
+Note: `itertools::Itertools` breaks the `{Name}Ext` convention — it just uses the crate name. Both styles work; `{Base}Ext` is more common.
 
 ## Implementation Guide
 
@@ -192,13 +176,11 @@ pub mod prelude {
 // User: use my_crate::prelude::*;
 ```
 
-The prelude pattern is common for crates that export many Ext traits. Tokio,
-futures, and diesel all use it.
+The prelude pattern is common for crates that export many Ext traits. Tokio, futures, and diesel all use it.
 
 ### Methods that return combinators
 
-For zero-cost async/iterator combinators, each method returns a concrete type
-rather than `Box<dyn Future>` or `Box<dyn Iterator>`:
+For zero-cost async/iterator combinators, each method returns a concrete type rather than `Box<dyn Future>` or `Box<dyn Iterator>`:
 
 ```rust
 // The combinator type
@@ -219,8 +201,7 @@ pub trait StreamExt: Stream {
 }
 ```
 
-This pattern is why the Ext trait needs `Self: Sized` on combinator methods — the
-return type includes `Self` as a type parameter, which requires a known size.
+This pattern is why the Ext trait needs `Self: Sized` on combinator methods — the return type includes `Self` as a type parameter, which requires a known size.
 
 ## Common Bounds on Ext Methods
 
@@ -230,8 +211,7 @@ return type includes `Self` as a type parameter, which requires a known size.
 | `Self: Unpin` | Method takes `&mut self` and needs to pin internally | `read`, `write`, `next` on async types |
 | `Self::Item: Clone` | Method needs to duplicate stream/iterator items | `first_last`, `peek` |
 
-Methods with `Self: Sized` bounds are **not available on trait objects** (`dyn Trait`).
-This is intentional — combinators need to know the concrete type.
+Methods with `Self: Sized` bounds are **not available on trait objects** (`dyn Trait`). This is intentional — combinators need to know the concrete type.
 
 ## When Ext vs When Newtype
 
@@ -245,8 +225,7 @@ Both patterns add methods to types you don't own. Choose based on:
 | Zero wrapping cost | Zero wrapping cost (but needs `From`/`Into`) |
 | Can't hide or restrict methods | Can hide unwanted methods |
 
-**Use Ext when:** you're adding convenience methods and the original type's API is fine.
-**Use newtype when:** you need to restrict, validate, or distinguish the type.
+**Use Ext when:** you're adding convenience methods and the original type's API is fine. **Use newtype when:** you need to restrict, validate, or distinguish the type.
 
 ## Naming Conventions
 
@@ -256,5 +235,4 @@ Both patterns add methods to types you don't own. Choose based on:
 | `{Type}Ext` | `RequestExt`, `PathExt`, `StrExt` |
 | Crate name | `itertools::Itertools` (less common, but works) |
 
-Stick with `{Base}Ext` unless you have a strong reason not to. It's immediately
-recognizable and tells users which base trait or type is being extended.
+Stick with `{Base}Ext` unless you have a strong reason not to. It's immediately recognizable and tells users which base trait or type is being extended.

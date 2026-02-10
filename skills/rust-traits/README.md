@@ -1,31 +1,23 @@
 # rust-traits
 
-Trait design, dispatch decisions, and object safety for AI agents writing Rust.
+Trait design and dispatch defaults for Rust.
 
-Teaches the agent to choose the right dispatch mechanism (enum vs generic vs trait
-object), design object-safe traits, implement standard traits correctly, and apply
-patterns like sealed traits, extension traits, and marker traits.
+This skill prevents the common agent failure mode of reaching for `dyn Trait` by default. Enforce this order:
 
-## Contents
+1. **Closed set** → use an `enum`.
+2. **Open set, concrete type known at the call site** → use generics / `impl Trait`.
+3. **True type erasure** (plugins, heterogeneous collections) → use `dyn Trait`.
 
-- `SKILL.md` — Decision framework, object safety rules, trait design rules, pattern
-  catalog, review checklist
-- `references/dispatch-patterns.md` — Static vs dynamic dispatch, monomorphization,
-  `impl Trait`, performance comparison
-- `references/trait-patterns.md` — Sealed, marker, blanket, GATs,
-  closure-based strategies, newtype delegation
-- `references/extension-traits.md` — The Ext pattern (blanket Ext and sealed Ext),
-  implementation guide, combinator return types, ecosystem examples
-- `references/standard-traits.md` — Which std traits to implement, derive vs manual,
-  conversion hierarchy, `Deref` rules
+It also encodes object-safety rules, associated-types vs generic-parameters defaults, a standard-trait checklist, and the core pattern catalog (sealed, extension, marker, blanket, conditional impls).
 
-## Attribution
+## Attribution & License
 
-Content synthesized from:
+This skill synthesizes guidance from:
 
-- [The Rust Programming Language](https://doc.rust-lang.org/book/) (MIT/Apache-2.0)
-- [The Rust Reference](https://doc.rust-lang.org/reference/) (MIT/Apache-2.0)
-- [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) (MIT/Apache-2.0)
-- [Effective Rust](https://www.lurklurk.org/effective-rust/) by David Drysdale (CC BY 4.0)
-- [Tour of Rust's Standard Library Traits](https://github.com/pretzelhammer/rust-blog) by pretzelhammer (MIT)
-- [Rust Design Patterns](https://rust-unofficial.github.io/patterns/) (MPL-2.0)
+- [The Rust Programming Language](https://doc.rust-lang.org/book/) — MIT OR Apache-2.0.
+- [Rust Reference](https://doc.rust-lang.org/reference/) — MIT OR Apache-2.0.
+- [Rust API Guidelines](https://github.com/rust-lang/api-guidelines) — MIT OR Apache-2.0.
+- [Effective Rust](https://www.lurklurk.org/effective-rust/) by David Drysdale — CC BY 4.0.
+- [pretzelhammer rust-blog](https://github.com/pretzelhammer/rust-blog) — CC BY-SA 4.0.
+- [Rust Design Patterns](https://github.com/rust-unofficial/patterns) — MPL-2.0.
+- Rust for Rustaceans (Jon Gjengset) — referenced for conceptual guidance; no text reproduced.

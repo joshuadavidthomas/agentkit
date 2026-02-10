@@ -1,13 +1,10 @@
 # Standard Trait Reference
 
-Which std traits to implement, when to derive vs implement manually, and the
-conversion trait hierarchy. Loaded from **rust-traits** when you need the full
-picture beyond Rule 2 in the SKILL.md.
+Which std traits to implement, when to derive vs implement manually, and the conversion trait hierarchy. Loaded from **rust-traits** when you need the full picture beyond Rule 2 in the SKILL.md.
 
 ## The Standard Trait Checklist
 
-For every new type, consider each trait. Derive what you can, implement the rest
-manually when semantics require it.
+For every new type, consider each trait. Derive what you can, implement the rest manually when semantics require it.
 
 ### Always derive (unless you have a reason not to)
 
@@ -49,15 +46,13 @@ struct MyType {
 
 ## Consistency Rules
 
-These invariants **must** hold. Violating them causes subtle bugs with `HashMap`,
-`BTreeMap`, sorting, and other std containers.
+These invariants **must** hold. Violating them causes subtle bugs with `HashMap`, `BTreeMap`, sorting, and other std containers.
 
 ### `Eq` + `Hash` agreement
 
 If `a == b`, then `hash(a) == hash(b)`.
 
-If you derive both, this holds automatically. If you implement either manually,
-implement both manually and ensure they agree.
+If you derive both, this holds automatically. If you implement either manually, implement both manually and ensure they agree.
 
 ```rust
 // ❌ Bug: derived Hash includes all fields, manual Eq ignores `cached`
@@ -97,8 +92,7 @@ impl Hash for Record {
 
 ### `Ord` implies `PartialOrd` + `Eq` + `PartialEq`
 
-When implementing `Ord`, derive or implement all four. They must be consistent:
-`a.partial_cmp(b) == Some(a.cmp(b))`.
+When implementing `Ord`, derive or implement all four. They must be consistent: `a.partial_cmp(b) == Some(a.cmp(b))`.
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -107,8 +101,7 @@ struct Priority(u8);
 
 ### `Copy` implies `Clone`
 
-`Copy` is a marker that says "bitwise copy is valid." It refines `Clone`. Always
-derive both together.
+`Copy` is a marker that says "bitwise copy is valid." It refines `Clone`. Always derive both together.
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,8 +138,7 @@ Display conversions:
 
 ### `From<T>` / `Into<T>`
 
-Implement `From<T>` for infallible conversions. The blanket impl gives you `Into<T>`
-for free.
+Implement `From<T>` for infallible conversions. The blanket impl gives you `Into<T>` for free.
 
 ```rust
 struct UserId(u64);
@@ -187,8 +179,7 @@ impl TryFrom<u32> for Port {
 Both provide `&Self → &T`. The difference:
 
 - **`AsRef<T>`** — general cheap reference conversion. No semantic guarantees.
-- **`Borrow<T>`** — guarantees that borrowed form has identical `Eq`, `Ord`, and
-  `Hash` behavior. Required for `HashMap::get` to accept borrowed keys.
+- **`Borrow<T>`** — guarantees that borrowed form has identical `Eq`, `Ord`, and `Hash` behavior. Required for `HashMap::get` to accept borrowed keys.
 
 ```rust
 // AsRef — cheap conversion, no semantic guarantee
@@ -203,8 +194,7 @@ impl Borrow<str> for Username {
 // Now HashMap<Username, V>::get can accept &str
 ```
 
-**Rule of thumb:** Implement `AsRef` for general-purpose borrowing. Implement `Borrow`
-only when you need `HashMap`/`BTreeMap` key lookups with the borrowed form.
+**Rule of thumb:** Implement `AsRef` for general-purpose borrowing. Implement `Borrow` only when you need `HashMap`/`BTreeMap` key lookups with the borrowed form.
 
 ### `Display` / `ToString` / `FromStr`
 
@@ -234,8 +224,7 @@ impl FromStr for UserId {
 
 ## `Deref` / `DerefMut` — Smart Pointers Only
 
-`Deref` enables transparent access to an inner type through the outer type.
-**Use it exclusively for smart pointer types.**
+`Deref` enables transparent access to an inner type through the outer type. **Use it exclusively for smart pointer types.**
 
 ```rust
 // ✅ Correct — MyBox is a smart pointer
@@ -257,14 +246,11 @@ impl Deref for UserId {
 // defeating the purpose of the newtype.
 ```
 
-**Why this matters:** `Deref` coercion is implicit. Method resolution follows `Deref`
-chains. If `UserId` derefs to `u64`, then `user_id.pow(2)` compiles — that's not
-what you want from a domain type.
+**Why this matters:** `Deref` coercion is implicit. Method resolution follows `Deref` chains. If `UserId` derefs to `u64`, then `user_id.pow(2)` compiles — that's not what you want from a domain type.
 
 **For newtypes:** Use `AsRef`, `From`, or explicit accessor methods instead.
 
-**Authority:** std `Deref` docs: "Deref should only be implemented for smart pointers
-to avoid confusion." Effective Rust Item 12.
+**Authority:** std `Deref` docs: "Deref should only be implemented for smart pointers to avoid confusion." Effective Rust Item 12.
 
 ## Collection Traits
 
@@ -312,8 +298,7 @@ impl<'a, T> IntoIterator for &'a MyVec<T> {
 }
 ```
 
-**Authority:** Rust API Guidelines [C-COLLECT]. std: `Vec`, `HashMap`, `BTreeMap` all
-implement `FromIterator`, `Extend`, and `IntoIterator` (owned and borrowed).
+**Authority:** Rust API Guidelines [C-COLLECT]. std: `Vec`, `HashMap`, `BTreeMap` all implement `FromIterator`, `Extend`, and `IntoIterator` (owned and borrowed).
 
 ## Quick Decision Table
 
