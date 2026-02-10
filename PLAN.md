@@ -176,7 +176,7 @@ The Rust ecosystem has clear, well-documented preferences for how code should be
 
 ### 10. `rust-macros` — Declarative and Procedural Macros
 
-**Status**: TODO
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Writing macros, macro_rules!, proc macros, derive macros, syn/quote, debugging macros, macro hygiene.
 
