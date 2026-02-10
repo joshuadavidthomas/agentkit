@@ -75,7 +75,7 @@ let user = users.get(&id)
 
 // Lazy version — only allocates on None
 let home = std::env::var("HOME").ok()
-    .ok_or_else(|| anyhow!("HOME not set"))?;
+    .ok_or_else(|| anyhow::anyhow!("HOME not set"))?;
 ```
 
 ### `map` — Transform the inner value
@@ -118,7 +118,7 @@ let y: Option<i32> = x.flatten();  // Some(42)
 ### `Result::ok()` — Discard the error, get Option
 
 ```rust
-let maybe_port: Option<u16> = env::var("PORT").ok()
+let maybe_port: Option<u16> = std::env::var("PORT").ok()
     .and_then(|s| s.parse().ok());
 ```
 

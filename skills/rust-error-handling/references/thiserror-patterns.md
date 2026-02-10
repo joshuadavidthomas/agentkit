@@ -25,20 +25,39 @@ pub enum ParseError {
     #[error("invalid token {token:?}")]
     InvalidToken { token: String },
 
-    // Expressions in format args
-    #[error("value {value} out of range ({min}..={max})")]
-    OutOfRange { value: i64, min: i64, max: i64 },
+    // Extra format args (arbitrary expressions)
+    #[error("invalid lookahead_frames {0} (expected < {max})", max = i32::MAX)]
+    InvalidLookahead(u32),
 }
 ```
 
-Access fields with `.field_name` in expressions when needed for disambiguation:
+Access fields with `.field_name` / `.0` in additional format args:
 
 ```rust
-#[error("first char must be lowercase, got {:?}", first_char(.0))]
-WrongCase(String),
+use thiserror::Error;
 
-#[error("index {idx} out of bounds ({}..{})", .bounds.lo, .bounds.hi)]
-OutOfBounds { idx: usize, bounds: Range },
+fn first_char(s: &str) -> char {
+    s.chars().next().unwrap_or('\0')
+}
+
+#[derive(Debug)]
+struct Limits {
+    lo: usize,
+    hi: usize,
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("first letter must be lowercase but was {:?}", first_char(.0))]
+    WrongCase(String),
+
+    #[error(
+        "invalid index {idx}, expected at least {} and at most {}",
+        .limits.lo,
+        .limits.hi
+    )]
+    OutOfBounds { idx: usize, limits: Limits },
+}
 ```
 
 ### `#[source]` — Error chain

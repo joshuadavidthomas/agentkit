@@ -117,6 +117,8 @@ Database {
 conversion is unambiguous (one variant per source type). Use `#[source]` when you
 need additional context fields alongside the cause.
 
+**Authority:** `std::error::Error::source` + thiserror docs (source chaining).
+
 ### Rule 4: Don't auto-derive `From` for everything
 
 `#[from]` generates `From<SourceError> for YourError`. This is convenient but
@@ -145,6 +147,8 @@ Use `#[from]` when the source type is unambiguous (e.g., one JSON error variant)
 Use manual construction when you need to distinguish multiple operations with the
 same underlying error type.
 
+**Authority:** thiserror docs (`#[from]` constraints) + Jewson (contextful, scoped errors).
+
 ### Rule 5: Mark variants `#[non_exhaustive]` for public crates
 
 If you publish a crate, adding a variant is a breaking change unless the enum is
@@ -163,6 +167,8 @@ pub enum ParseError {
 
 Callers will need a `_ =>` arm — but this is the correct exception to
 **rust-idiomatic** Rule 4 (foreign `#[non_exhaustive]` types).
+
+**Authority:** Rust Reference: `#[non_exhaustive]` + Rust semver expectations for public enums.
 
 ### Rule 6: Define a `Result` type alias
 
@@ -184,6 +190,7 @@ ergonomic propagation with context.
 
 ```rust
 use anyhow::{Context, Result};
+use std::path::Path;
 
 fn load_config(path: &Path) -> Result<Config> {
     let content = std::fs::read_to_string(path)
@@ -203,18 +210,21 @@ Bare `?` propagates the error but loses *what you were trying to do*. Add contex
 so the error chain reads like a stack trace of intent.
 
 ```rust
-// WRONG — bare propagation
-fn setup() -> Result<()> {
-    let config = load_config()?;     // "file not found" — which file?
-    let db = connect_db(&config)?;   // "connection refused" — to what?
+use anyhow::{Context, Result};
+use std::path::Path;
+
+// WRONG — bare propagation (no context)
+fn setup_wrong(config_path: &Path) -> Result<()> {
+    let config = load_config(config_path)?;     // "file not found" — which file?
+    let _db = connect_db(&config)?;             // "connection refused" — to what?
     Ok(())
 }
 
-// RIGHT — context at each step
-fn setup() -> Result<()> {
-    let config = load_config()
+// RIGHT — context at each boundary
+fn setup(config_path: &Path) -> Result<()> {
+    let config = load_config(config_path)
         .context("failed to load application config")?;
-    let db = connect_db(&config)
+    let _db = connect_db(&config)
         .context("failed to connect to database")?;
     Ok(())
 }
@@ -235,8 +245,7 @@ evaluated on error.
 use anyhow::{bail, ensure, Result};
 
 fn validate_port(port: u16) -> Result<()> {
-    ensure!(port > 0, "port must be non-zero");
-    ensure!(port < 65535, "port {port} exceeds maximum");
+    ensure!(port != 0, "port must be non-zero");
     Ok(())
 }
 
