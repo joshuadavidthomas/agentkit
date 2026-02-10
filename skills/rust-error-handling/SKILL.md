@@ -481,3 +481,4 @@ impl ApiError {
 - **rust-type-design** — Newtype errors, parse-don't-validate at boundaries
 - **rust-ownership** — Owned vs borrowed data in error types, `Send + Sync` bounds
 - **rust-traits** — `Error` trait, `From` implementations, trait objects for error erasure
+- **rust-async** — `?` in async functions, `JoinError` handling, error propagation across tasks

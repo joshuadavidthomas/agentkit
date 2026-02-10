@@ -323,3 +323,4 @@ For the broader catalog (conditional impls, newtype delegation, closures vs trai
 - **rust-type-design** — Newtype boundaries, typestate, invariants
 - **rust-ownership** — Trait object lifetimes, `Send`/`Sync` bounds, smart pointers
 - **rust-error-handling** — `Error` as a trait, `From` conversions, `Box<dyn Error>`
+- **rust-async** — `Send`/`Sync` bounds on futures, `Future` trait, async trait methods

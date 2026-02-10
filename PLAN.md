@@ -143,7 +143,7 @@ examples woven in (fintech: Money newtype, embedded: type-state for hardware).
 
 ### 6. `rust-async` — Async Patterns and Tokio
 
-**Status**: TODO
+**Status**: DONE (REVIEWED)
 
 **Triggers:** async/await, tokio, channels, spawning, Send/Sync errors, blocking in
 async context, graceful shutdown, cancellation.
