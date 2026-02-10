@@ -161,7 +161,7 @@ Core rules (don't block, don't hold locks across .await). Production patterns
 
 ### 7. `rust-testing` — Testing Ecosystem and Strategies
 
-**Status**: DONE
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Writing tests, test organization, property testing, benchmarking, mocking,
 snapshot testing, fuzzing, CI test setup.

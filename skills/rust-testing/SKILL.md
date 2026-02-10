@@ -48,87 +48,44 @@ suffices.
 
 ## Test Organization
 
-### Unit tests: same file, `#[cfg(test)]` module
+### Unit tests: `#[cfg(test)] mod tests` in the same file
 
-```rust
-pub fn validate_email(input: &str) -> bool {
-    input.contains('@') && input.contains('.')
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn valid_email() {
-        assert!(validate_email("user@example.com"));
-    }
-
-    #[test]
-    fn missing_at_sign() {
-        assert!(!validate_email("userexample.com"));
-    }
-}
-```
-
-**Rules:**
 - `#[cfg(test)]` on the module — compiles only during `cargo test`
-- `use super::*` to access the parent module's items (including private ones)
-- Test private functions freely — unit tests are child modules with full access
+- `use super::*` to access private items — unit tests are child modules
 - One `mod tests` per file, at the bottom
 
 ### Integration tests: `tests/` directory
 
 ```text
 my-crate/
-├── src/
-│   └── lib.rs
 └── tests/
     ├── api_tests.rs         # Each file is a separate test binary
-    ├── parsing_tests.rs
     └── common/
         └── mod.rs           # Shared helpers — NOT a test file
 ```
 
-**Rules:**
-- Each `.rs` file in `tests/` compiles as a **separate crate** — only tests
-  the public API
-- No `#[cfg(test)]` needed — Cargo treats `tests/` specially
-- Shared helpers go in `tests/common/mod.rs`, not `tests/common.rs` (the
-  latter shows up as a test suite with 0 tests)
+- Each `.rs` file in `tests/` compiles as a **separate crate** — tests the
+  public API only
+- Shared helpers: `tests/common/mod.rs`, **not** `tests/common.rs` (the latter
+  becomes a test suite with 0 tests — a common agent mistake)
 - Run a specific file: `cargo test --test api_tests`
 
-### Doc tests: examples that compile
+### Doc tests
 
-````rust
-/// Parses a hex color string into RGB components.
-///
-/// ```
-/// # use my_crate::parse_hex_color;
-/// let (r, g, b) = parse_hex_color("#FF8000").unwrap();
-/// assert_eq!((r, g, b), (255, 128, 0));
-/// ```
-pub fn parse_hex_color(s: &str) -> Result<(u8, u8, u8), ParseError> {
-    // ...
-}
-````
-
-**Rules:**
-- Doc tests verify examples stay correct as code evolves
 - Hide setup with `# ` prefix (still compiled, not shown in docs)
-- Use `/// ```no_run` for examples that compile but shouldn't execute (e.g.,
-  network calls)
-- Use `/// ```ignore` only as a last resort — it skips compilation entirely
+- `/// ```no_run` for examples that compile but shouldn't execute (network calls)
+- `/// ```ignore` only as a last resort — skips compilation entirely
 
-### Binary crates: extract logic to `lib.rs`
+### Binary crates
 
-Binary-only crates (`src/main.rs` with no `src/lib.rs`) cannot have integration
-tests. Split logic into `src/lib.rs`, keep `main.rs` thin. Integration tests
-import the library crate.
+No `src/lib.rs` → no integration tests. Split logic into `lib.rs`, keep
+`main.rs` thin.
+
+**Authority:** The Rust Book ch 11; Rust by Example — Testing.
 
 ## Writing Good Tests
 
-### Name tests for what they assert, not what they call
+### Name tests for the assertion, not the function
 
 ```rust
 // WRONG — names the function
@@ -139,13 +96,17 @@ fn parse_rejects_empty_input() { ... }
 fn parse_extracts_all_fields_from_valid_json() { ... }
 ```
 
-### Use `expect()` over `unwrap()`, `Result` returns for `?`
+### Use `expect()` or `Result` returns, not bare `unwrap()` chains
 
 ```rust
-// Prefer expect() with a reason
+// WRONG — no context on failure
+let user = repo.find(id).unwrap();
+let json = serde_json::to_string(&user).unwrap();
+
+// RIGHT — expect() with a reason
 let user = repo.find(id).expect("user should exist after insert");
 
-// Or return Result to use ? — cleaner than chained unwrap()
+// RIGHT — Result return for ? chains
 #[test]
 fn roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let json = serde_json::to_string(&Config::default())?;
@@ -163,7 +124,7 @@ tests cannot combine with `#[should_panic]`.
 `assert_eq!` requires both. Missing derives produce compiler errors or
 useless failure output. Add them early.
 
-### Test one thing per test
+### One assertion per test
 
 Each test asserts one logical property. Parameterized tests (rstest) handle
 "same assertion, many inputs."
@@ -194,8 +155,7 @@ fn user_has_email(user: User) {
 }
 ```
 
-Fixtures compose — `user` depends on `db`, rstest resolves the chain
-automatically.
+Fixtures compose — `user` depends on `db`, rstest resolves the chain.
 
 ### Parameterized tests: same logic, many inputs
 
@@ -224,11 +184,23 @@ fn multiplication_is_commutative(
 // Generates 25 tests (5 × 5)
 ```
 
+**Authority:** rstest crate docs.
+
 ## mockall: Trait-Based Mocking
 
 Use mockall to isolate a unit from its dependencies by mocking trait
-implementations. Don't mock when you can use a real implementation (e.g.,
-in-memory database, test double struct).
+implementations. Prefer real implementations when available:
+
+```rust
+// WRONG — mocking when a real in-memory implementation exists
+let mut mock_store = MockStore::new();
+mock_store.expect_get().returning(|_| Ok(None));
+
+// RIGHT — use a real test double
+let store = InMemoryStore::new();  // Real implementation, tests behavior
+```
+
+Mock only when the dependency is truly external or expensive to instantiate.
 
 ```rust
 use mockall::{automock, predicate::*};
@@ -266,6 +238,9 @@ mod tests {
 - Each `.expect_*()` call sets one expectation: argument matchers, call count,
   return value
 
+**Authority:** mockall crate docs. Prefer real implementations over mocks —
+Gerard Meszaros, *xUnit Test Patterns*.
+
 ## proptest: Property-Based Testing (Summary)
 
 Test invariants across randomly generated inputs. The framework generates
@@ -299,6 +274,8 @@ proptest! {
 - Numeric invariants (e.g., `a + b >= a` for unsigned)
 - Data structure invariants after mutation
 
+**Authority:** proptest book; Hypothesis (Python) design principles.
+
 For strategies, `prop_compose!`, the `Arbitrary` trait, shrinking, and
 advanced patterns, see
 [references/property-testing.md](references/property-testing.md).
@@ -326,6 +303,8 @@ On mismatch, `cargo insta review` shows a diff for interactive accept/reject.
 - CLI output, rendered templates, error messages
 - AST/IR representations
 - Any complex output where manual assertions are fragile
+
+**Authority:** insta docs (mitsuhiko/insta).
 
 For inline snapshots, redactions, the review workflow, and CI setup, see
 [references/snapshot-testing.md](references/snapshot-testing.md).
@@ -374,6 +353,8 @@ fuzz_target!(|data: &[u8]| {
 - Run: `cargo +nightly fuzz run parse_input`
 - Finds panics, buffer overflows, infinite loops
 
+**Authority:** criterion.rs user guide; Rust Fuzz Book.
+
 For full benchmark setup, `divan` comparison, fuzz target patterns, and CI
 integration, see
 [references/benchmarking-and-fuzzing.md](references/benchmarking-and-fuzzing.md).
@@ -403,11 +384,20 @@ cargo nextest run --no-fail-fast  # run all even on failure
 **Limitation:** nextest does not run doc tests. Run `cargo test --doc`
 separately for those.
 
+**Authority:** nextest docs (nexte.st).
+
 ## `#[should_panic]` and `#[ignore]`
 
-### `#[should_panic]` — test that code panics
+**`#[should_panic]`** — Always include `expected = "substring"`. Bare
+`#[should_panic]` passes on *any* panic, including unrelated bugs:
 
 ```rust
+// WRONG — passes if any panic occurs, even an unrelated one
+#[test]
+#[should_panic]
+fn panics_on_invalid() { /* ... */ }
+
+// RIGHT — only passes on the specific expected panic
 #[test]
 #[should_panic(expected = "index out of bounds")]
 fn panics_on_out_of_bounds() {
@@ -416,21 +406,8 @@ fn panics_on_out_of_bounds() {
 }
 ```
 
-Always include `expected = "substring"` — bare `#[should_panic]` passes on
-*any* panic, including unrelated bugs.
-
-### `#[ignore]` — skip slow or environment-dependent tests
-
-```rust
-#[test]
-#[ignore]
-fn slow_integration_test() {
-    // Only run with: cargo test -- --ignored
-}
-```
-
-Run ignored tests explicitly: `cargo test -- --ignored`. Run everything:
-`cargo test -- --include-ignored`.
+**`#[ignore]`** — Mark slow or environment-dependent tests. Run explicitly:
+`cargo test -- --ignored`. Run everything: `cargo test -- --include-ignored`.
 
 ## Common Mistakes (Agent Failure Modes)
 
