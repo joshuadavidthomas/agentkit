@@ -1,6 +1,6 @@
 ---
 name: rust-unsafe
-description: "Use when writing or reviewing Rust unsafe code: unsafe blocks/functions/traits, raw pointers (*const/*mut), MaybeUninit, ManuallyDrop, transmute, repr(C)/repr(packed), Send/Sync impls, or when investigating Undefined Behavior (UB) reports. Requires documenting invariants (# Safety, // SAFETY:) and validating them with Miri/sanitizers."
+description: "Use when writing or reviewing unsafe Rust: unsafe blocks/functions/traits, raw pointers (*const/*mut), MaybeUninit/ManuallyDrop, transmute, repr(C)/repr(packed), manual Send/Sync impls, FFI boundaries, or when investigating UB/Miri reports."
 ---
 
 # Unsafe Rust: Soundness, Invariants, and UB Avoidance
@@ -16,7 +16,7 @@ Your goal when writing unsafe code is **soundness**: no possible safe caller can
 Do not introduce unsafe unless one of these is true:
 
 - You are implementing a safe abstraction that cannot be expressed in safe Rust (custom allocators, intrusive collections, lock-free primitives, arena/slot-map internals, self-referential layout behind `Pin`, etc.).
-- You are crossing a trust boundary where the type system cannot help (FFI, kernel/syscall boundary, hardware registers, inline asm). If it’s FFI-heavy, prefer to concentrate work in a dedicated boundary module and expect **rust-interop** to own deep patterns once it exists.
+- You are crossing a trust boundary where the type system cannot help (FFI, kernel/syscall boundary, hardware registers, inline asm). If it’s FFI-heavy, concentrate work in a dedicated boundary module and make the ABI/ownership contract explicit (see [references/ffi-boundaries.md](references/ffi-boundaries.md)); expect **rust-interop** to own deep patterns once it exists.
 - You need uninitialized memory / partial initialization for performance and can prove initialization before read (`MaybeUninit`).
 - You are forced into raw pointer manipulation by an external representation or API.
 
@@ -109,6 +109,47 @@ A practical UB checklist with concrete examples: [references/ub-and-validity.md]
 - Add property tests and fuzzers for unsafe abstractions; if the input space is large, unit tests are not enough.
 
 Miri workflow and CI patterns: [references/miri-and-unsafe-testing.md](references/miri-and-unsafe-testing.md).
+
+## 8) Common mistakes (agent failure modes)
+
+- Using `unsafe` to “fix” borrow-checker friction. Redesign with ownership/lifetimes; route to **rust-ownership**.
+- Writing one giant `unsafe { ... }` block with no local reasoning. Split by invariant; one `// SAFETY:` per operation.
+- Creating references (`&T`/`&mut T`) from raw pointers without proving alignment, initialization, and aliasing. Prefer staying in raw-pointer land internally and exposing safe wrappers.
+- Using `mem::transmute` for “parsing” bytes or flags. Parse explicitly (match/convert) or use the dedicated `from_*_bytes` APIs.
+- Slapping on `unsafe impl Send/Sync` to silence the compiler. If you can’t state the concurrency invariant in a short comment, do not ship the impl.
+- Taking `&packed.field` from `#[repr(packed)]` structs. Use raw pointers + `read_unaligned`/`write_unaligned`.
+- Letting panics/unwinding cross an FFI boundary. Catch at the boundary or design a “no unwind” ABI; see [references/ffi-boundaries.md](references/ffi-boundaries.md).
+
+Incorrect → correct examples you should expect to see in reviews:
+
+```rust
+// WRONG: transmute produces UB for any byte other than 0/1.
+fn parse_bool(byte: u8) -> bool {
+    unsafe { std::mem::transmute(byte) }
+}
+```
+
+```rust
+// RIGHT: explicit parse preserves the validity invariant.
+fn parse_bool(byte: u8) -> Result<bool, u8> {
+    match byte {
+        0 => Ok(false),
+        1 => Ok(true),
+        other => Err(other),
+    }
+}
+```
+
+```rust
+// WRONG: undocumented unsafe Send.
+unsafe impl Send for MyType {}
+```
+
+```rust
+// RIGHT: if you must, state the invariant in the code review surface.
+// SAFETY: `MyType` does not permit aliasing mutable access across threads; all internal mutation is synchronized.
+unsafe impl Send for MyType {}
+```
 
 ## Cross-References
 

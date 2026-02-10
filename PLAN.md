@@ -161,7 +161,7 @@ The Rust ecosystem has clear, well-documented preferences for how code should be
 
 ### 9. `rust-unsafe` — Unsafe Code and FFI
 
-**Status**: DONE
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Writing unsafe code, FFI, raw pointers, transmute, reviewing unsafe blocks, `// SAFETY:` documentation, bindgen/cbindgen.
 
