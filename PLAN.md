@@ -105,7 +105,7 @@ reference. Pattern catalog (sealed, extension, GATs, marker traits). Common mist
 
 ### 4. `rust-error-handling` — Error Strategy and Design
 
-**Status**: DONE
+**Status**: DONE (REVIEWED)
 
 **Triggers:** Designing error types, choosing thiserror vs anyhow, error propagation,
 Result/Option patterns, "how should I handle errors in this project."

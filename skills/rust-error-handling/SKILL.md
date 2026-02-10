@@ -382,6 +382,8 @@ pub enum UserError {
     NotFound { id: UserId },
     #[error("email {email} already registered")]
     DuplicateEmail { email: String },
+    #[error("internal database error")]
+    Internal(#[source] sqlx::Error),
 }
 
 // Repository translates database errors into domain errors
@@ -390,8 +392,7 @@ impl UserRepo {
         self.db.query(/* ... */)
             .map_err(|e| match e {
                 sqlx::Error::RowNotFound => UserError::NotFound { id },
-                other => panic!("unexpected database error: {other}"),
-                // Or: use a separate InternalError variant
+                other => UserError::Internal(other),
             })
     }
 }
