@@ -67,7 +67,7 @@ at the end. Not a tutorial.
 
 ### 2. `rust-ownership` — Ownership, Borrowing, Lifetimes
 
-**Status**: TODO
+**Status**: DONE
 
 **Triggers:** E0382, E0505, E0597, E0106, E0507, E0716, choosing smart pointers,
 function signature design, fighting the borrow checker.
