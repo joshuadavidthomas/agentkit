@@ -247,6 +247,20 @@ checklist (what to expose, what traits to implement, naming). Documentation conv
 - Effective Rust — API design items
 - Edition Guide (rust-lang/edition-guide)
 
+**Notes from real agent failures:**
+- Agents add feature flags inside workspace crates to "separate concerns" without
+  realizing Cargo unifies features across the workspace. If any crate enables the
+  feature, it's compiled for all — the gate is pure ceremony. Needs a clear rule:
+  "Feature flags in workspace crates are for external consumers, not internal
+  organization. For internal separation, use separate crates, not feature gates."
+- Real case: 25 `cfg(feature = "parser")` annotations gating a lightweight dep
+  (`ruff_python_parser`) while the heavy dep (`ruff_python_ast`) was unconditional.
+  The gate was on the wrong thing *and* workspace unification made it moot. Agent
+  only realized this after user pushed back and it actually checked `cargo tree`.
+- The skill should cover: when feature flags help (published crates, truly optional
+  heavy deps like TLS backends), when they don't (workspace-internal organization),
+  and the alternative (crate boundaries for real separation).
+
 ### 12. `rust-interop` — Cross-Language Integration
 
 **Status**: TODO
