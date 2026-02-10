@@ -306,7 +306,9 @@ On mismatch, `cargo insta review` shows a diff for interactive accept/reject.
 
 **Authority:** insta docs (mitsuhiko/insta).
 
-For inline snapshots, redactions, the review workflow, and CI setup, see
+For inline snapshots, redactions, the review workflow, CI setup, and the
+**mdtest literate testing pattern** (Markdown-as-test-suite for compilers
+and analyzers), see
 [references/snapshot-testing.md](references/snapshot-testing.md).
 
 ## Benchmarking and Fuzzing (Summary)

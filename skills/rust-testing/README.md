@@ -35,9 +35,10 @@ This skill synthesizes guidance from:
 - [divan documentation](https://docs.rs/divan/) — lightweight benchmarking (MIT OR Apache-2.0)
 - [Rust Fuzz Book](https://rust-fuzz.github.io/book/) — cargo-fuzz, structure-aware fuzzing, trophy case (MIT OR Apache-2.0)
 - [nextest documentation](https://nexte.st/) — test runner, per-process isolation, flaky test retries (MIT OR Apache-2.0)
+- [ruff/ty mdtest framework](https://github.com/astral-sh/ruff/tree/main/crates/ty_test) — literate Markdown-as-test-suite pattern for compiler/analyzer testing (MIT)
 
 Standard library and ecosystem items referenced: `#[test]`, `#[cfg(test)]`,
 `assert!`, `assert_eq!`, `assert_ne!`, `#[should_panic]`, `#[ignore]`,
 `std::hint::black_box`, `proptest::prelude::*`, `insta::assert_yaml_snapshot!`,
 `rstest::rstest`, `rstest::fixture`, `mockall::automock`, `criterion::Criterion`,
-`libfuzzer_sys::fuzz_target!`.
+`libfuzzer_sys::fuzz_target!`, `datatest_stable::harness!`.

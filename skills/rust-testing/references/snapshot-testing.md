@@ -302,3 +302,207 @@ test cases.
 
 **Authority:** insta docs (mitsuhiko/insta); snapshot testing pattern from
 Jest (JavaScript) adapted for Rust's compile-time guarantees.
+
+## Literate Snapshot Testing: The mdtest Pattern
+
+When testing compilers, type checkers, linters, or analyzers, the dominant
+pattern is "given this input, what diagnostics/output appear?" Traditional
+snapshot testing requires separate test code, fixture files, and `.snap`
+files. The **mdtest** pattern (pioneered by ruff/ty) collapses all three
+into Markdown files where prose, input code, and assertions coexist.
+
+Use this pattern when:
+- Tests are fundamentally "input → diagnostics/output"
+- You want tests that double as documentation
+- Multi-file test scenarios are common (imports, cross-module analysis)
+- Test configuration varies per scenario (language versions, platforms)
+
+### How It Works
+
+A Markdown file is a test suite. Headers delimit individual tests.
+Fenced code blocks are the input. Inline comments are the assertions:
+
+````markdown
+# Integer literals
+
+```py
+reveal_type(1)  # revealed: Literal[1]
+reveal_type(1.0)  # revealed: float
+```
+
+# Invalid assignment
+
+```py
+x: int = "foo"  # error: [invalid-assignment]
+```
+````
+
+The framework:
+1. Parses Markdown into a tree of tests (headers = boundaries)
+2. Writes code blocks to an **in-memory filesystem**
+3. Runs the tool under test (type checker, linter, compiler)
+4. Matches output diagnostics against inline assertions using a
+   two-pointer merge by line number
+5. Fails on any unmatched diagnostic or unmatched assertion
+
+### Assertion Syntax
+
+Two assertion kinds cover most compiler/analyzer testing needs:
+
+**Type/value reveal** — exact match on displayed output:
+```python
+reveal_type(x)  # revealed: Literal[1]
+```
+
+**Error/diagnostic** — match by rule code, message substring, column, or
+any combination:
+```python
+x: int = "foo"  # error: [invalid-assignment]
+x: int = "foo"  # error: "expected int, got str"
+x: int = "foo"  # error: 10 [invalid-assignment] "expected int"
+```
+
+Assertions on preceding lines apply to the next code line:
+```python
+# error: [invalid-assignment]
+# revealed: Literal[1]
+x: str = reveal_type(1)
+```
+
+### Multi-File Tests Without Fixtures
+
+Label code blocks with paths — no fixture directories needed:
+
+````markdown
+# Cross-module import
+
+```py
+from b import C
+reveal_type(C)  # revealed: <class 'C'>
+```
+
+`b.py`:
+
+```py
+class C: ...
+```
+````
+
+Both files are written to the in-memory FS. The test reads naturally as
+a self-contained scenario.
+
+### Literate Merging
+
+Multiple unlabeled code blocks in one section merge into a single file,
+enabling prose between code:
+
+````markdown
+# Literate test
+
+Define the function:
+
+```py
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+```
+
+Call it with the wrong type:
+
+```py
+greet(42)  # error: [invalid-argument-type]
+```
+````
+
+### Configuration Cascading
+
+TOML blocks configure the test environment. Configuration inherits down
+the header tree and can be overridden per section:
+
+````markdown
+```toml
+[environment]
+python-version = "3.10"
+```
+
+# Test A  ← uses 3.10
+
+# Override Section
+
+```toml
+[environment]
+python-version = "3.12"
+```
+
+## Test B  ← uses 3.12
+
+# Test C  ← back to 3.10 (no leaking between siblings)
+````
+
+This eliminates per-test boilerplate while keeping configuration visible
+and scoped.
+
+### Dual Snapshot Model
+
+Inline assertions are the primary mode — precise, self-documenting, no
+external files. For comprehensive diagnostic output testing (error message
+formatting, multi-line context, fix suggestions), opt into full snapshots
+with an HTML comment directive:
+
+````markdown
+## Detailed error output
+
+<!-- snapshot-diagnostics -->
+
+```py
+assert_type(x, str)  # error: [type-assertion-failure]
+```
+````
+
+This generates an insta `.snap` file with the complete diagnostic output,
+including source context, underlines, and informational notes. Use inline
+assertions for logic; use snapshot diagnostics for presentation.
+
+### Architecture for Building This
+
+The ruff/ty implementation (`crates/ty_test/`) has these components:
+
+| Component | Role |
+|-----------|------|
+| **Parser** | Cursor-based Markdown parser → `MarkdownTestSuite` (zero-copy) |
+| **Assertion parser** | Extracts `# revealed:` / `# error:` from comment ranges |
+| **Matcher** | Two-pointer merge matching diagnostics ↔ assertions by line |
+| **Config** | TOML deserialization with section inheritance |
+| **Database** | Salsa-backed incremental computation with in-memory FS |
+| **Test entry** | `datatest_stable` discovers `.md` files, generates test per file |
+
+The actual test runner file is ~50 lines of glue — all logic lives in the
+framework crate.
+
+**Test discovery** uses `datatest_stable`:
+```rust
+datatest_stable::harness! {
+    { test = mdtest, root = "./resources/mdtest", pattern = r"\.md$" },
+}
+```
+
+Every `.md` file under the resource directory automatically becomes a test.
+Adding a new test = creating/editing a Markdown file. No test registration.
+
+### When to Use mdtest vs. insta
+
+| Scenario | Use |
+|----------|-----|
+| Complex output stability (JSON, CLI, rendered) | **insta** |
+| "Input → diagnostics" testing (compilers, linters) | **mdtest pattern** |
+| Tests that should double as documentation | **mdtest pattern** |
+| Multi-file test scenarios with imports | **mdtest pattern** |
+| Simple value serialization checks | **insta** |
+| Output where exact formatting matters | **insta** (or mdtest's snapshot-diagnostics mode) |
+
+The two are complementary. mdtest uses insta internally for its snapshot
+diagnostics mode. The key insight: when the dominant test pattern is
+"given this input, what diagnostics?" inline assertions in the input are
+more readable and maintainable than separate snapshot files.
+
+**Authority:** ruff/ty `crates/ty_test/` (astral-sh/ruff); `datatest_stable`
+crate for file-driven test discovery.
