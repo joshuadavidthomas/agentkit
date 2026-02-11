@@ -176,7 +176,7 @@ The Rust ecosystem has clear, well-documented preferences for how code should be
 
 ### 10. `rust-macros` — Declarative and Procedural Macros
 
-**Status**: DONE (REVIEWED)
+**Status**: DONE (REVIEWED 2026-02-10)
 
 **Triggers:** Writing macros, macro_rules!, proc macros, derive macros, syn/quote, debugging macros, macro hygiene.
 
@@ -191,7 +191,7 @@ The Rust ecosystem has clear, well-documented preferences for how code should be
 
 ### 11. `rust-project-structure` — Workspace and API Design
 
-**Status**: TODO
+**Status**: DONE (REVIEWED 2026-02-10)
 
 **Triggers:** Starting a new project, organizing crates, workspace setup, feature flags, public API design, documentation, conditional compilation.
 
