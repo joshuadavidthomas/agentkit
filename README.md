@@ -150,7 +150,27 @@ Includes:
 
 Methodical approach to researching unfamiliar codebases using specialized subagents.
 
-### Salsa
+### Rust
+
+A suite of skills encoding idiomatic defaults and "think in Rust" principles for AI agents. These skills go beyond syntax to provide judgment on type-driven design, ownership strategies, and ecosystem-standard patterns.
+
+| Skill | Description |
+|-------|-------------|
+| [rust-async](./skills/rust-async/SKILL.md) | Async patterns and Tokio. Channel selection, blocking avoidance, graceful shutdown, cancellation safety, and sync↔async bridging. |
+| [rust-error-handling](./skills/rust-error-handling/SKILL.md) | Error strategy and design. Library-vs-application axis, structured errors (thiserror), ergonomic propagation (anyhow), and boundary rules. |
+| [rust-idiomatic](./skills/rust-idiomatic/SKILL.md) | **The paradigm shift skill.** Core defaults agents consistently miss: newtypes for domain strings, enums over booleans, exhaustive matching, parse-don't-validate. |
+| [rust-interop](./skills/rust-interop/SKILL.md) | Cross-language integration. Framework selection (PyO3, napi-rs, wasm-bindgen, cxx) and boundary ownership/panic rules. |
+| [rust-macros](./skills/rust-macros/SKILL.md) | Declarative (macro_rules!) and procedural macros. Grammar patterns, hygiene, syn/quote conventions, and expansion debugging. |
+| [rust-ownership](./skills/rust-ownership/SKILL.md) | Ownership, borrowing, and lifetimes. Decision framework for smart pointers, function signatures, and navigating borrow checker errors. |
+| [rust-performance](./skills/rust-performance/SKILL.md) | Performance optimization rulebook. Allocation reduction, data structure selection, bounds-check elimination, and profiling discipline. |
+| [rust-project-structure](./skills/rust-project-structure/SKILL.md) | Workspace and API surface design. Crate layout, feature flag unification, public API checklist, and documentation conventions. |
+| [rust-serde](./skills/rust-serde/SKILL.md) | Serialization patterns and schema design. Enum wire representations, high-leverage attributes, and adapter patterns (serde_with). |
+| [rust-testing](./skills/rust-testing/SKILL.md) | Testing ecosystem survey. Property testing (proptest), snapshot testing (insta), fixtures (rstest), mocking (mockall), and nextest runner. |
+| [rust-traits](./skills/rust-traits/SKILL.md) | Trait design and dispatch. Enforces enum → generics → trait objects hierarchy; covers object safety and standard-trait patterns. |
+| [rust-type-design](./skills/rust-type-design/SKILL.md) | Type-driven domain modeling. Patterns for newtypes, typestate, builders, phantom types, and sealing. |
+| [rust-unsafe](./skills/rust-unsafe/SKILL.md) | Soundness, safety invariants, and UB avoidance. Mandatory documentation requirements (// SAFETY:), Miri validation, and FFI boundaries. |
+
+#### Salsa
 
 A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
 
@@ -234,6 +254,27 @@ Salsa skills reference code and patterns from:
 - [rust-analyzer](https://github.com/rust-lang/rust-analyzer) (MIT OR Apache-2.0)
 - [stc](https://github.com/dudykr/stc) (Apache-2.0)
 - [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
+
+Rust Ecosystem skills reference and adapt guidance from several sources in [reference/](./reference/), including:
+
+- [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) by Alice Ryhl
+- [Aiming for correctness with types](https://fasterthanli.me/articles/aiming-for-correctness-with-types) by Amos Wenger (fasterthanlime)
+- [Async: What is blocking?](https://ryhl.io/blog/async-what-is-blocking/) by Alice Ryhl
+- [Common Rust Lifetime Misconceptions](https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md) by pretzelhammer (CC BY-SA 4.0)
+- [Effective Rust](https://www.lurklurk.org/effective-rust/) by David Drysdale (CC BY 4.0)
+- [Error Handling Survey](https://blog.yoshuawuyts.com/error-handling-survey/) by Yoshua Wuyts
+- [Error Handling in Rust](https://blog.burntsushi.net/rust-error-handling/) by Andrew Gallant (BurntSushi)
+- [Error handling in Rust](https://www.lpalmieri.com/posts/error-handling-rust/) by Luca Palmieri
+- [Making Illegal States Unrepresentable](https://corrode.dev/blog/illegal-state/) by corrode.dev
+- [Modular Errors in Rust](https://sabrinajewson.org/blog/errors) by Sabrina Jewson
+- [Parse, Don't Validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/) by Alexis King
+- [Pin](https://without.boats/blog/pin/) by Without Boats
+- [Rust API Guidelines](https://github.com/rust-lang/api-guidelines) (MIT OR Apache-2.0)
+- [Rust Design Patterns](https://github.com/rust-unofficial/patterns) (MPL-2.0)
+- [The Rust Programming Language](https://github.com/rust-lang/book) (MIT OR Apache-2.0)
+- [The Rust Reference](https://github.com/rust-lang/reference) (MIT OR Apache-2.0)
+- [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
+- [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
 ## License
 
