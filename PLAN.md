@@ -230,7 +230,7 @@ Note: C-level FFI (extern "C", CString/CStr, bindgen/cbindgen) moves HERE from r
 
 ### 13. `rust-serde` — Serialization Patterns
 
-**Status**: TODO
+**Status**: DONE (REVIEWED 2026-02-11)
 
 **Triggers:** serde attributes, custom serialization, enum representation (#[serde(tag)], untagged, adjacently tagged), #[serde(default)], #[serde(flatten)], custom Serialize/Deserialize impls, format-specific issues.
 
