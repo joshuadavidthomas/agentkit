@@ -1,6 +1,6 @@
 ---
 name: rust-unsafe
-description: "Use when writing or reviewing unsafe Rust: unsafe blocks/functions/traits, raw pointers (*const/*mut), MaybeUninit/ManuallyDrop, transmute, repr(C)/repr(packed), manual Send/Sync impls, FFI boundaries, or when investigating UB/Miri reports."
+description: "Use when writing or reviewing unsafe Rust: unsafe blocks/functions/traits, raw pointers (*const/*mut), MaybeUninit/ManuallyDrop, transmute, repr(C)/repr(packed), manual Send/Sync impls, or when investigating UB/Miri reports."
 ---
 
 # Unsafe Rust: Soundness, Invariants, and UB Avoidance
@@ -16,7 +16,7 @@ Your goal when writing unsafe code is **soundness**: no possible safe caller can
 Do not introduce unsafe unless one of these is true:
 
 - You are implementing a safe abstraction that cannot be expressed in safe Rust (custom allocators, intrusive collections, lock-free primitives, arena/slot-map internals, self-referential layout behind `Pin`, etc.).
-- You are crossing a trust boundary where the type system cannot help (FFI, kernel/syscall boundary, hardware registers, inline asm). If it’s FFI-heavy, concentrate work in a dedicated boundary module and make the ABI/ownership contract explicit (see [references/ffi-boundaries.md](references/ffi-boundaries.md)); expect **rust-interop** to own deep patterns once it exists.
+- You are crossing a trust boundary where the type system cannot help (kernel/syscall boundary, hardware registers, inline asm). If this is cross-language integration (C ABI, C++, Python, JS/WASM), route the boundary design to **rust-interop**; this skill stays focused on unsafe Rust correctness (soundness, validity, aliasing, initialization).
 - You need uninitialized memory / partial initialization for performance and can prove initialization before read (`MaybeUninit`).
 - You are forced into raw pointer manipulation by an external representation or API.
 
@@ -118,7 +118,7 @@ Miri workflow and CI patterns: [references/miri-and-unsafe-testing.md](reference
 - Using `mem::transmute` for “parsing” bytes or flags. Parse explicitly (match/convert) or use the dedicated `from_*_bytes` APIs.
 - Slapping on `unsafe impl Send/Sync` to silence the compiler. If you can’t state the concurrency invariant in a short comment, do not ship the impl.
 - Taking `&packed.field` from `#[repr(packed)]` structs. Use raw pointers + `read_unaligned`/`write_unaligned`.
-- Letting panics/unwinding cross an FFI boundary. Catch at the boundary or design a “no unwind” ABI; see [references/ffi-boundaries.md](references/ffi-boundaries.md).
+- Letting panics/unwinding cross a language boundary. The boundary must decide a no-unwind policy (or explicitly use an unwind-capable ABI) and translate failures into the host error mechanism; see **rust-interop** (C ABI: `references/c-ffi.md`).
 
 Incorrect → correct examples you should expect to see in reviews:
 

@@ -210,7 +210,7 @@ The Rust ecosystem has clear, well-documented preferences for how code should be
 
 ### 12. `rust-interop` — Cross-Language Integration
 
-**Status**: TODO
+**Status**: DONE
 
 **Triggers:** PyO3, pyo3, napi-rs, wasm-bindgen, wasm-pack, cxx, extern "C", FFI, bindgen, cbindgen, uniffi, calling Rust from Python/JS/C/C++, embedding Rust, WASM.
 
