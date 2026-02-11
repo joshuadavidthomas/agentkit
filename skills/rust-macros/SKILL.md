@@ -15,6 +15,11 @@ Default to **not** writing a macro.
 
 **Authority:** Rust Reference (macros, procedural macros); TLBORM (macro_rules patterns); syn/quote docs (proc-macro ecosystem); proc-macro-workshop (real-world proc macro shapes).
 
+## Related skills
+
+- Use **rust-idiomatic** and **rust-type-design** when you are reaching for macros to “avoid boilerplate” or to model domain structure. Prefer types, enums, and traits first.
+- Use **rust-error-handling** when you need a consistent error strategy in the generated runtime API (macros should still emit good compile-time diagnostics).
+
 ## 1) First question: do you need a macro at all?
 
 Write a macro only if at least one is true:
@@ -127,6 +132,8 @@ Why: proc-macro crates are harder to test and slow down incremental builds; core
 - Generate tokens with `quote!`.
 - Use `proc_macro2::TokenStream` internally; convert at the boundary.
 
+Deep dive patterns: [references/proc-macro-patterns.md](references/proc-macro-patterns.md).
+
 ### Rule 3: Never `unwrap()` macro parsing in a published macro
 
 - Parse with `parse_macro_input!` or `syn::parse`.
@@ -183,7 +190,17 @@ Defaults:
 
 Deep dive: [references/testing-and-debugging-macros.md](references/testing-and-debugging-macros.md).
 
-## 6) Review checklist (use in code review)
+## 6) Common mistakes (agent failure modes)
+
+- Writing a proc macro when `macro_rules!` (or a function/trait) would do. Proc macros add a build-dependency and increase compile time.
+- Using `tt` matchers as the default input type. This creates an unparseable DSL and terrible diagnostics; prefer real fragment specifiers.
+- Expanding `$expr` more than once (double evaluation) and accidentally duplicating side effects. Bind once or `match`.
+- Exporting a macro that refers to crate items without `$crate::...`, breaking when the crate is renamed.
+- In proc macros: `unwrap()`/`expect()` on user input, causing a panic instead of a spanned diagnostic.
+- Generated code that relies on call-site `use` statements or unqualified names (`Result`, `Error`, `Vec`), causing name resolution failures.
+- Nondeterministic expansions (timestamps, random IDs) that break reproducible builds.
+
+## 7) Review checklist (use in code review)
 
 1. Is a macro necessary, or can this be a function/trait/derive from an existing crate?
 2. If it’s `macro_rules!`: are fragment specifiers specific (not `tt` everywhere), and is the invocation grammar unambiguous (no local ambiguity)?

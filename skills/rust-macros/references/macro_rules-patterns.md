@@ -128,3 +128,33 @@ macro_rules! good {
 When you forward `$e:expr` into another macro, that second macro sees an opaque expr AST and cannot match literal tokens inside it. If you need literal-token matching, match `tt` (or restructure the API).
 
 **Authority:** Rust Reference “Forwarding a matched fragment”.
+
+## 8) Push-down accumulation (token muncher) via internal `@rules`
+
+When you need to parse a sequence of tokens into a structured result, use the TLBORM “token muncher” pattern:
+
+- Expose a small public entry rule.
+- Recurse through the remaining tokens via internal rules prefixed with `@...`.
+- Thread an explicit accumulator so you never need macro “lookahead”.
+
+Example: count identifiers without ambiguity (accumulator is an `expr`):
+
+```rust
+macro_rules! count_idents {
+    (@acc $n:expr; ) => { $n };
+    (@acc $n:expr; $head:ident $( $tail:ident )* ) => {
+        count_idents!(@acc ($n + 1); $( $tail )* )
+    };
+    ( $( $i:ident )* ) => {
+        count_idents!(@acc 0; $( $i )* )
+    };
+}
+
+const N: usize = count_idents!(a b c);
+```
+
+Defaults:
+
+- Use an explicit delimiter/keyword before internal rules (the `@acc ...;` above) so the matcher is never locally ambiguous.
+- Keep the public surface small; internal rules are implementation details.
+- If you find yourself inventing a large custom DSL with lots of `tt`, stop and reconsider: prefer Rust fragments + normal types, or move to a proc macro if you truly need item-level structure.

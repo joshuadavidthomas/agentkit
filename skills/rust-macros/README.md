@@ -13,11 +13,13 @@ Deep dives live in `references/`:
 - `proc-macro-patterns.md` — proc-macro crate layout, parsing/quoting, error reporting, name resolution robustness
 - `testing-and-debugging-macros.md` — cargo-expand workflow, trybuild compile-fail tests, debugging checklist
 
-## Attribution & license notes
+## Attribution & License
 
-This skill synthesizes guidance from:
-- Rust Reference: macros, macros-by-example, procedural macros (rust-lang/reference)
-- The Little Book of Rust Macros (veykril/tlborm)
-- proc-macro-workshop (dtolnay/proc-macro-workshop)
-- syn / quote / darling crate docs (dtolnay/syn, dtolnay/quote, TedDriggs/darling)
-- cargo-expand docs (dtolnay/cargo-expand)
+This skill synthesizes guidance from the following sources:
+
+- [Rust Reference](https://github.com/rust-lang/reference) — Macros by example + procedural macros chapters. Licensed under [MIT](https://opensource.org/licenses/MIT) OR [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+- [The Little Book of Rust Macros (TLBORM)](https://github.com/veykril/tlborm) — Declarative macro patterns. Licensed under [MIT](https://opensource.org/licenses/MIT).
+- [proc-macro-workshop](https://github.com/dtolnay/proc-macro-workshop) — Practical derive/attribute macro exercises and pitfalls. Licensed under [MIT](https://opensource.org/licenses/MIT) OR [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+- [syn](https://github.com/dtolnay/syn) and [quote](https://github.com/dtolnay/quote) — The default parsing/codegen stack for proc macros. Licensed under [MIT](https://opensource.org/licenses/MIT) OR [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+- [darling](https://github.com/TedDriggs/darling) — Structured attribute parsing for proc macros. Licensed under [MIT](https://opensource.org/licenses/MIT).
+- [cargo-expand](https://github.com/dtolnay/cargo-expand) — Expansion debugging workflow. Licensed under [MIT](https://opensource.org/licenses/MIT) OR [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
