@@ -157,6 +157,7 @@ A suite of skills encoding idiomatic defaults and "think in Rust" principles for
 | Skill | Description |
 |-------|-------------|
 | [rust-async](./skills/rust-async/SKILL.md) | Async patterns and Tokio. Channel selection, blocking avoidance, graceful shutdown, cancellation safety, and sync↔async bridging. |
+| [rust-atomics](./skills/rust-atomics/SKILL.md) | Atomics and memory ordering defaults. Atomic-vs-lock decisions, ordering selection, compare_exchange patterns, publication edges, and unsound-concurrency traps. |
 | [rust-error-handling](./skills/rust-error-handling/SKILL.md) | Error strategy and design. Library-vs-application axis, structured errors (thiserror), ergonomic propagation (anyhow), and boundary rules. |
 | [rust-idiomatic](./skills/rust-idiomatic/SKILL.md) | **The paradigm shift skill.** Core defaults agents consistently miss: newtypes for domain strings, enums over booleans, exhaustive matching, parse-don't-validate. |
 | [rust-interop](./skills/rust-interop/SKILL.md) | Cross-language integration. Framework selection (PyO3, napi-rs, wasm-bindgen, cxx) and boundary ownership/panic rules. |
@@ -261,6 +262,7 @@ Rust Ecosystem skills reference and adapt guidance from several sources in [refe
 - [Aiming for correctness with types](https://fasterthanli.me/articles/aiming-for-correctness-with-types) by Amos Wenger (fasterthanlime)
 - [Async: What is blocking?](https://ryhl.io/blog/async-what-is-blocking/) by Alice Ryhl
 - [Common Rust Lifetime Misconceptions](https://github.com/pretzelhammer/rust-blog/blob/master/posts/common-rust-lifetime-misconceptions.md) by pretzelhammer (CC BY-SA 4.0)
+- [Rust Atomics and Locks](https://marabos.nl/atomics/) by Mara Bos
 - [Effective Rust](https://www.lurklurk.org/effective-rust/) by David Drysdale (CC BY 4.0)
 - [Error Handling Survey](https://blog.yoshuawuyts.com/error-handling-survey/) by Yoshua Wuyts
 - [Error Handling in Rust](https://blog.burntsushi.net/rust-error-handling/) by Andrew Gallant (BurntSushi)
