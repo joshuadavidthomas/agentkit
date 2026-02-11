@@ -22,7 +22,7 @@ Do not put these in `extern "C"` signatures:
 
 - `String`, `&str`
 - `Vec<T>`, slices, or `&[T]` (unless you model as `(ptr, len)` explicitly)
-- `bool` (Rust `bool` has a validity invariant; foreign code can violate it)
+- `bool` (Rust Reference: `bool` has a validity invariant; foreign code can violate it by passing non-0/1 values)
 - `Result<T, E>`, `Option<T>`
 - Rust enums (layout is not stable unless you intentionally design a `#[repr(C)]` representation, and even then you must be conservative)
 
@@ -118,6 +118,14 @@ If the other side needs to “hold onto something”, expose an opaque handle ty
 ```rust
 use core::ffi::c_void;
 
+struct MyState;
+
+impl MyState {
+    fn new() -> Self {
+        Self
+    }
+}
+
 #[repr(transparent)]
 pub struct MyHandle(*mut c_void);
 
@@ -132,6 +140,7 @@ pub extern "C" fn my_free(h: MyHandle) {
     if h.0.is_null() {
         return;
     }
+
     // SAFETY: `h` came from `my_new` and has not been freed yet.
     unsafe { drop(Box::from_raw(h.0.cast::<MyState>())) };
 }

@@ -36,15 +36,18 @@ Use `wasm-bindgen-futures` to bridge:
 From the wasm-bindgen guide (Promises and Futures):
 
 ```rust
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
+
 async fn get_from_js() -> Result<JsValue, JsValue> {
     let promise = js_sys::Promise::resolve(&42.into());
-    let result = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    let result = JsFuture::from(promise).await?;
     Ok(result)
 }
 
 #[wasm_bindgen]
-pub async fn foo() {
-    // ...
+pub async fn foo() -> Result<JsValue, JsValue> {
+    get_from_js().await
 }
 ```
 
