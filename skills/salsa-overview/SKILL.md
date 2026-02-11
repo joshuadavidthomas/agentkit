@@ -1,6 +1,6 @@
 ---
 name: salsa-overview
-description: Start here for Salsa — the incremental computation framework for Rust. Use when asking what Salsa is, how it works, getting started, or seeking guidance on which specialized Salsa skill to load. Triggers on: `#[salsa::db]`, `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, `#[salsa::accumulator]`, `salsa::Storage`, memoization, incremental computation, dependency tracking, revisions, backdating, and the red-green algorithm.
+description: "Start here for Salsa — the incremental computation framework for Rust. Use when asking what Salsa is, how it works, getting started, or seeking guidance on which specialized Salsa skill to load. Triggers on: #[salsa::db], #[salsa::input], #[salsa::tracked], #[salsa::interned], #[salsa::accumulator], salsa::Storage, memoization, incremental computation, dependency tracking, revisions, backdating, and the red-green algorithm."
 ---
 
 # Salsa: Incremental Computation for Rust

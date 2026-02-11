@@ -1,6 +1,6 @@
 ---
 name: rust-ownership
-description: "Use when hitting borrow checker errors (E0382, E0499, E0502, E0505, E0507, E0597, E0106, E0716), choosing between clone/borrow/Rc/Arc, designing function signatures for ownership, fighting the borrow checker, or deciding when to use lifetimes, smart pointers, Cow, or interior mutability."
+description: Use when hitting borrow checker errors (E0382, E0499, E0502, E0505, E0507, E0597, E0106, E0716), choosing between clone/borrow/Rc/Arc, designing function signatures for ownership, fighting the borrow checker, or deciding when to use lifetimes, smart pointers, Cow, or interior mutability.
 ---
 
 # Ownership, Borrowing, Lifetimes

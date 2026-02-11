@@ -1,6 +1,6 @@
 ---
 name: salsa-incremental-testing
-description: Use when verifying Salsa incremental reuse or debugging why queries re-run. Covers event capture, test databases, and assertions for proving tracked functions were skipped after input changes. Triggers: WillExecute, DidValidateMemoizedValue, salsa::Event, incremental test, query re-ran.
+description: "Use when verifying Salsa incremental reuse or debugging why queries re-run. Covers event capture, test databases, and assertions for proving tracked functions were skipped after input changes. Triggers: WillExecute, DidValidateMemoizedValue, salsa::Event, incremental test, query re-ran."
 ---
 
 # Proving Incremental Reuse in Salsa

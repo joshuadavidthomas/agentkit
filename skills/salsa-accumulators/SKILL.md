@@ -1,6 +1,6 @@
 ---
 name: salsa-accumulators
-description: "Use when reporting diagnostics, errors, warnings, or side-channel output from Salsa tracked functions. Also use when deciding between accumulators vs. return-value diagnostics for large-scale projects."
+description: Use when reporting diagnostics, errors, warnings, or side-channel output from Salsa tracked functions. Also use when deciding between accumulators vs. return-value diagnostics for large-scale projects.
 ---
 
 # Accumulators: Side-Channel Output from Tracked Functions

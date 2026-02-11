@@ -1,6 +1,6 @@
 ---
 name: rust-idiomatic
-description: "Use for any Rust implementation or review when you see non-domain primitives (bare String/bool), kind+Option structs, wildcard enum matches (_ =>), Error(String), runtime validation, or dyn Trait used for a closed set. Sets enum-first, newtype-heavy, parse-don't-validate defaults."
+description: Use for any Rust implementation or review when you see non-domain primitives (bare String/bool), kind+Option structs, wildcard enum matches (_ =>), Error(String), runtime validation, or dyn Trait used for a closed set. Sets enum-first, newtype-heavy, parse-don't-validate defaults.
 ---
 
 # Think in Rust

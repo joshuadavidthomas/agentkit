@@ -1,6 +1,6 @@
 ---
 name: salsa-database-architecture
-description: "Use when designing a Salsa database structure (#[salsa::db]). Covers layered trait hierarchies, crate boundaries, non-Salsa state, storage fields, Files side-tables, singleton inputs, and test vs production database patterns. Essential for organizing projects like ty, rust-analyzer, Cairo, and BAML."
+description: Use when designing a Salsa database structure (#[salsa::db]). Covers layered trait hierarchies, crate boundaries, non-Salsa state, storage fields, Files side-tables, singleton inputs, and test vs production database patterns. Essential for organizing projects like ty, rust-analyzer, Cairo, and BAML.
 ---
 
 # Structuring the Salsa Database

@@ -1,6 +1,6 @@
 ---
 name: salsa-cancellation
-description: "Use when handling cancellation in Salsa-based interactive systems (LSP servers, CLI tools, watch mode). Covers catching Cancelled unwinding, retry strategies (PendingWrite vs Local), manual cancellation checks in loops, snapshot patterns for concurrency, and real-world implementations from rust-analyzer and the Ruff/ty monorepo."
+description: Use when handling cancellation in Salsa-based interactive systems (LSP servers, CLI tools, watch mode). Covers catching Cancelled unwinding, retry strategies (PendingWrite vs Local), manual cancellation checks in loops, snapshot patterns for concurrency, and real-world implementations from rust-analyzer and the Ruff/ty monorepo.
 ---
 
 # Handling Cancellation in Salsa

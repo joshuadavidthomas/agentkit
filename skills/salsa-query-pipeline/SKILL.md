@@ -1,6 +1,6 @@
 ---
 name: salsa-query-pipeline
-description: "Use when designing tracked functions and query pipelines in Salsa — choosing return modes (returns(ref), returns(deref)), setting LRU cache sizes (lru=N), using no_eq, applying the specify pattern, or wrapping non-Salsa arguments. Covers granularity strategies, early cutoff patterns (dual-query split), and real-world pipelines from django-language-server, Ruff/ty, rust-analyzer, Cairo, BAML, and Fe."
+description: Use when designing tracked functions and query pipelines in Salsa — choosing return modes (returns(ref), returns(deref)), setting LRU cache sizes (lru=N), using no_eq, applying the specify pattern, or wrapping non-Salsa arguments. Covers granularity strategies, early cutoff patterns (dual-query split), and real-world pipelines from django-language-server, Ruff/ty, rust-analyzer, Cairo, BAML, and Fe.
 ---
 
 # Designing the Query Pipeline

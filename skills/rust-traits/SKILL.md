@@ -1,6 +1,6 @@
 ---
 name: rust-traits
-description: "Use when designing trait hierarchies, choosing between generics/trait objects/enums for polymorphism, hitting object safety errors, E0277 (trait bound not satisfied), E0038 (not object-safe), orphan rule violations, or deciding which standard traits to implement. Covers static vs dynamic dispatch, sealed/extension/marker traits, associated types vs generics, and common trait design mistakes."
+description: Use when designing trait hierarchies, choosing between generics/trait objects/enums for polymorphism, hitting object safety errors, E0277 (trait bound not satisfied), E0038 (not object-safe), orphan rule violations, or deciding which standard traits to implement. Covers static vs dynamic dispatch, sealed/extension/marker traits, associated types vs generics, and common trait design mistakes.
 ---
 
 # Trait Design and Dispatch

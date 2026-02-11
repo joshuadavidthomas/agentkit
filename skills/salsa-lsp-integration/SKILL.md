@@ -1,6 +1,6 @@
 ---
 name: salsa-lsp-integration
-description: Use when building an LSP server with Salsa. Covers host/snapshot concurrency, editor changes, cancellation, and diagnostic refresh. Triggers: textDocument/didChange, didChangeWatchedFiles, publishDiagnostics, snapshot, analysis.
+description: "Use when building an LSP server with Salsa. Covers host/snapshot concurrency, editor changes, cancellation, and diagnostic refresh. Triggers: textDocument/didChange, didChangeWatchedFiles, publishDiagnostics, snapshot, analysis."
 ---
 
 # Building an LSP Server Backed by Salsa

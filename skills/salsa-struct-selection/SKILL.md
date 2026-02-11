@@ -1,6 +1,6 @@
 ---
 name: salsa-struct-selection
-description: "Use when designing Salsa data structures and choosing between #[salsa::input], #[salsa::tracked], #[salsa::interned], or plain Rust types. Resolve lifetime 'db issues, fix 'cycle detected' errors by switching to interned types, and optimize granularity. Reference production patterns from ty (no tracked structs), rust-analyzer (interned locations), Cairo (immortal IDs), and BAML."
+description: Use when designing Salsa data structures and choosing between #[salsa::input], #[salsa::tracked], #[salsa::interned], or plain Rust types. Resolve lifetime 'db issues, fix 'cycle detected' errors by switching to interned types, and optimize granularity. Reference production patterns from ty (no tracked structs), rust-analyzer (interned locations), Cairo (immortal IDs), and BAML.
 ---
 
 # Choosing the Right Salsa Struct Type

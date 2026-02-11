@@ -1,6 +1,6 @@
 ---
 name: salsa-production-patterns
-description: Guidance on the "graduation" from a simple Salsa project to a production-grade system. Use when a project is hitting performance walls, scaling to thousands of files, or moving from a basic prototype to an industry-standard implementation. Covers the maturity model: accumulators → return pyramids, tracked structs → interned IDs, flat DB → layered side-tables, and snappiness optimizations.
+description: "Guidance on the \"graduation\" from a simple Salsa project to a production-grade system. Use when a project is hitting performance walls, scaling to thousands of files, or moving from a basic prototype to an industry-standard implementation. Covers the maturity model: accumulators → return pyramids, tracked structs → interned IDs, flat DB → layered side-tables, and snappiness optimizations."
 ---
 
 # Salsa Production Patterns: From Simple to Sophisticated

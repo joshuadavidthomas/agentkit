@@ -1,6 +1,6 @@
 ---
 name: rust-error-handling
-description: "Use when designing error types, choosing thiserror vs anyhow, propagating errors with ?, writing Result/Option combinators, or asking how to handle errors in a Rust project. Covers library vs application strategy, structured error enums, error context/chaining, when to panic, and bail!/ensure! macros."
+description: Use when designing error types, choosing thiserror vs anyhow, propagating errors with ?, writing Result/Option combinators, or asking how to handle errors in a Rust project. Covers library vs application strategy, structured error enums, error context/chaining, when to panic, and bail!/ensure! macros.
 ---
 
 # Error Strategy and Design

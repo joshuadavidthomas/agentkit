@@ -1,6 +1,6 @@
 ---
 name: rust-async
-description: "Use when writing async/await code, using tokio, choosing channel types (mpsc, oneshot, broadcast, watch), spawning tasks, hitting Send/Sync errors on futures, blocking the async runtime, designing graceful shutdown, handling cancellation, bridging sync and async code, or deciding between spawn_blocking and rayon for CPU-bound work."
+description: Use when writing async/await code, using tokio, choosing channel types (mpsc, oneshot, broadcast, watch), spawning tasks, hitting Send/Sync errors on futures, blocking the async runtime, designing graceful shutdown, handling cancellation, bridging sync and async code, or deciding between spawn_blocking and rayon for CPU-bound work.
 ---
 
 # Async Patterns and Tokio

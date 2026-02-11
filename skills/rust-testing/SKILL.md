@@ -1,6 +1,6 @@
 ---
 name: rust-testing
-description: "Use when writing tests, organizing test modules, choosing between proptest/insta/rstest/mockall/criterion/cargo-fuzz, setting up property-based or snapshot testing, benchmarking, fuzzing, running tests with nextest, or asking how to structure tests in a Rust project. Covers the testing pyramid, test organization (unit/integration/doc), fixture patterns, parameterized tests, and when to use each tool."
+description: Use when writing tests, organizing test modules, choosing between proptest/insta/rstest/mockall/criterion/cargo-fuzz, setting up property-based or snapshot testing, benchmarking, fuzzing, running tests with nextest, or asking how to structure tests in a Rust project. Covers the testing pyramid, test organization (unit/integration/doc), fixture patterns, parameterized tests, and when to use each tool.
 ---
 
 # Testing Ecosystem and Strategies
