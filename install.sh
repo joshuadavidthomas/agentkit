@@ -38,7 +38,7 @@ fi
 
 # Pi extensions
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
-PI_EXTENSIONS_SRC="$REPO_DIR/runtimes/pi/extensions"
+PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions/extensions"
 
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
     mkdir -p "$PI_EXTENSIONS_DIR"
