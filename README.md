@@ -256,7 +256,7 @@ Salsa skills reference code and patterns from:
 - [stc](https://github.com/dudykr/stc) (Apache-2.0)
 - [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
 
-Rust Ecosystem skills reference and adapt guidance from several sources in [reference/](./reference/), including:
+Rust Ecosystem skills reference and adapt guidance from several sources, including:
 
 - [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) by Alice Ryhl
 - [Aiming for correctness with types](https://fasterthanli.me/articles/aiming-for-correctness-with-types) by Amos Wenger (fasterthanlime)
