@@ -122,6 +122,18 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 
+#### [ralph](./pi-extensions/extensions/ralph/)
+
+**Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
+
+Uses the pi SDK in-process (no subprocess, no RPC) to run repeated agent turns against a task file. Supports steering mid-iteration with queued user messages, follow-ups for next iteration, and comprehensive stats tracking (cost, tokens, duration). State persisted to `.ralph/<name>/` with iteration snapshots.
+
+#### [read](./pi-extensions/extensions/read.ts)
+
+Overrides the built-in read tool to handle directories gracefully.
+
+When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
+
 #### [statusline](./pi-extensions/extensions/statusline.ts)
 
 Starship-style custom footer with model context, git status, costs, and token stats.
