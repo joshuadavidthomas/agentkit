@@ -29,7 +29,7 @@ opencode:
     webfetch: allow
 
 pi:
-  tools: read, grep, glob, ls, bash, webfetch
+  tools: read, grep, ls, bash
   output: research.md
 ---
 

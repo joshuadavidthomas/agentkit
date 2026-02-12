@@ -22,7 +22,7 @@ opencode:
     read: allow
 
 pi:
-  tools: read, grep, glob, ls
+  tools: read, grep, ls
   output: analysis.md
 ---
 

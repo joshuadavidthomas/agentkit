@@ -21,7 +21,7 @@ opencode:
     list: allow
 
 pi:
-  tools: grep, glob, ls
+  tools: grep, ls
   output: locations.md
 ---
 
