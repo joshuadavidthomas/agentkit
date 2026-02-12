@@ -42,23 +42,23 @@ Web research specialist for finding modern information not in training data. Sea
 
 Extensions for [pi](https://shittycodingagent.ai/), a TUI coding agent.
 
-#### [answer](./pi-extensions/extensions/answer.ts)
+#### [answer](./pi-extensions/answer.ts)
 
 Extract questions from the last assistant message into an interactive Q&A interface.
 
 When the assistant asks multiple questions, `/answer` (or `Ctrl+.`) extracts them using a fast model (prefers Codex mini, falls back to Haiku), then presents a TUI for navigating and answering each question. Answers are compiled and submitted when complete.
 
-#### [beans](./pi-extensions/extensions/beans.ts)
+#### [beans](./pi-extensions/beans.ts)
 
 Integrates [Beans](https://github.com/hmans/beans) with pi by running `beans prime` in a project using Beans to track issues and injecting its output into the system prompt at session start and after compaction.
 
-#### [custom-provider-cloudflare-ai-gateway](./pi-extensions/extensions/custom-provider-cloudflare-ai-gateway/)
+#### [custom-provider-cloudflare-ai-gateway](./pi-extensions/custom-provider-cloudflare-ai-gateway/)
 
 Custom provider that routes AI models through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/)'s OpenAI-compatible endpoint. Supports multiple upstream providers (OpenAI, Anthropic, Workers AI) through a unified interface with Cloudflare's observability, caching, and rate limiting.
 
 Model definitions are sourced from [models.dev](https://models.dev) (65+ models), cached locally at `~/.cache/pi/cloudflare-ai-gateway-models.json`, and refreshed hourly in the background. An embedded snapshot provides offline/first-run support. Configure via `~/.pi/agent/cloudflare-ai-gateway.json` with your account ID and gateway name.
 
-#### [custom-provider-zai](./pi-extensions/extensions/custom-provider-zai/)
+#### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 
 Custom provider for [ZAI](https://z.ai/) GLM models through Cerebras and ZAI endpoints. Supports GLM-4.7 (via Cerebras for fast inference, or via ZAI with reasoning), and GLM-5 (via ZAI with reasoning).
 
@@ -66,7 +66,7 @@ Routes requests to the correct backend based on model ID, with per-request sampl
 
 Vendored from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
-#### [dcg](./pi-extensions/extensions/dcg.ts)
+#### [dcg](./pi-extensions/dcg.ts)
 
 Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).
 
@@ -78,7 +78,7 @@ Runs every bash command through dcg's hook mode before execution. When dcg block
 
 Displays severity badges, detailed reasons, and tracks allow decisions in tool results. Falls back gracefully when dcg isn't available or returns unexpected output.
 
-#### [handoff](./pi-extensions/extensions/handoff.ts)
+#### [handoff](./pi-extensions/handoff.ts)
 
 Transfer context to a new focused session instead of compacting.
 
@@ -96,19 +96,19 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff check other places that need this fix
 ```
 
-#### [messages](./pi-extensions/extensions/messages.ts)
+#### [messages](./pi-extensions/messages.ts)
 
 Whimsical working messages while the agent thinks.
 
 Replaces the default "Working..." message with randomly selected playful alternatives like "Percolating...", "Consulting the void...", "Herding pointers...", and "Reticulating splines...". Messages change on each turn for variety and delight.
 
-#### [notify](./pi-extensions/extensions/notify.ts)
+#### [notify](./pi-extensions/notify.ts)
 
 Desktop notifications when the agent finishes. Uses a cheap model to summarize what was done ("Wrote auth.ts") or what's blocking ("Need: which database?") so you know at a glance whether to come back.
 
 Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
 
-#### [pi-subagents](./pi-extensions/extensions/pi-subagents/)
+#### [pi-subagents](./pi-extensions/pi-subagents/)
 
 Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
 
@@ -122,19 +122,19 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 
-#### [ralph](./pi-extensions/extensions/ralph/)
+#### [ralph](./pi-extensions/ralph/)
 
 **Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
 
 Uses the pi SDK in-process (no subprocess, no RPC) to run repeated agent turns against a task file. Supports steering mid-iteration with queued user messages, follow-ups for next iteration, and comprehensive stats tracking (cost, tokens, duration). State persisted to `.ralph/<name>/` with iteration snapshots.
 
-#### [read](./pi-extensions/extensions/read.ts)
+#### [read](./pi-extensions/read.ts)
 
 Overrides the built-in read tool to handle directories gracefully.
 
 When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
 
-#### [statusline](./pi-extensions/extensions/statusline.ts)
+#### [statusline](./pi-extensions/statusline.ts)
 
 Starship-style custom footer with model context, git status, costs, and token stats.
 
