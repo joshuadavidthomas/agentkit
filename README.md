@@ -60,11 +60,11 @@ Model definitions are sourced from [models.dev](https://models.dev) (65+ models)
 
 #### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 
+Vendored from [vedang/agents](https://github.com/vedang/agents).
+
 Custom provider for [ZAI](https://z.ai/) GLM models through Cerebras and ZAI endpoints. Supports GLM-4.7 (via Cerebras for fast inference, or via ZAI with reasoning), and GLM-5 (via ZAI with reasoning).
 
 Routes requests to the correct backend based on model ID, with per-request sampling knobs (temperature, top_p, clear_thinking) configurable via environment variables or options. Requires `CEREBRAS_API_KEY` and/or `ZAI_API_KEY` (via config file or environment variables).
-
-Vendored from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
 #### [dcg](./pi-extensions/dcg.ts)
 
