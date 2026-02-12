@@ -1,3 +1,21 @@
+/**
+ * ZAI Custom Provider Extension
+ *
+ * Provides access to GLM models through Cerebras and ZAI endpoints.
+ *
+ * API Keys (in order of precedence):
+ *   1. Config file (~/.pi/agent/zai.json):
+ *      {
+ *        "cerebrasApiKey": "your-cerebras-key",
+ *        "zaiApiKey": "your-zai-key"
+ *      }
+ *   2. Environment variables: CEREBRAS_API_KEY, ZAI_API_KEY
+ *
+ * Models are only registered when their provider's API key is available.
+ *
+ * Vendored from vedang/agents with modifications.
+ */
+
 import {
   type Api,
   type AssistantMessageEventStream,

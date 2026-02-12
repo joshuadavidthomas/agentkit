@@ -54,6 +54,20 @@ When the assistant asks multiple questions, `/answer` (or `Ctrl+.`) extracts the
 
 Integrates [Beans](https://github.com/hmans/beans) with pi by running `beans prime` in a project using Beans to track issues and injecting its output into the system prompt at session start and after compaction.
 
+#### [custom-provider-cloudflare-ai-gateway](./runtimes/pi/extensions/custom-provider-cloudflare-ai-gateway/)
+
+Custom provider that routes AI models through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/)'s OpenAI-compatible endpoint. Supports multiple upstream providers (OpenAI, Anthropic, Workers AI) through a unified interface with Cloudflare's observability, caching, and rate limiting.
+
+Model definitions are sourced from [models.dev](https://models.dev) (65+ models), cached locally at `~/.cache/pi/cloudflare-ai-gateway-models.json`, and refreshed hourly in the background. An embedded snapshot provides offline/first-run support. Configure via `~/.pi/agent/cloudflare-ai-gateway.json` with your account ID and gateway name.
+
+#### [custom-provider-zai](./runtimes/pi/extensions/custom-provider-zai/)
+
+Custom provider for [ZAI](https://z.ai/) GLM models through Cerebras and ZAI endpoints. Supports GLM-4.7 (via Cerebras for fast inference, or via ZAI with reasoning), and GLM-5 (via ZAI with reasoning).
+
+Routes requests to the correct backend based on model ID, with per-request sampling knobs (temperature, top_p, clear_thinking) configurable via environment variables or options. Requires `CEREBRAS_API_KEY` and/or `ZAI_API_KEY` (via config file or environment variables).
+
+Vendored from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
+
 #### [dcg](./runtimes/pi/extensions/dcg.ts)
 
 Bash tool override that integrates with [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard).

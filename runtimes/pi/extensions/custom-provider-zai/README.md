@@ -20,29 +20,44 @@ Model availability is determined strictly by which provider API keys are present
 
 ## Configuration
 
-### Environment Variables
+### API Keys
 
-| Variable                       | Description                         | Default |
-|--------------------------------|-------------------------------------|---------|
-| `CEREBRAS_API_KEY`             | Required for Cerebras-hosted models | -       |
-| `ZAI_API_KEY`                  | Required for ZAI-hosted models      | -       |
-| `PI_TEMPERATURE`               | Generic temperature                 | 0.9     |
-| `PI_ZAI_CUSTOM_TOP_P`          | Top-p sampling parameter            | 0.95    |
-| `PI_ZAI_CUSTOM_CLEAR_THINKING` | Clear thinking output               | false   |
+API keys can be set via a JSON config file or environment variables. The config file takes precedence.
 
-### Runtime Options
+**Config file** (`~/.pi/agent/zai.json`):
 
-When invoking the provider, you can pass these options:
+```json
+{
+  "cerebrasApiKey": "your-cerebras-key",
+  "zaiApiKey": "your-zai-key"
+}
+```
 
-- `temperature`: Sampling temperature (0.0-2.0)
-- `top_p`: Nucleus sampling parameter
-- `clear_thinking`: Whether to clear thinking output
+**Environment variables** (fallback):
+
+| Variable           | Description                         |
+|--------------------|-------------------------------------|
+| `CEREBRAS_API_KEY` | Required for Cerebras-hosted models |
+| `ZAI_API_KEY`      | Required for ZAI-hosted models      |
+
+### Sampling Knobs
+
+| Variable                       | Description              | Default |
+|--------------------------------|--------------------------|---------|
+| `PI_TEMPERATURE`               | Generic temperature      | 0.9     |
+| `PI_ZAI_CUSTOM_TOP_P`          | Top-p sampling parameter | 0.95    |
+| `PI_ZAI_CUSTOM_CLEAR_THINKING` | Clear thinking output    | false   |
+
+These can also be passed as runtime options: `temperature`, `top_p` / `topP`, `clear_thinking` / `clearThinking`.
 
 ## Usage
 
 The provider is registered as `zai-custom`.
 
 ```bash
+# Option 1: Config file (create ~/.pi/agent/zai.json as above)
+
+# Option 2: Environment variables
 export CEREBRAS_API_KEY="your-cerebras-key"
 export ZAI_API_KEY="your-zai-key"
 ```

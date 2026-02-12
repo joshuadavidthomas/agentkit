@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
+
 export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
 export const ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 export const DEFAULT_TEMPERATURE = 0.9;
@@ -7,6 +11,48 @@ export const DEFAULT_CLEAR_THINKING = false;
 const API_KEY_ENV_PLACEHOLDER = "CEREBRAS_API_KEY or ZAI_API_KEY";
 
 type ZaiModelProvider = "cerebras" | "zai";
+
+// Config file support
+interface ZaiConfig {
+  cerebrasApiKey?: string;
+  zaiApiKey?: string;
+}
+
+function getConfigPath(): string {
+  const agentDir = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  return join(agentDir, "zai.json");
+}
+
+function loadConfig(): ZaiConfig | null {
+  const configPath = getConfigPath();
+
+  if (!existsSync(configPath)) {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(configPath, "utf-8");
+    return JSON.parse(content) as ZaiConfig;
+  } catch (error) {
+    console.warn(
+      `[ZAI] Failed to load config from ${configPath}: ${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
+}
+
+let _cachedConfig: ZaiConfig | null | undefined;
+function getConfig(): ZaiConfig | null {
+  if (_cachedConfig === undefined) {
+    _cachedConfig = loadConfig();
+  }
+  return _cachedConfig;
+}
+
+const CONFIG_API_KEY_FIELD: Record<ZaiModelProvider, keyof ZaiConfig> = {
+  cerebras: "cerebrasApiKey",
+  zai: "zaiApiKey",
+};
 
 export interface ZaiRuntimeSettings {
   temperature: number;
@@ -273,6 +319,12 @@ function resolveProviderApiKey(
   env: Record<string, string | undefined>,
   provider: ZaiModelProvider,
 ): string | undefined {
+  // Config file takes precedence over environment variables
+  const config = getConfig();
+  const configField = CONFIG_API_KEY_FIELD[provider];
+  const configKey = config ? parseOptionalString(config[configField]) : undefined;
+  if (configKey) return configKey;
+
   const runtimeConfig = PROVIDER_RUNTIME_CONFIG[provider];
   return parseOptionalString(env[runtimeConfig.apiKeyEnvKey]);
 }
