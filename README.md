@@ -38,7 +38,7 @@ Finds similar implementations, usage examples, or existing patterns to model aft
 
 Web research specialist for finding modern information not in training data. Searches strategically, fetches content, synthesizes findings with citations.
 
-## [Pi Extensions](./pi-extensions/)
+## Pi Extensions
 
 Extensions for [pi](https://shittycodingagent.ai/), a TUI coding agent.
 
@@ -251,9 +251,9 @@ Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
-pi-subagents pi extension vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
+Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
-Diátaxis reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). Source repository: [evildmp/diataxis-documentation-framework](https://github.com/evildmp/diataxis-documentation-framework).
+Diátaxis reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) ([Repo](https://github.com/evildmp/diataxis-documentation-framework)) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). 
 
 Salsa skills reference code and patterns from:
 
@@ -268,7 +268,7 @@ Salsa skills reference code and patterns from:
 - [stc](https://github.com/dudykr/stc) (Apache-2.0)
 - [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
 
-Rust Ecosystem skills reference and adapt guidance from several sources, including:
+Rust skills reference and adapt guidance from several sources, including:
 
 - [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) by Alice Ryhl
 - [Aiming for correctness with types](https://fasterthanli.me/articles/aiming-for-correctness-with-types) by Amos Wenger (fasterthanlime)
@@ -290,7 +290,7 @@ Rust Ecosystem skills reference and adapt guidance from several sources, includi
 - [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
-custom-provider-zai pi extension vendored from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
+Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
 ## License
 
