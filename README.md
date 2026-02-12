@@ -278,6 +278,8 @@ Rust Ecosystem skills reference and adapt guidance from several sources in [refe
 - [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
+custom-provider-zai pi extension vendored from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
+
 ## License
 
 agentkit is licensed under the MIT license. See the [`LICENSE`](LICENSE) file for more information.
