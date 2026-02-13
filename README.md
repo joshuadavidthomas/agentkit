@@ -202,6 +202,14 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 
 Methodical approach to researching unfamiliar codebases using specialized subagents.
 
+### [Svelte 5](./skills/svelte5/SKILL.md)
+
+Svelte 5 reactivity and state management. Covers runes (`$state`, `$derived`, `$effect`, `$props`, `$bindable`), class-based state (the idiomatic replacement for `writable`/`readable` stores), context API, snippets vs slots, and Svelte 4→5 migration.
+
+### [SvelteKit](./skills/sveltekit/SKILL.md)
+
+SvelteKit application patterns. Covers routing and layouts, data loading (load functions, form actions), authentication (route groups, layout protection, hooks), form validation (server-first with Standard Schema libraries), and remote functions (`command()`, `query()`, `form()`).
+
 ### Rust
 
 A suite of skills encoding idiomatic defaults and "think in Rust" principles for AI agents. These skills go beyond syntax to provide judgment on type-driven design, ownership strategies, and ecosystem-standard patterns.
@@ -342,6 +350,13 @@ Jujutsu (jj) skills reference and adapt guidance from:
 - [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
 - [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
 - [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
+
+Svelte 5 and SvelteKit skills reference and adapt guidance from:
+
+- [svelte-claude-skills](https://github.com/spences10/svelte-claude-skills) by Scott Spence (MIT)
+- [Svelte documentation](https://svelte.dev/docs) (MIT)
+- [Modern SvelteKit Tutorial](https://github.com/stolinski/Modern-Svelte-Kit-Tutorial) by Scott Tolinski
+- [Svelte Stores Streams Effect](https://github.com/bmdavis419/Svelte-Stores-Streams-Effect) by Ben Davis ([video](https://www.youtube.com/watch?v=kMBDsyozllk))
 
 Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
