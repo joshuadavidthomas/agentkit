@@ -47,6 +47,7 @@ const VCS_STATE = {
   EMPTY: "∅",
   DIVERGENT: "↔",
   HIDDEN: "◌",
+  IMMUTABLE: "🔒",
 } as const;
 
 type VcsStateKey = keyof typeof VCS_STATE;
@@ -69,6 +70,7 @@ const VCS_STATE_ORDER: VcsStateKey[] = [
   "EMPTY",
   "DIVERGENT",
   "HIDDEN",
+  "IMMUTABLE",
 ];
 
 interface VcsStatus {
@@ -183,13 +185,15 @@ function getJjStatus(): VcsStatus | null {
     'if(divergent, "true", "false")',
     '"\\n"',
     'if(hidden, "true", "false")',
+    '"\\n"',
+    'if(immutable, "true", "false")',
   ].join(" ++ ");
 
   const logOutput = runCmd("jj", "log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", `'${template}'`);
   if (!logOutput) return null;
 
   const lines = logOutput.split("\n");
-  if (lines.length < 6) return null;
+  if (lines.length < 7) return null;
 
   const changeId = lines[0].trim();
   const bookmarks = lines[1].trim();
@@ -197,6 +201,7 @@ function getJjStatus(): VcsStatus | null {
   const isEmpty = lines[3].trim() === "true";
   const isDivergent = lines[4].trim() === "true";
   const isHidden = lines[5].trim() === "true";
+  const isImmutable = lines[6].trim() === "true";
 
   const status: VcsStatus = {
     vcs: "jj",
@@ -210,6 +215,7 @@ function getJjStatus(): VcsStatus | null {
   if (isEmpty) status.states.add("EMPTY");
   if (isDivergent) status.states.add("DIVERGENT");
   if (isHidden) status.states.add("HIDDEN");
+  if (isImmutable) status.states.add("IMMUTABLE");
 
   // File-level status from jj diff --summary
   const diffSummary = runCmd("jj", "diff", "--ignore-working-copy", "--summary");
@@ -235,7 +241,7 @@ function formatVcsStates(status: VcsStatus): string {
   for (const state of VCS_STATE_ORDER) {
     // Skip git-only states for jj, skip jj-only states for git
     if (status.vcs === "jj" && (state === "STASHED" || state === "STAGED")) continue;
-    if (status.vcs === "git" && (state === "EMPTY" || state === "DIVERGENT" || state === "HIDDEN")) continue;
+    if (status.vcs === "git" && (state === "EMPTY" || state === "DIVERGENT" || state === "HIDDEN" || state === "IMMUTABLE")) continue;
 
     if (status.states.has(state)) {
       result += VCS_STATE[state];
