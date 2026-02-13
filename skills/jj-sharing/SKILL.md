@@ -247,6 +247,28 @@ jj git push -b pr-1-refactor -b pr-2-feature
 
 When the first PR is updated, jj automatically rebases the second. Move bookmarks as needed and push again.
 
+## Independent Parallel PRs
+
+When branches are unrelated — not stacked on each other — each gets its own bookmark and PR with no ordering dependency between them. This is the natural result of branching off trunk for unrelated work (see **jj-overview**, Non-Linear Work section).
+
+**Authority:** steveklabnik jujutsu-tutorial (anonymous-branches chapter, simultaneous-edits chapter).
+
+```bash
+# Two independent features, both branched from trunk
+jj new trunk() -m "fix: correct timezone handling"
+# ... work on bugfix ...
+jj bookmark create fix-timezone -r @
+
+jj new trunk() -m "feat: add search endpoint"
+# ... work on feature ...
+jj bookmark create feat-search -r @
+
+# Push both — order doesn't matter
+jj git push -b fix-timezone -b feat-search
+```
+
+Unlike stacked PRs, merging one has no effect on the other. No rebase needed when the first lands.
+
 ## Working with Multiple Remotes
 
 Common setup: `upstream` is the shared repo, `origin` is your fork.

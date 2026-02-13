@@ -102,6 +102,61 @@ jj absorb
 jj abandon @
 ```
 
+### Non-Linear Work
+
+The linear loop above assumes each task builds on the last. When you need to start unrelated work — a bugfix, a tangential change, something that shouldn't depend on your half-done feature — branch off from a stable point instead of stacking on `@`.
+
+**Authority:** steveklabnik jujutsu-tutorial (anonymous-branches chapter, simultaneous-edits chapter).
+
+**Starting unrelated work from an earlier change:**
+
+```bash
+# You're midway through a feature on @. A bugfix needs to happen,
+# but it shouldn't sit on top of your WIP.
+
+# Create a sibling commit from trunk (doesn't move @)
+jj new trunk() --no-edit -m "fix: correct timezone handling"
+
+# Switch to the new commit to work on it
+jj edit <bugfix-change-id>
+
+# ... fix the bug ...
+jj st
+```
+
+The bugfix now lives as an independent line from trunk, not as a child of your feature work.
+
+**Returning to original work:**
+
+```bash
+# Find your branches
+jj log -r 'heads(trunk()..)'
+
+# Resume editing the feature commit directly
+jj edit <feature-change-id>
+
+# Or start a new commit on top of the feature
+jj new <feature-change-id> -m "feat: continue with validation"
+```
+
+Use `jj edit` to amend an existing commit in place. Use `jj new` to add a new commit on top of it.
+
+**Reconciling parallel lines when both are done:**
+
+```bash
+# Option A: Keep independent — push as separate PRs (most common)
+jj bookmark create fix-timezone -r <bugfix-id>
+jj bookmark create feat-validation -r <feature-id>
+jj git push -b fix-timezone -b feat-validation
+
+# Option B: Stack one on the other if there's a real dependency
+jj rebase -s <feature-id> -o <bugfix-id>
+```
+
+See **jj-sharing** for the full PR workflow including independent parallel PRs. See **jj-history** for rebase details.
+
+**Agent rule: choose the right parent.** When working through a plan or spec, don't always build on `@`. Before creating a new commit, ask whether the next piece of work depends on the current commit chain. If it doesn't — different feature area, unrelated fix, tangential cleanup — branch off trunk or the appropriate earlier commit. Flag the divergence to the user rather than silently adapting the plan's commit structure.
+
 ## Essential Commands
 
 | Task | Command |
