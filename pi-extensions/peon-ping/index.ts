@@ -661,9 +661,8 @@ export default function (pi: ExtensionAPI) {
         case "install": {
           const packsToInstall = parts.slice(1);
 
-          // Suppress event sounds while installing
           installing = true;
-          ctx.ui.setStatus("peon-ping", "fetching registry...");
+          ctx.ui.setWorkingMessage("Fetching pack registry...");
 
           try {
             const registry = await fetchRegistry();
@@ -672,14 +671,13 @@ export default function (pi: ExtensionAPI) {
             let installed = 0;
             for (let i = 0; i < names.length; i++) {
               const name = names[i];
-              ctx.ui.setStatus("peon-ping", `[${i + 1}/${names.length}] ${name}...`);
+              ctx.ui.setWorkingMessage(`Downloading pack ${i + 1}/${names.length}: ${name}...`);
               const ok = await downloadPack(name, registry, (msg) =>
-                ctx.ui.setStatus("peon-ping", `[${i + 1}/${names.length}] ${msg}`)
+                ctx.ui.setWorkingMessage(`[${i + 1}/${names.length}] ${msg}`)
               );
               if (ok) installed++;
             }
 
-            // Set default active pack if needed
             if (installed > 0) {
               config = loadConfig();
               if (!listPacks().find((p) => p.name === config.active_pack)) {
@@ -694,7 +692,7 @@ export default function (pi: ExtensionAPI) {
             );
           } finally {
             installing = false;
-            ctx.ui.setStatus("peon-ping", undefined);
+            ctx.ui.setWorkingMessage();
           }
           break;
         }
