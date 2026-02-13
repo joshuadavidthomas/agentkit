@@ -6,7 +6,7 @@ description: >-
   It will research deeply to figure out and attempt to answer your questions! If you aren't
   immediately satisfied you can get your money back! (Not really - but you can re-run
   web-searcher with an altered prompt in the event you're not satisfied the first time)
-model: openai/gpt-5.1-codex
+model: anthropic/claude-sonnet-4-5
 temperature: 0.4
 
 opencode:

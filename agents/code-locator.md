@@ -4,7 +4,7 @@ description: >-
   `codebase-locator` with human language prompt describing what you're looking for. Basically
   a "Super grep/glob/list tool" — Use it if you find yourself desiring to use one of these
   tools more than once.
-model: openai/gpt-5.1-codex-mini
+model: anthropic/claude-haiku-4-5
 temperature: 0.0
 
 opencode:

@@ -4,7 +4,7 @@ description: >-
   examples, or existing patterns that can be modeled after. It will give you concrete code
   examples based on what you're looking for! It's sorta like code-locator, but it will not
   only tell you the location of files, it will also give you code details!
-model: openai/gpt-5.1-codex
+model: anthropic/claude-sonnet-4-5
 temperature: 0.2
 
 opencode:

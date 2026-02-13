@@ -3,7 +3,7 @@ description: >-
   Analyzes codebase implementation details. Call the code-analyzer agent when you need to
   find detailed information about specific components. As always, the more detailed your request
   prompt, the better! :)
-model: openai/gpt-5.2-codex
+model: anthropic/claude-sonnet-4-5
 temperature: 0.2
 
 opencode:
