@@ -2,6 +2,11 @@
 
 Plan for a family of jj skills following the same patterns as the existing `rust-*` and `salsa-*` skill families.
 
+## Workflow Notes
+
+- **Commit directly to `main`** — no feature branches needed for this work.
+- **Update the root `README.md` with each skill** — add the skill to the jj table in the Skills section and any new attributions to the Acknowledgements section.
+
 ## How to Use This Plan
 
 Before writing any skill, load these two skills for guidance:
