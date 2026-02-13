@@ -122,6 +122,21 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
 
+#### [peon-ping](./pi-extensions/peon-ping/)
+
+Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-ping) / OpenPeon sound packs. Plays themed audio clips (Warcraft III Peon, GLaDOS, Duke Nukem, StarCraft, and more) on lifecycle events:
+
+| Event | Sound category |
+|-------|---------------|
+| Session start | `session.start` — "Ready to work?" |
+| Agent starts working | `task.acknowledge` — "Work, work." |
+| Rapid prompts (≥3 in 10s) | `user.spam` — annoyed voice line |
+| Agent finishes | `task.complete` — completion sound + desktop notification |
+
+`/peon` opens a settings panel to toggle sounds, switch packs, adjust volume, and enable/disable individual categories. Browsing packs previews each one as you scroll. `/peon install` downloads the default 10 packs from the [peon-ping registry](https://peonping.github.io/registry/).
+
+Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
+
 #### [ralph](./pi-extensions/ralph/)
 
 **Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
@@ -327,6 +342,8 @@ Jujutsu (jj) skills reference and adapt guidance from:
 - [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
 - [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
 - [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
+
+Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
 ## License
 
