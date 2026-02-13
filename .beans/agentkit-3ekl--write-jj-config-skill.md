@@ -1,10 +1,11 @@
 ---
 # agentkit-3ekl
 title: Write jj-config skill
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-02-13T17:12:56Z
-updated_at: 2026-02-13T17:12:56Z
+updated_at: 2026-02-13T17:19:11Z
 ---
 
 Write the jj-config skill (skill #6 in the jj skill family plan). This is the final skill in the jj family, covering jj configuration and customization.
