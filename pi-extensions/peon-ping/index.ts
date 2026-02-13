@@ -4,20 +4,21 @@
  * Plays themed audio clips on lifecycle events (session start, task ack,
  * task complete, permission needed). Uses peon-ping / OpenPeon sound packs.
  *
- * Commands:
- *   /peon toggle          — pause/resume sounds
- *   /peon status          — show current state
- *   /peon pack list       — list installed packs
- *   /peon pack use <name> — switch active pack
- *   /peon pack next       — cycle to next pack
- *   /peon volume <0-100>  — set volume (0-100)
- *   /peon preview [cat]   — preview sounds from a category
- *   /peon install         — download default packs from registry
+ * /peon opens a settings panel. /peon install downloads packs.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, keyHint } from "@mariozechner/pi-coding-agent";
-import { CancellableLoader, Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { DynamicBorder, getSettingsListTheme, keyHint } from "@mariozechner/pi-coding-agent";
+import {
+  CancellableLoader,
+  Container,
+  type Component,
+  type SettingItem,
+  SettingsList,
+  SelectList,
+  Spacer,
+  Text,
+} from "@mariozechner/pi-tui";
 import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -61,7 +62,6 @@ const PACKS_DIR = join(DATA_DIR, "packs");
 const CONFIG_PATH = join(DATA_DIR, "config.json");
 const STATE_PATH = join(DATA_DIR, "state.json");
 
-// Also check legacy peon-ping location
 const LEGACY_PACKS = join(homedir(), ".claude", "hooks", "peon-ping", "packs");
 
 // Defaults
@@ -91,20 +91,28 @@ const DEFAULT_STATE: PeonState = {
   session_start_time: 0,
 };
 
+// Category display names
+
+const CATEGORY_LABELS: Record<string, string> = {
+  "session.start": "Session start",
+  "task.acknowledge": "Task acknowledge",
+  "task.complete": "Task complete",
+  "task.error": "Task error",
+  "input.required": "Input required",
+  "resource.limit": "Resource limit",
+  "user.spam": "Rapid prompt spam",
+};
+
+// Volume steps for cycling
+
+const VOLUME_STEPS = ["10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"];
+
 // Registry
 
 const REGISTRY_URL = "https://peonping.github.io/registry/index.json";
 const DEFAULT_PACK_NAMES = [
-  "peon",
-  "peasant",
-  "glados",
-  "sc_kerrigan",
-  "sc_battlecruiser",
-  "ra2_kirov",
-  "dota2_axe",
-  "duke_nukem",
-  "tf2_engineer",
-  "hd2_helldiver",
+  "peon", "peasant", "glados", "sc_kerrigan", "sc_battlecruiser",
+  "ra2_kirov", "dota2_axe", "duke_nukem", "tf2_engineer", "hd2_helldiver",
 ];
 const FALLBACK_REPO = "PeonPing/og-packs";
 const FALLBACK_REF = "v1.1.0";
@@ -303,44 +311,38 @@ function playSound(file: string, volume: number): void {
       switch (player) {
         case "pw-play":
           child = spawn("pw-play", ["--volume", String(volume), file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
         case "paplay": {
           const paVol = Math.max(0, Math.min(65536, Math.round(volume * 65536)));
           child = spawn("paplay", [`--volume=${paVol}`, file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
         }
         case "ffplay": {
           const ffVol = Math.max(0, Math.min(100, Math.round(volume * 100)));
           child = spawn("ffplay", ["-nodisp", "-autoexit", "-volume", String(ffVol), file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
         }
         case "mpv": {
           const mpvVol = Math.max(0, Math.min(100, Math.round(volume * 100)));
           child = spawn("mpv", ["--no-video", `--volume=${mpvVol}`, file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
         }
         case "play":
           child = spawn("play", ["-v", String(volume), file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
         case "aplay":
           child = spawn("aplay", ["-q", file], {
-            stdio: "ignore",
-            detached: true,
+            stdio: "ignore", detached: true,
           });
           break;
       }
@@ -375,7 +377,7 @@ function playCategorySound(category: string, config: PeonConfig, state: PeonStat
   }
 }
 
-// Async pack installation (non-blocking)
+// Async pack installation
 
 interface RegistryPack {
   name: string;
@@ -459,7 +461,6 @@ async function downloadPack(
   const filenames = Array.from(seenFiles);
   let downloaded = 0;
 
-  // Download in batches of 5 to avoid hammering
   for (let i = 0; i < filenames.length; i += 5) {
     const batch = filenames.slice(i, i + 5);
     const results = await Promise.all(
@@ -472,6 +473,43 @@ async function downloadPack(
   return downloaded > 0;
 }
 
+// Pack picker submenu component
+
+function createPackPickerSubmenu(
+  currentPack: string,
+  packs: { name: string; displayName: string }[],
+  theme: any,
+  onSelect: (name: string) => void,
+  onCancel: () => void,
+): Component {
+  const items = packs.map((p) => ({
+    value: p.name,
+    label: `${p.name === currentPack ? "▶ " : "  "}${p.displayName}`,
+    description: p.name,
+  }));
+
+  const list = new SelectList(items, Math.min(items.length, 12), {
+    selectedPrefix: (t: string) => theme.fg("accent", t),
+    selectedText: (t: string) => theme.fg("accent", t),
+    description: (t: string) => theme.fg("dim", t),
+    scrollInfo: (t: string) => theme.fg("dim", t),
+    noMatch: (t: string) => theme.fg("warning", t),
+  });
+
+  list.onSelect = (item) => onSelect(item.value);
+  list.onCancel = () => onCancel();
+
+  // Pre-select current pack
+  const idx = packs.findIndex((p) => p.name === currentPack);
+  if (idx >= 0) list.setSelectedIndex(idx);
+
+  return {
+    render(width: number) { return list.render(width); },
+    invalidate() { list.invalidate(); },
+    handleInput(data: string) { list.handleInput(data); },
+  };
+}
+
 // Extension
 
 export default function (pi: ExtensionAPI) {
@@ -482,7 +520,6 @@ export default function (pi: ExtensionAPI) {
 
   const hasPacks = () => listPacks().length > 0;
 
-  // Guard: only play sounds in interactive sessions, not subagents
   const shouldPlaySounds = (ctx: { hasUI: boolean }) =>
     ctx.hasUI && !installing && hasPacks();
 
@@ -491,10 +528,7 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
 
     if (!hasPacks()) {
-      ctx.ui.notify(
-        "peon-ping: no sound packs. Run /peon install",
-        "warning"
-      );
+      ctx.ui.notify("peon-ping: no sound packs. Run /peon install", "warning");
       return;
     }
 
@@ -549,210 +583,226 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // /peon command
-  pi.registerCommand("peon", {
-    description: "Sound controls: toggle, status, pack, volume, preview, install",
-    handler: async (args, ctx) => {
-      const parts = (args || "").trim().split(/\s+/);
-      const sub = parts[0] || "status";
+  // Build settings items from current config
+  function buildSettingsItems(): SettingItem[] {
+    config = loadConfig();
+    state = loadState();
+    const packs = listPacks();
+    const activePack = packs.find((p) => p.name === config.active_pack);
 
-      switch (sub) {
-        case "toggle": {
-          state = loadState();
-          state.paused = !state.paused;
+    const items: SettingItem[] = [
+      {
+        id: "sounds",
+        label: "Sounds",
+        description: "Master toggle for all sound playback",
+        currentValue: state.paused ? "paused" : "active",
+        values: ["active", "paused"],
+      },
+      {
+        id: "pack",
+        label: "Sound pack",
+        description: `${packs.length} installed`,
+        currentValue: activePack?.displayName || config.active_pack,
+        submenu: (_current: string, done: (val?: string) => void) => {
+          if (packs.length === 0) {
+            done();
+            return { render: () => ["No packs installed"], invalidate() {}, handleInput() {} } as Component;
+          }
+          return createPackPickerSubmenu(
+            config.active_pack,
+            packs,
+            getSettingsListTheme(),
+            (name) => {
+              config.active_pack = name;
+              saveConfig(config);
+              const pack = packs.find((p) => p.name === name);
+              done(pack?.displayName || name);
+            },
+            () => done(),
+          );
+        },
+      },
+      {
+        id: "volume",
+        label: "Volume",
+        currentValue: `${Math.round(config.volume * 100)}%`,
+        values: VOLUME_STEPS,
+      },
+    ];
+
+    // Category toggles
+    for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
+      items.push({
+        id: `cat:${cat}`,
+        label: `  ${label}`,
+        currentValue: config.categories[cat] !== false ? "on" : "off",
+        values: ["on", "off"],
+      });
+    }
+
+    // Preview action
+    items.push({
+      id: "preview",
+      label: "Preview sound",
+      description: "Play a random sound from the active pack",
+      currentValue: "▶",
+      submenu: (_current: string, done: (val?: string) => void) => {
+        const sound = pickSound("session.start", config, state);
+        if (sound) {
+          playSound(sound.file, config.volume);
           saveState(state);
-          ctx.ui.notify(
-            `peon-ping: sounds ${state.paused ? "paused ⏸" : "resumed ▶"}`,
-            "info"
-          );
-          break;
         }
+        done("▶");
+        return { render: () => [], invalidate() {}, handleInput() {} } as Component;
+      },
+    });
 
-        case "status": {
-          config = loadConfig();
-          state = loadState();
-          const packs = listPacks();
-          const activePack = packs.find((p) => p.name === config.active_pack);
-          const lines = [
-            `Sounds: ${state.paused ? "paused ⏸" : "active ▶"}`,
-            `Pack: ${activePack?.displayName || config.active_pack} (${packs.length} installed)`,
-            `Volume: ${Math.round(config.volume * 100)}%`,
-            `Platform: ${PLATFORM}`,
-          ];
-          ctx.ui.notify(lines.join("\n"), "info");
-          break;
-        }
+    return items;
+  }
 
-        case "pack": {
-          const packSub = parts[1] || "list";
+  // /peon — opens settings panel
+  pi.registerCommand("peon", {
+    description: "peon-ping sound settings",
+    handler: async (args, ctx) => {
+      const sub = (args || "").trim();
 
-          if (packSub === "list") {
-            config = loadConfig();
-            const packs = listPacks();
-            if (packs.length === 0) {
-              ctx.ui.notify("No packs installed. Run /peon install", "warning");
-              break;
-            }
-            const lines = packs.map(
-              (p) => `${p.name === config.active_pack ? "▶ " : "  "}${p.name} — ${p.displayName}`
-            );
-            ctx.ui.notify(lines.join("\n"), "info");
-          } else if (packSub === "use") {
-            const packName = parts[2];
-            if (!packName) {
-              ctx.ui.notify("Usage: /peon pack use <name>", "warning");
-              break;
-            }
-            const packs = listPacks();
-            const pack = packs.find((p) => p.name === packName);
-            if (!pack) {
-              ctx.ui.notify(`Pack "${packName}" not found`, "error");
-              break;
-            }
-            config = loadConfig();
-            config.active_pack = packName;
-            saveConfig(config);
-            ctx.ui.notify(`Switched to ${pack.displayName}`, "info");
-          } else if (packSub === "next") {
-            config = loadConfig();
-            const packs = listPacks();
-            if (packs.length === 0) {
-              ctx.ui.notify("No packs installed", "warning");
-              break;
-            }
-            const idx = packs.findIndex((p) => p.name === config.active_pack);
-            const next = packs[(idx + 1) % packs.length];
-            config.active_pack = next.name;
-            saveConfig(config);
-            ctx.ui.notify(`Switched to ${next.displayName}`, "info");
-          } else {
-            ctx.ui.notify("Usage: /peon pack <list|use|next>", "warning");
-          }
-          break;
-        }
-
-        case "volume": {
-          const val = parseInt(parts[1], 10);
-          if (isNaN(val) || val < 0 || val > 100) {
-            config = loadConfig();
-            ctx.ui.notify(`Volume: ${Math.round(config.volume * 100)}%. Usage: /peon volume <0-100>`, "info");
-            break;
-          }
-          config = loadConfig();
-          config.volume = val / 100;
-          saveConfig(config);
-          ctx.ui.notify(`Volume set to ${val}%`, "info");
-          break;
-        }
-
-        case "preview": {
-          const category = parts[1] || "session.start";
-          config = loadConfig();
-          state = loadState();
-          const sound = pickSound(category, config, state);
-          if (sound) {
-            playSound(sound.file, config.volume);
-            saveState(state);
-            ctx.ui.notify(`▶ ${sound.label} [${category}]`, "info");
-          } else {
-            ctx.ui.notify(`No sounds for category "${category}"`, "warning");
-          }
-          break;
-        }
-
-        case "install": {
-          const packsToInstall = parts.slice(1);
-
-          const result = await ctx.ui.custom<{ installed: number; total: number } | null>(
-            (tui, theme, _kb, done) => {
-              const container = new Container();
-              const borderColor = (s: string) => theme.fg("border", s);
-
-              container.addChild(new DynamicBorder(borderColor));
-
-              const loader = new CancellableLoader(
-                tui,
-                (s) => theme.fg("accent", s),
-                (s) => theme.fg("muted", s),
-                "Fetching pack registry..."
-              );
-              container.addChild(loader);
-
-              container.addChild(new Spacer(1));
-              container.addChild(new Text(keyHint("selectCancel", "cancel"), 1, 0));
-              container.addChild(new Spacer(1));
-              container.addChild(new DynamicBorder(borderColor));
-
-              loader.onAbort = () => done(null);
-
-              const doInstall = async () => {
-                installing = true;
-
-                const registry = await fetchRegistry();
-                if (loader.aborted) return;
-
-                const names = packsToInstall.length > 0 ? packsToInstall : DEFAULT_PACK_NAMES;
-
-                let installed = 0;
-                for (let i = 0; i < names.length; i++) {
-                  if (loader.aborted) break;
-
-                  const name = names[i];
-                  loader.setMessage(`[${i + 1}/${names.length}] ${name}: downloading...`);
-
-                  const ok = await downloadPack(name, registry, (msg) => {
-                    if (!loader.aborted) loader.setMessage(`[${i + 1}/${names.length}] ${msg}`);
-                  });
-                  if (ok) installed++;
-                }
-
-                if (installed > 0) {
-                  config = loadConfig();
-                  if (!listPacks().find((p) => p.name === config.active_pack)) {
-                    config.active_pack = names[0];
-                    saveConfig(config);
-                  }
-                }
-
-                done({ installed, total: names.length });
-              };
-
-              doInstall()
-                .catch(() => done(null))
-                .finally(() => { installing = false; });
-
-              return container;
-            }
-          );
-
-          if (result) {
-            ctx.ui.notify(
-              `peon-ping: installed ${result.installed}/${result.total} packs`,
-              result.installed > 0 ? "info" : "error"
-            );
-          } else {
-            ctx.ui.notify("peon-ping: install cancelled", "info");
-          }
-          break;
-        }
-
-        default:
-          ctx.ui.notify(
-            [
-              "Usage: /peon <command>",
-              "",
-              "  toggle          — pause/resume sounds",
-              "  status          — show current state",
-              "  pack list       — list installed packs",
-              "  pack use <name> — switch active pack",
-              "  pack next       — cycle to next pack",
-              "  volume <0-100>  — set volume",
-              "  preview [cat]   — preview a sound category",
-              "  install [packs] — download packs from registry",
-            ].join("\n"),
-            "info"
-          );
+      // /peon install still works as a direct command
+      if (sub === "install" || sub.startsWith("install ")) {
+        const packNames = sub.replace(/^install\s*/, "").trim().split(/\s+/).filter(Boolean);
+        await runInstall(packNames, ctx);
+        return;
       }
+
+      if (!hasPacks()) {
+        const ok = await ctx.ui.confirm(
+          "peon-ping",
+          "No sound packs installed. Download default packs now?"
+        );
+        if (ok) {
+          await runInstall([], ctx);
+        }
+        return;
+      }
+
+      // Open settings panel
+      await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+        const container = new Container();
+        container.addChild(new DynamicBorder((s: string) => s));
+
+        const items = buildSettingsItems();
+
+        const settingsList = new SettingsList(
+          items,
+          Math.min(items.length + 2, 18),
+          getSettingsListTheme(),
+          (id, newValue) => {
+            if (id === "sounds") {
+              state = loadState();
+              state.paused = newValue === "paused";
+              saveState(state);
+            } else if (id === "volume") {
+              config = loadConfig();
+              config.volume = parseInt(newValue, 10) / 100;
+              saveConfig(config);
+            } else if (id.startsWith("cat:")) {
+              const cat = id.slice(4);
+              config = loadConfig();
+              config.categories[cat] = newValue === "on";
+              saveConfig(config);
+            }
+          },
+          () => done(undefined),
+        );
+
+        container.addChild(settingsList);
+        container.addChild(new DynamicBorder((s: string) => s));
+
+        return {
+          render(width: number) { return container.render(width); },
+          invalidate() { container.invalidate(); },
+          handleInput(data: string) {
+            settingsList.handleInput?.(data);
+            tui.requestRender();
+          },
+        };
+      });
     },
   });
+
+  // Install logic extracted for reuse
+  async function runInstall(
+    packNames: string[],
+    ctx: { ui: { custom: any; notify: (msg: string, level: "info" | "warning" | "error") => void } }
+  ) {
+    const result: { installed: number; total: number } | null = await ctx.ui.custom(
+      (tui: any, theme: any, _kb: any, done: (r: { installed: number; total: number } | null) => void) => {
+        const container = new Container();
+        const borderColor = (s: string) => theme.fg("border", s);
+
+        container.addChild(new DynamicBorder(borderColor));
+
+        const loader = new CancellableLoader(
+          tui,
+          (s: string) => theme.fg("accent", s),
+          (s: string) => theme.fg("muted", s),
+          "Fetching pack registry..."
+        );
+        container.addChild(loader);
+
+        container.addChild(new Spacer(1));
+        container.addChild(new Text(keyHint("selectCancel", "cancel"), 1, 0));
+        container.addChild(new Spacer(1));
+        container.addChild(new DynamicBorder(borderColor));
+
+        loader.onAbort = () => done(null);
+
+        const doInstall = async () => {
+          installing = true;
+
+          const registry = await fetchRegistry();
+          if (loader.aborted) return;
+
+          const names = packNames.length > 0 ? packNames : DEFAULT_PACK_NAMES;
+
+          let installed = 0;
+          for (let i = 0; i < names.length; i++) {
+            if (loader.aborted) break;
+
+            const name = names[i];
+            loader.setMessage(`[${i + 1}/${names.length}] ${name}: downloading...`);
+
+            const ok = await downloadPack(name, registry, (msg) => {
+              if (!loader.aborted) loader.setMessage(`[${i + 1}/${names.length}] ${msg}`);
+            });
+            if (ok) installed++;
+          }
+
+          if (installed > 0) {
+            config = loadConfig();
+            if (!listPacks().find((p) => p.name === config.active_pack)) {
+              config.active_pack = names[0];
+              saveConfig(config);
+            }
+          }
+
+          done({ installed, total: names.length });
+        };
+
+        doInstall()
+          .catch(() => done(null))
+          .finally(() => { installing = false; });
+
+        return container;
+      }
+    );
+
+    if (result) {
+      ctx.ui.notify(
+        `peon-ping: installed ${result.installed}/${result.total} packs`,
+        result.installed > 0 ? "info" : "error"
+      );
+    } else {
+      ctx.ui.notify("peon-ping: install cancelled", "info");
+    }
+  }
 }
