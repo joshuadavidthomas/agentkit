@@ -478,7 +478,7 @@ async function downloadPack(
 function createPackPickerSubmenu(
   currentPack: string,
   packs: { name: string; displayName: string }[],
-  theme: any,
+  slTheme: ReturnType<typeof getSettingsListTheme>,
   onSelect: (name: string) => void,
   onCancel: () => void,
 ): Component {
@@ -489,11 +489,11 @@ function createPackPickerSubmenu(
   }));
 
   const list = new SelectList(items, Math.min(items.length, 12), {
-    selectedPrefix: (t: string) => theme.fg("accent", t),
-    selectedText: (t: string) => theme.fg("accent", t),
-    description: (t: string) => theme.fg("dim", t),
-    scrollInfo: (t: string) => theme.fg("dim", t),
-    noMatch: (t: string) => theme.fg("warning", t),
+    selectedPrefix: (t: string) => slTheme.label(t, true),
+    selectedText: (t: string) => slTheme.label(t, true),
+    description: slTheme.description,
+    scrollInfo: slTheme.hint,
+    noMatch: (t: string) => slTheme.label(t, false),
   });
 
   list.onSelect = (item) => onSelect(item.value);
@@ -634,7 +634,7 @@ export default function (pi: ExtensionAPI) {
     for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
       items.push({
         id: `cat:${cat}`,
-        label: `  ${label}`,
+        label: label,
         currentValue: config.categories[cat] !== false ? "on" : "off",
         values: ["on", "off"],
       });
