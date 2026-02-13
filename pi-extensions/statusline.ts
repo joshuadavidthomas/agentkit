@@ -362,7 +362,7 @@ export default function (pi: ExtensionAPI) {
           // VCS status
           const vcsStatus = getVcsStatus();
           if (vcsStatus) {
-            const vcsIcon = vcsStatus.vcs === "jj" ? "" : "";
+            const vcsIcon = "";
             let vcsPart = theme.fg("dim", "on ") +
               theme.fg("muted", theme.bold(`${vcsIcon} ${vcsStatus.identifier}`));
 
