@@ -1,10 +1,11 @@
 ---
 # agentkit-yh3d
 title: Write jj-workspaces skill
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-02-13T17:07:20Z
-updated_at: 2026-02-13T17:07:20Z
+updated_at: 2026-02-13T17:11:59Z
 ---
 
 Write the jj-workspaces skill (#5 in JJ_SKILL_PLAN.md). Includes SKILL.md, README.md, references/parallel-agents.md, and root README.md updates (skills table + acknowledgements).
