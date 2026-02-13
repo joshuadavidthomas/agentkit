@@ -640,21 +640,12 @@ export default function (pi: ExtensionAPI) {
       });
     }
 
-    // Preview action
+    // Preview action — cycles a single value, triggering onChange
     items.push({
       id: "preview",
       label: "Preview sound",
-      description: "Play a random sound from the active pack",
       currentValue: "▶",
-      submenu: (_current: string, done: (val?: string) => void) => {
-        const sound = pickSound("session.start", config, state);
-        if (sound) {
-          playSound(sound.file, config.volume);
-          saveState(state);
-        }
-        done("▶");
-        return { render: () => [], invalidate() {}, handleInput() {} } as Component;
-      },
+      values: ["▶"],
     });
 
     return items;
@@ -709,6 +700,14 @@ export default function (pi: ExtensionAPI) {
               config = loadConfig();
               config.categories[cat] = newValue === "on";
               saveConfig(config);
+            } else if (id === "preview") {
+              config = loadConfig();
+              state = loadState();
+              const sound = pickSound("session.start", config, state);
+              if (sound) {
+                playSound(sound.file, config.volume);
+                saveState(state);
+              }
             }
           },
           () => done(undefined),
