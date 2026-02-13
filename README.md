@@ -180,6 +180,7 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 | [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
 | [jj-sharing](./skills/jj-sharing/SKILL.md) | Bookmarks, remotes, pushing, pulling, and GitHub/GitLab PR workflows — the bookmark-before-push pattern, stacked PRs, colocated repos |
 | [jj-history](./skills/jj-history/SKILL.md) | History rewriting and investigation — squashing, absorbing, rebasing, splitting commits, resolving conflicts, investigating history, cleanup and verification |
+| [jj-workspaces](./skills/jj-workspaces/SKILL.md) | Workspaces for parallel agents — isolated working copies, agent assignment, monitoring, stale workspace handling, conflict mitigation, and cleanup |
 
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 

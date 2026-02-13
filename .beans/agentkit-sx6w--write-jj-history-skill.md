@@ -1,10 +1,11 @@
 ---
 # agentkit-sx6w
 title: Write jj-history skill
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-02-13T17:01:06Z
-updated_at: 2026-02-13T17:01:06Z
+updated_at: 2026-02-13T17:04:35Z
 ---
 
 Write the jj-history skill (skill #4 in the jj skill family). Covers history rewriting and investigation: squash, absorb, rebase, splitting commits (agent-safe approach), conflict resolution, investigating history (show, annotate, evolog, diff), abandoning commits, and verification after major rewrites.
@@ -18,4 +19,4 @@ Write the jj-history skill (skill #4 in the jj skill family). Covers history rew
 - [x] Update root `README.md` — add jj-history to skills table
 - [x] Update root `README.md` — add any new sources to acknowledgements
 - [x] Update `JJ_SKILL_PLAN.md` — mark jj-history as written
-- [ ] Commit all files
+- [x] Commit all files
