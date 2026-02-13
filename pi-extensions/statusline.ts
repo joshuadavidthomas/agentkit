@@ -2,13 +2,18 @@
  * Starship-style Statusline Extension
  *
  * Custom footer with:
- * - Line 1: Model info, context %, duration, cwd, git branch + status (Starship-style)
+ * - Line 1: Model info, context %, duration, cwd, VCS status (Starship-style)
  * - Line 2: Cost, token stats
+ *
+ * Supports both git and jj (Jujutsu) version control systems.
+ * In colocated repos (.jj/ + .git/), jj takes priority.
  */
 
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 
 const PROVIDER_MAP = {
@@ -17,8 +22,11 @@ const PROVIDER_MAP = {
   "openai-codex": "openai",
 } as const;
 
-// Git status symbols following Starship format
-const GIT_STATE = {
+// VCS types
+type VcsType = "git" | "jj";
+
+// Shared VCS state flags
+const VCS_STATE = {
   CONFLICTED: "=",
   STASHED: "$",
   DELETED: "✘",
@@ -26,16 +34,19 @@ const GIT_STATE = {
   MODIFIED: "!",
   STAGED: "+",
   UNTRACKED: "?",
+  EMPTY: "∅",
 } as const;
 
-const GIT_AHEAD_BEHIND = {
+type VcsStateKey = keyof typeof VCS_STATE;
+
+const VCS_AHEAD_BEHIND = {
   DIVERGED: "⇕",
   AHEAD: "⇡",
   BEHIND: "⇣",
 } as const;
 
-// Order for displaying git state symbols (Starship order)
-const GIT_STATE_ORDER = [
+// Display order for state symbols (Starship order, with EMPTY at end)
+const VCS_STATE_ORDER: VcsStateKey[] = [
   "CONFLICTED",
   "STASHED",
   "DELETED",
@@ -43,21 +54,24 @@ const GIT_STATE_ORDER = [
   "MODIFIED",
   "STAGED",
   "UNTRACKED",
-] as const;
+  "EMPTY",
+];
 
-interface GitStatus {
-  branch: string | null;
-  aheadBehind: (typeof GIT_AHEAD_BEHIND)[keyof typeof GIT_AHEAD_BEHIND] | null;
-  states: Set<keyof typeof GIT_STATE>;
+interface VcsStatus {
+  vcs: VcsType;
+  identifier: string;              // git: branch name, jj: short change ID
+  label?: string;                  // jj: bookmark name if present
+  aheadBehind: (typeof VCS_AHEAD_BEHIND)[keyof typeof VCS_AHEAD_BEHIND] | null;
+  states: Set<VcsStateKey>;
 }
 
-// Cache for git status
-let gitStatusCache: { status: GitStatus | null; timestamp: number } | null = null;
-const GIT_CACHE_TTL = 2000; // 2 seconds
+// VCS status cache
+let vcsStatusCache: { status: VcsStatus | null; timestamp: number } | null = null;
+const VCS_CACHE_TTL = 2000; // 2 seconds
 
-function runGit(...args: string[]): string | null {
+function runCmd(cmd: string, ...args: string[]): string | null {
   try {
-    const result = execSync(["git", ...args].join(" "), {
+    const result = execSync([cmd, ...args].join(" "), {
       encoding: "utf8",
       timeout: 2000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -68,95 +82,167 @@ function runGit(...args: string[]): string | null {
   }
 }
 
-function getGitStatus(): GitStatus | null {
-  // Check cache
-  if (gitStatusCache && Date.now() - gitStatusCache.timestamp < GIT_CACHE_TTL) {
-    return gitStatusCache.status;
-  }
+// VCS detection
 
-  // Check if we're in a git repo
-  if (!runGit("rev-parse", "--git-dir")) {
-    gitStatusCache = { status: null, timestamp: Date.now() };
-    return null;
-  }
+function detectVcs(): VcsType | null {
+  // .jj/ means jj repo — even colocated repos should use jj
+  if (existsSync(join(process.cwd(), ".jj"))) return "jj";
+  if (runCmd("git", "rev-parse", "--git-dir")) return "git";
+  return null;
+}
 
-  const status: GitStatus = {
-    branch: null,
+// Git provider
+
+function getGitStatus(): VcsStatus | null {
+  const status: VcsStatus = {
+    vcs: "git",
+    identifier: "detached",
     aheadBehind: null,
     states: new Set(),
   };
 
-  // Get branch name
-  status.branch = runGit("branch", "--show-current") || "detached";
+  // Branch name
+  status.identifier = runCmd("git", "branch", "--show-current") || "detached";
 
-  // Get ahead/behind
-  const revList = runGit("rev-list", "--left-right", "--count", "@{upstream}...HEAD");
+  // Ahead/behind
+  const revList = runCmd("git", "rev-list", "--left-right", "--count", "@{upstream}...HEAD");
   if (revList) {
     const parts = revList.split(/\s+/);
     if (parts.length === 2) {
       const behind = parseInt(parts[0], 10);
       const ahead = parseInt(parts[1], 10);
       if (ahead > 0 && behind > 0) {
-        status.aheadBehind = GIT_AHEAD_BEHIND.DIVERGED;
+        status.aheadBehind = VCS_AHEAD_BEHIND.DIVERGED;
       } else if (ahead > 0) {
-        status.aheadBehind = GIT_AHEAD_BEHIND.AHEAD;
+        status.aheadBehind = VCS_AHEAD_BEHIND.AHEAD;
       } else if (behind > 0) {
-        status.aheadBehind = GIT_AHEAD_BEHIND.BEHIND;
+        status.aheadBehind = VCS_AHEAD_BEHIND.BEHIND;
       }
     }
   }
 
-  // Get porcelain status
-  const porcelain = runGit("status", "--porcelain=v1");
+  // Porcelain status
+  const porcelain = runCmd("git", "status", "--porcelain=v1");
   if (porcelain) {
     for (const line of porcelain.split("\n")) {
       if (line.length < 2) continue;
       const index = line[0];
       const worktree = line[1];
 
-      // Check for conflicts
       if (index === "U" || worktree === "U" || (index === "A" && worktree === "A")) {
         status.states.add("CONFLICTED");
         continue;
       }
 
-      // Index changes
       if (index === "R") status.states.add("RENAMED");
       else if (index === "D") status.states.add("DELETED");
       else if ("AMC".includes(index)) status.states.add("STAGED");
       else if (index === "?") status.states.add("UNTRACKED");
 
-      // Worktree changes
       if (worktree === "M") status.states.add("MODIFIED");
       else if (worktree === "D") status.states.add("DELETED");
     }
   }
 
-  // Check for stash
-  if (runGit("stash", "list")) {
+  // Stash
+  if (runCmd("git", "stash", "list")) {
     status.states.add("STASHED");
   }
 
-  gitStatusCache = { status, timestamp: Date.now() };
   return status;
 }
 
-function formatGitStatus(status: GitStatus): string {
-  let result = "";
+// jj provider
 
-  // States in Starship order
-  for (const state of GIT_STATE_ORDER) {
-    if (status.states.has(state)) {
-      result += GIT_STATE[state];
+function getJjStatus(): VcsStatus | null {
+  // Single template call to get change ID, bookmarks, conflict, empty status
+  const template = [
+    'change_id.shortest()',
+    '"\\n"',
+    'if(bookmarks, bookmarks.join(","), "")',
+    '"\\n"',
+    'if(conflict, "true", "false")',
+    '"\\n"',
+    'if(empty, "true", "false")',
+  ].join(" ++ ");
+
+  const logOutput = runCmd("jj", "log", "-r", "@", "--no-graph", "-T", `'${template}'`);
+  if (!logOutput) return null;
+
+  const lines = logOutput.split("\n");
+  if (lines.length < 4) return null;
+
+  const changeId = lines[0].trim();
+  const bookmarks = lines[1].trim();
+  const hasConflict = lines[2].trim() === "true";
+  const isEmpty = lines[3].trim() === "true";
+
+  const status: VcsStatus = {
+    vcs: "jj",
+    identifier: changeId,
+    label: bookmarks || undefined,
+    aheadBehind: null,
+    states: new Set(),
+  };
+
+  if (hasConflict) status.states.add("CONFLICTED");
+  if (isEmpty) status.states.add("EMPTY");
+
+  // File-level status from jj diff --summary
+  const diffSummary = runCmd("jj", "diff", "--summary");
+  if (diffSummary) {
+    for (const line of diffSummary.split("\n")) {
+      if (!line.trim()) continue;
+      const code = line[0];
+      if (code === "M") status.states.add("MODIFIED");
+      else if (code === "D") status.states.add("DELETED");
+      else if (code === "A") status.states.add("UNTRACKED"); // new files in jj
+      else if (code === "R") status.states.add("RENAMED");
     }
   }
 
-  // Ahead/behind
+  return status;
+}
+
+// Shared formatting
+
+function formatVcsStates(status: VcsStatus): string {
+  let result = "";
+
+  for (const state of VCS_STATE_ORDER) {
+    // Skip git-only states for jj, skip jj-only states for git
+    if (status.vcs === "jj" && (state === "STASHED" || state === "STAGED")) continue;
+    if (status.vcs === "git" && state === "EMPTY") continue;
+
+    if (status.states.has(state)) {
+      result += VCS_STATE[state];
+    }
+  }
+
   if (status.aheadBehind) {
     result += status.aheadBehind;
   }
 
   return result;
+}
+
+function getVcsStatus(): VcsStatus | null {
+  // Check cache
+  if (vcsStatusCache && Date.now() - vcsStatusCache.timestamp < VCS_CACHE_TTL) {
+    return vcsStatusCache.status;
+  }
+
+  const vcsType = detectVcs();
+  let status: VcsStatus | null = null;
+
+  if (vcsType === "git") {
+    status = getGitStatus();
+  } else if (vcsType === "jj") {
+    status = getJjStatus();
+  }
+
+  vcsStatusCache = { status, timestamp: Date.now() };
+  return status;
 }
 
 function formatTokens(count: number): string {
@@ -185,7 +271,6 @@ function countSycophancy(sessionManager: { getBranch(): Array<{ type: string; me
       if (block.type !== "text" || !block.text) continue;
       const text = block.text.toLowerCase();
       for (const phrase of SYCOPHANTIC_PHRASES) {
-        // Count occurrences of each phrase
         let idx = 0;
         while ((idx = text.indexOf(phrase, idx)) !== -1) {
           count++;
@@ -202,22 +287,20 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     ctx.ui.setFooter((tui, theme, footerData) => {
       const unsub = footerData.onBranchChange(() => {
-        // Invalidate git cache when branch changes
-        gitStatusCache = null;
+        vcsStatusCache = null;
         tui.requestRender();
       });
 
       return {
         dispose: unsub,
         invalidate() {
-          // Invalidate git cache on manual invalidation
-          gitStatusCache = null;
+          vcsStatusCache = null;
         },
         render(width: number): string[] {
           const state = ctx.sessionManager;
           const model = ctx.model;
 
-          // === LINE 1: Model, context, duration, cwd, git ===
+          // === LINE 1: Model, context, duration, cwd, VCS ===
           let line1Parts: string[] = [];
 
           // Model: "󰚩 claude-sonnet-4 from anthropic" (bold blue)
@@ -232,7 +315,6 @@ export default function (pi: ExtensionAPI) {
           }
 
           // Context percentage with color coding
-          // Get last assistant message for context calculation
           const branch = state.getBranch();
           const lastAssistant = branch
             .slice()
@@ -251,12 +333,11 @@ export default function (pi: ExtensionAPI) {
             const contextWindow = model?.contextWindow || 0;
             const contextPercent = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 
-            // Color based on percentage (matching your Python script thresholds)
             let contextColor: "success" | "warning" | "error" = "success";
             if (contextPercent >= 65) contextColor = "error";
             else if (contextPercent >= 40) contextColor = "warning";
 
-            const contextStr = ` ${contextPercent.toFixed(0)}%`;
+            const contextStr = ` ${contextPercent.toFixed(0)}%`;
             const contextDetail = `(${formatTokens(contextTokens)}/${formatTokens(contextWindow)})`;
 
             line1Parts.push(
@@ -270,7 +351,7 @@ export default function (pi: ExtensionAPI) {
           // Sycophancy count (bold yellow)
           const sycophancyCount = countSycophancy(state as any);
           if (sycophancyCount > 0) {
-            line1Parts.push(theme.fg("warning", theme.bold(` ${sycophancyCount}`)));
+            line1Parts.push(theme.fg("warning", theme.bold(` ${sycophancyCount}`)));
           }
 
           // Current directory (basename only, bold cyan)
@@ -278,20 +359,28 @@ export default function (pi: ExtensionAPI) {
           const cwdName = cwd.split("/").pop() || cwd;
           line1Parts.push(theme.fg("dim", "in ") + theme.fg("accent", theme.bold(cwdName)));
 
-          // Git branch (bold magenta) and status (bold red)
-          const gitStatus = getGitStatus();
-          if (gitStatus?.branch) {
-            let gitPart = theme.fg("dim", "on ") + theme.fg("muted", theme.bold(` ${gitStatus.branch}`));
-            const statusStr = formatGitStatus(gitStatus);
-            if (statusStr) {
-              gitPart += " " + theme.fg("error", theme.bold(`[${statusStr}]`));
+          // VCS status
+          const vcsStatus = getVcsStatus();
+          if (vcsStatus) {
+            const vcsIcon = vcsStatus.vcs === "jj" ? "" : "";
+            let vcsPart = theme.fg("dim", "on ") +
+              theme.fg("muted", theme.bold(`${vcsIcon} ${vcsStatus.identifier}`));
+
+            // jj: show bookmark label after change ID
+            if (vcsStatus.label) {
+              vcsPart += " " + theme.fg("dim", vcsStatus.label);
             }
-            line1Parts.push(gitPart);
+
+            const statusStr = formatVcsStates(vcsStatus);
+            if (statusStr) {
+              vcsPart += " " + theme.fg("error", theme.bold(`[${statusStr}]`));
+            }
+            line1Parts.push(vcsPart);
           }
 
           const line1 = line1Parts.join(" ");
 
-          // === LINE 2: Cost, tokens, model on right ===
+          // === LINE 2: Cost, tokens ===
           let totalInput = 0;
           let totalOutput = 0;
           let totalCost = 0;
@@ -305,23 +394,19 @@ export default function (pi: ExtensionAPI) {
             }
           }
 
-          // Check if using subscription (OAuth)
           const usingSubscription = model ? ctx.modelRegistry.isUsingOAuth(model) : false;
 
           const line2Parts: string[] = [];
 
-          // Cost with subscription indicator
           const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
           line2Parts.push(theme.fg("dim", costStr));
 
-          // Token stats
           if (totalInput || totalOutput) {
             line2Parts.push(theme.fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
           }
 
           const line2 = line2Parts.join(" ");
 
-          // Add extension statuses if any
           const lines = [truncateToWidth(line1, width), truncateToWidth(line2, width)];
 
           const extensionStatuses = footerData.getExtensionStatuses();
@@ -339,8 +424,8 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
-  // Invalidate git cache on turn end (files may have changed)
+  // Invalidate VCS cache on turn end (files may have changed)
   pi.on("turn_end", async () => {
-    gitStatusCache = null;
+    vcsStatusCache = null;
   });
 }
