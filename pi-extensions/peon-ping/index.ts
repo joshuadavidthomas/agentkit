@@ -16,6 +16,8 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder, keyHint } from "@mariozechner/pi-coding-agent";
+import { CancellableLoader, Container, Spacer, Text } from "@mariozechner/pi-tui";
 import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -661,38 +663,75 @@ export default function (pi: ExtensionAPI) {
         case "install": {
           const packsToInstall = parts.slice(1);
 
-          installing = true;
-          ctx.ui.setWorkingMessage("Fetching pack registry...");
+          const result = await ctx.ui.custom<{ installed: number; total: number } | null>(
+            (tui, theme, _kb, done) => {
+              const container = new Container();
+              const borderColor = (s: string) => theme.fg("border", s);
 
-          try {
-            const registry = await fetchRegistry();
-            const names = packsToInstall.length > 0 ? packsToInstall : DEFAULT_PACK_NAMES;
+              container.addChild(new DynamicBorder(borderColor));
 
-            let installed = 0;
-            for (let i = 0; i < names.length; i++) {
-              const name = names[i];
-              ctx.ui.setWorkingMessage(`Downloading pack ${i + 1}/${names.length}: ${name}...`);
-              const ok = await downloadPack(name, registry, (msg) =>
-                ctx.ui.setWorkingMessage(`[${i + 1}/${names.length}] ${msg}`)
+              const loader = new CancellableLoader(
+                tui,
+                (s) => theme.fg("accent", s),
+                (s) => theme.fg("muted", s),
+                "Fetching pack registry..."
               );
-              if (ok) installed++;
-            }
+              container.addChild(loader);
 
-            if (installed > 0) {
-              config = loadConfig();
-              if (!listPacks().find((p) => p.name === config.active_pack)) {
-                config.active_pack = names[0];
-                saveConfig(config);
-              }
-            }
+              container.addChild(new Spacer(1));
+              container.addChild(new Text(keyHint("selectCancel", "cancel"), 1, 0));
+              container.addChild(new Spacer(1));
+              container.addChild(new DynamicBorder(borderColor));
 
+              loader.onAbort = () => done(null);
+
+              const doInstall = async () => {
+                installing = true;
+
+                const registry = await fetchRegistry();
+                if (loader.aborted) return;
+
+                const names = packsToInstall.length > 0 ? packsToInstall : DEFAULT_PACK_NAMES;
+
+                let installed = 0;
+                for (let i = 0; i < names.length; i++) {
+                  if (loader.aborted) break;
+
+                  const name = names[i];
+                  loader.setMessage(`[${i + 1}/${names.length}] ${name}: downloading...`);
+
+                  const ok = await downloadPack(name, registry, (msg) => {
+                    if (!loader.aborted) loader.setMessage(`[${i + 1}/${names.length}] ${msg}`);
+                  });
+                  if (ok) installed++;
+                }
+
+                if (installed > 0) {
+                  config = loadConfig();
+                  if (!listPacks().find((p) => p.name === config.active_pack)) {
+                    config.active_pack = names[0];
+                    saveConfig(config);
+                  }
+                }
+
+                done({ installed, total: names.length });
+              };
+
+              doInstall()
+                .catch(() => done(null))
+                .finally(() => { installing = false; });
+
+              return container;
+            }
+          );
+
+          if (result) {
             ctx.ui.notify(
-              `peon-ping: installed ${installed}/${names.length} packs`,
-              installed > 0 ? "info" : "error"
+              `peon-ping: installed ${result.installed}/${result.total} packs`,
+              result.installed > 0 ? "info" : "error"
             );
-          } finally {
-            installing = false;
-            ctx.ui.setWorkingMessage();
+          } else {
+            ctx.ui.notify("peon-ping: install cancelled", "info");
           }
           break;
         }
