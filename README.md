@@ -215,6 +215,14 @@ A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incrementa
 | [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
 | [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
 
+### Jujutsu (jj)
+
+A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
+
+| Skill | Description |
+|-------|-------------|
+| [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
+
 ### [skill-authoring](./skills/skill-authoring/SKILL.md)
 
 Guide for authoring, creating, refining, or troubleshooting agent skills.
@@ -279,6 +287,16 @@ Salsa skills reference code and patterns from:
 - [rust-analyzer](https://github.com/rust-lang/rust-analyzer) (MIT OR Apache-2.0)
 - [stc](https://github.com/dudykr/stc) (Apache-2.0)
 - [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
+
+Jujutsu (jj) skills synthesize guidance from:
+
+- [Jujutsu](https://github.com/jj-vcs/jj) (Apache-2.0) — official documentation
+- [Steve Klabnik's Jujutsu Tutorial](https://github.com/steveklabnik/jujutsu-tutorial) — narrative tutorial and mental model grounding
+- [jujutsu-skill](https://github.com/danverbraganza/jujutsu-skill) by Dan Verbraganza (MIT) — agent-specific workflow patterns
+- [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC) — AI-focused workflow patterns
+- [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT) — version-aware command syntax, `JJ_CONFIG` agent configuration pattern
+- [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT) — anti-patterns and gotchas
+- [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT) — Git-to-jj mapping patterns
 
 Rust skills reference and adapt guidance from several sources, including:
 
