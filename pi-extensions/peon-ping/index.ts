@@ -18,6 +18,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { homedir, platform as osPlatform } from "node:os";
 
@@ -59,8 +60,7 @@ const CONFIG_PATH = join(DATA_DIR, "config.json");
 const STATE_PATH = join(DATA_DIR, "state.json");
 
 // Also check legacy peon-ping location
-const LEGACY_DIR = join(homedir(), ".claude", "hooks", "peon-ping");
-const LEGACY_PACKS = join(LEGACY_DIR, "packs");
+const LEGACY_PACKS = join(homedir(), ".claude", "hooks", "peon-ping", "packs");
 
 // Defaults
 
@@ -92,7 +92,7 @@ const DEFAULT_STATE: PeonState = {
 // Registry
 
 const REGISTRY_URL = "https://peonping.github.io/registry/index.json";
-const DEFAULT_PACKS = [
+const DEFAULT_PACK_NAMES = [
   "peon",
   "peasant",
   "glados",
@@ -124,13 +124,18 @@ function detectPlatform(): Platform {
   return "unknown";
 }
 
+let cachedLinuxPlayer: string | null | undefined;
+
 function detectLinuxPlayer(): string | null {
+  if (cachedLinuxPlayer !== undefined) return cachedLinuxPlayer;
   for (const cmd of ["pw-play", "paplay", "ffplay", "mpv", "play", "aplay"]) {
     try {
       execSync(`command -v ${cmd}`, { stdio: "pipe" });
+      cachedLinuxPlayer = cmd;
       return cmd;
     } catch {}
   }
+  cachedLinuxPlayer = null;
   return null;
 }
 
@@ -174,7 +179,6 @@ function saveState(state: PeonState): void {
 // Packs
 
 function getPacksDir(): string {
-  // Prefer our own packs dir, fall back to legacy Claude Code location
   if (existsSync(PACKS_DIR) && readdirSync(PACKS_DIR).length > 0) return PACKS_DIR;
   if (existsSync(LEGACY_PACKS) && readdirSync(LEGACY_PACKS).length > 0) return LEGACY_PACKS;
   return PACKS_DIR;
@@ -231,13 +235,11 @@ function pickSound(
   const sounds = catData.sounds;
   const lastFile = state.last_played[category];
 
-  // Avoid repeating the same sound
   let candidates = sounds.length > 1 ? sounds.filter((s) => s.file !== lastFile) : sounds;
   if (candidates.length === 0) candidates = sounds;
 
   const pick = candidates[Math.floor(Math.random() * candidates.length)];
 
-  // Resolve file path
   const file = pick.file.includes("/")
     ? join(packPath, pick.file)
     : join(packPath, "sounds", pick.file);
@@ -275,7 +277,6 @@ function playSound(file: string, volume: number): void {
       break;
 
     case "wsl": {
-      // WSL: use powershell.exe MediaPlayer
       const cmd = `
         Add-Type -AssemblyName PresentationCore
         $p = New-Object System.Windows.Media.MediaPlayer
@@ -372,7 +373,7 @@ function playCategorySound(category: string, config: PeonConfig, state: PeonStat
   }
 }
 
-// Pack installation
+// Async pack installation (non-blocking)
 
 interface RegistryPack {
   name: string;
@@ -387,14 +388,23 @@ interface Registry {
 
 async function fetchRegistry(): Promise<Registry | null> {
   try {
-    const result = execSync(`curl -fsSL "${REGISTRY_URL}"`, {
-      encoding: "utf8",
-      timeout: 10000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return JSON.parse(result);
+    const resp = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return null;
+    return (await resp.json()) as Registry;
   } catch {
     return null;
+  }
+}
+
+async function downloadFile(url: string, destPath: string): Promise<boolean> {
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) return false;
+    const buf = Buffer.from(await resp.arrayBuffer());
+    await writeFile(destPath, buf);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -405,9 +415,8 @@ async function downloadPack(
 ): Promise<boolean> {
   const packDir = join(PACKS_DIR, packName);
   const soundsDir = join(packDir, "sounds");
-  mkdirSync(soundsDir, { recursive: true });
+  await mkdir(soundsDir, { recursive: true });
 
-  // Find source info
   let sourceRepo = FALLBACK_REPO;
   let sourceRef = FALLBACK_REF;
   let sourcePath = packName;
@@ -423,45 +432,41 @@ async function downloadPack(
 
   const baseUrl = `https://raw.githubusercontent.com/${sourceRepo}/${sourceRef}/${sourcePath}`;
 
-  // Download manifest
-  onProgress?.(`  ${packName}: downloading manifest...`);
-  try {
-    const manifest = execSync(`curl -fsSL "${baseUrl}/openpeon.json"`, {
-      encoding: "utf8",
-      timeout: 10000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    writeFileSync(join(packDir, "openpeon.json"), manifest);
-  } catch {
-    onProgress?.(`  ${packName}: failed to download manifest`);
+  onProgress?.(`${packName}: manifest...`);
+  const manifestPath = join(packDir, "openpeon.json");
+  if (!(await downloadFile(`${baseUrl}/openpeon.json`, manifestPath))) {
+    onProgress?.(`${packName}: ✗ manifest failed`);
     return false;
   }
 
-  // Parse manifest and download sounds
-  const manifestData: PackManifest = JSON.parse(readFileSync(join(packDir, "openpeon.json"), "utf8"));
+  let manifestData: PackManifest;
+  try {
+    manifestData = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    onProgress?.(`${packName}: ✗ bad manifest`);
+    return false;
+  }
+
   const seenFiles = new Set<string>();
   for (const cat of Object.values(manifestData.categories)) {
     for (const sound of cat.sounds) {
-      const filename = basename(sound.file);
-      if (seenFiles.has(filename)) continue;
-      seenFiles.add(filename);
+      seenFiles.add(basename(sound.file));
     }
   }
 
+  const filenames = Array.from(seenFiles);
   let downloaded = 0;
-  for (const filename of Array.from(seenFiles)) {
-    try {
-      execSync(`curl -fsSL "${baseUrl}/sounds/${filename}" -o "${join(soundsDir, filename)}"`, {
-        timeout: 15000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      downloaded++;
-    } catch {
-      onProgress?.(`  ${packName}: failed to download ${filename}`);
-    }
+
+  // Download in batches of 5 to avoid hammering
+  for (let i = 0; i < filenames.length; i += 5) {
+    const batch = filenames.slice(i, i + 5);
+    const results = await Promise.all(
+      batch.map((f) => downloadFile(`${baseUrl}/sounds/${f}`, join(soundsDir, f)))
+    );
+    downloaded += results.filter(Boolean).length;
   }
 
-  onProgress?.(`  ${packName}: ${downloaded}/${seenFiles.size} sounds`);
+  onProgress?.(`${packName}: ${downloaded}/${filenames.length} sounds`);
   return downloaded > 0;
 }
 
@@ -471,14 +476,21 @@ export default function (pi: ExtensionAPI) {
   ensureDirs();
   let config = loadConfig();
   let state = loadState();
+  let installing = false;
 
   const hasPacks = () => listPacks().length > 0;
 
+  // Guard: only play sounds in interactive sessions, not subagents
+  const shouldPlaySounds = (ctx: { hasUI: boolean }) =>
+    ctx.hasUI && !installing && hasPacks();
+
   // Session start → session.start
   pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+
     if (!hasPacks()) {
       ctx.ui.notify(
-        "peon-ping: no sound packs installed. Run /peon install to download packs.",
+        "peon-ping: no sound packs. Run /peon install",
         "warning"
       );
       return;
@@ -494,13 +506,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Agent start → task.acknowledge + spam detection
-  pi.on("agent_start", async () => {
-    if (!hasPacks()) return;
+  pi.on("agent_start", async (_event, ctx) => {
+    if (!shouldPlaySounds(ctx)) return;
 
     config = loadConfig();
     state = loadState();
 
-    // Spam detection
     const now = Date.now();
     const window = config.annoyed_window_seconds * 1000;
     state.prompt_timestamps = state.prompt_timestamps.filter((t) => now - t < window);
@@ -516,23 +527,20 @@ export default function (pi: ExtensionAPI) {
 
   // Agent end → task.complete + notification
   pi.on("agent_end", async (_event, ctx) => {
-    if (!hasPacks()) return;
+    if (!shouldPlaySounds(ctx)) return;
 
     config = loadConfig();
     state = loadState();
 
-    // Debounce rapid stop events
     const now = Date.now();
     if (now - state.last_stop_time < 5000) return;
     state.last_stop_time = now;
 
-    // Suppress during session replay (within 3s of session start)
     if (now - state.session_start_time < 3000) return;
 
     saveState(state);
     playCategorySound("task.complete", config, state);
 
-    // Desktop notification
     if (config.enabled && !state.paused) {
       const project = basename(ctx.cwd);
       sendNotification(`pi · ${project}`, "Task complete");
@@ -541,7 +549,7 @@ export default function (pi: ExtensionAPI) {
 
   // /peon command
   pi.registerCommand("peon", {
-    description: "peon-ping sound controls (toggle, status, pack, volume, preview, install)",
+    description: "Sound controls: toggle, status, pack, volume, preview, install",
     handler: async (args, ctx) => {
       const parts = (args || "").trim().split(/\s+/);
       const sub = parts[0] || "status";
@@ -652,35 +660,42 @@ export default function (pi: ExtensionAPI) {
 
         case "install": {
           const packsToInstall = parts.slice(1);
-          ctx.ui.notify("Fetching pack registry...", "info");
 
-          const registry = await fetchRegistry();
-          const names =
-            packsToInstall.length > 0
-              ? packsToInstall
-              : DEFAULT_PACKS;
+          // Suppress event sounds while installing
+          installing = true;
+          ctx.ui.setStatus("peon-ping", "fetching registry...");
 
-          let installed = 0;
-          for (const name of names) {
-            const success = await downloadPack(name, registry, (msg) =>
-              ctx.ui.notify(msg, "info")
-            );
-            if (success) installed++;
-          }
+          try {
+            const registry = await fetchRegistry();
+            const names = packsToInstall.length > 0 ? packsToInstall : DEFAULT_PACK_NAMES;
 
-          if (installed > 0) {
-            // Set up default config if first install
-            config = loadConfig();
-            if (!listPacks().find((p) => p.name === config.active_pack)) {
-              config.active_pack = names[0];
-              saveConfig(config);
+            let installed = 0;
+            for (let i = 0; i < names.length; i++) {
+              const name = names[i];
+              ctx.ui.setStatus("peon-ping", `[${i + 1}/${names.length}] ${name}...`);
+              const ok = await downloadPack(name, registry, (msg) =>
+                ctx.ui.setStatus("peon-ping", `[${i + 1}/${names.length}] ${msg}`)
+              );
+              if (ok) installed++;
             }
-          }
 
-          ctx.ui.notify(
-            `Installed ${installed}/${names.length} packs. Run /peon status to verify.`,
-            installed > 0 ? "info" : "error"
-          );
+            // Set default active pack if needed
+            if (installed > 0) {
+              config = loadConfig();
+              if (!listPacks().find((p) => p.name === config.active_pack)) {
+                config.active_pack = names[0];
+                saveConfig(config);
+              }
+            }
+
+            ctx.ui.notify(
+              `peon-ping: installed ${installed}/${names.length} packs`,
+              installed > 0 ? "info" : "error"
+            );
+          } finally {
+            installing = false;
+            ctx.ui.setStatus("peon-ping", undefined);
+          }
           break;
         }
 
