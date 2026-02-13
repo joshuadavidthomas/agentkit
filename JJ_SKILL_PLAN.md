@@ -5,7 +5,9 @@ Plan for a family of jj skills following the same patterns as the existing `rust
 ## Workflow Notes
 
 - **Commit directly to `main`** — no feature branches needed for this work.
-- **Update the root `README.md` with each skill** — add the skill to the jj table in the Skills section and any new attributions to the Acknowledgements section.
+- **Update the root `README.md` with each skill** — TWO places must be updated:
+  1. **Skills section** — add the skill to the jj table
+  2. **Acknowledgements section** — if the skill introduces any new source not already listed under "Jujutsu (jj) skills synthesize guidance from:", add it there. Every source from the skill's README.md attribution must have a corresponding entry in the root README's Acknowledgements.
 
 ## How to Use This Plan
 
@@ -37,7 +39,7 @@ Use these existing skills as concrete examples of good structure:
 
 Statuses: **todo** → **written** → **reviewed**
 
-A skill isn't **written** until all three exist: SKILL.md, README.md (with attribution), and reference files.
+A skill isn't **written** until all four are done: SKILL.md, README.md (with attribution), reference files, and root README.md updates (skills table + acknowledgements).
 
 ## Source Material
 

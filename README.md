@@ -170,6 +170,15 @@ Includes:
 - Specialized guidance for app interfaces (dashboards, tools) and marketing (landing pages, creative work)
 - Technical foundations (spacing, oklch colors, depth strategies, dark mode)
 
+### Jujutsu (jj)
+
+A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
+
+| Skill | Description |
+|-------|-------------|
+| [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
+| [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
+
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
 Methodical approach to researching unfamiliar codebases using specialized subagents.
@@ -214,15 +223,6 @@ A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incrementa
 | [salsa-production-patterns](./skills/salsa-production-patterns/SKILL.md) | Graduating from prototype to production — the maturity model and scaling strategies |
 | [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
 | [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
-
-### Jujutsu (jj)
-
-A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
-
-| Skill | Description |
-|-------|-------------|
-| [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
-| [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
 
 ### [skill-authoring](./skills/skill-authoring/SKILL.md)
 
