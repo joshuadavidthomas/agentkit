@@ -33,7 +33,7 @@ Use these existing skills as concrete examples of good structure:
 | 1 | `jj-overview` | `skills/jj-overview/SKILL.md` | `skills/jj-overview/README.md` | `git-to-jj.md`, `git-experts.md`, `command-gotchas.md` | written |
 | 2 | `jj-revsets` | `skills/jj-revsets/SKILL.md` | `skills/jj-revsets/README.md` | `revsets.md`, `templates.md`, `filesets.md` | written |
 | 3 | `jj-sharing` | `skills/jj-sharing/SKILL.md` | `skills/jj-sharing/README.md` | `bookmarks.md`, `github.md`, `git-compatibility.md` | written |
-| 4 | `jj-history` | `skills/jj-history/SKILL.md` | `skills/jj-history/README.md` | `conflicts.md`, `divergence.md` | todo |
+| 4 | `jj-history` | `skills/jj-history/SKILL.md` | `skills/jj-history/README.md` | `conflicts.md`, `divergence.md` | written |
 | 5 | `jj-workspaces` | `skills/jj-workspaces/SKILL.md` | `skills/jj-workspaces/README.md` | `parallel-agents.md` | todo |
 | 6 | `jj-config` | `skills/jj-config/SKILL.md` | `skills/jj-config/README.md` | `config.md` | todo |
 

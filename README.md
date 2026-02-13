@@ -179,6 +179,7 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 | [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
 | [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
 | [jj-sharing](./skills/jj-sharing/SKILL.md) | Bookmarks, remotes, pushing, pulling, and GitHub/GitLab PR workflows — the bookmark-before-push pattern, stacked PRs, colocated repos |
+| [jj-history](./skills/jj-history/SKILL.md) | History rewriting and investigation — squashing, absorbing, rebasing, splitting commits, resolving conflicts, investigating history, cleanup and verification |
 
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
@@ -322,6 +323,7 @@ Jujutsu (jj) skills reference and adapt guidance from:
 - [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC)
 - [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT)
 - [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
+- [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
 - [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
 
 ## License
