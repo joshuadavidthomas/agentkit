@@ -7,7 +7,7 @@ Plan for a family of jj skills following the same patterns as the existing `rust
 - **Commit directly to `main`** — no feature branches needed for this work.
 - **Update the root `README.md` with each skill** — TWO places must be updated:
   1. **Skills section** — add the skill to the jj table
-  2. **Acknowledgements section** — if the skill introduces any new source not already listed under "Jujutsu (jj) skills synthesize guidance from:", add it there. Every source from the skill's README.md attribution must have a corresponding entry in the root README's Acknowledgements.
+  2. **Acknowledgements section** — append any new source to the "Jujutsu (jj) skills reference and adapt guidance from:" list. No descriptions needed, just `- [Name](url) by Author (License)`. Every source from the skill's README.md attribution must appear there.
 
 ## How to Use This Plan
 

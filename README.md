@@ -289,16 +289,6 @@ Salsa skills reference code and patterns from:
 - [stc](https://github.com/dudykr/stc) (Apache-2.0)
 - [ty](https://github.com/astral-sh/ty) / [Ruff monorepo](https://github.com/astral-sh/ruff) (MIT)
 
-Jujutsu (jj) skills synthesize guidance from:
-
-- [Jujutsu](https://github.com/jj-vcs/jj) (Apache-2.0) — official documentation
-- [Steve Klabnik's Jujutsu Tutorial](https://github.com/steveklabnik/jujutsu-tutorial) — narrative tutorial and mental model grounding
-- [jujutsu-skill](https://github.com/danverbraganza/jujutsu-skill) by Dan Verbraganza (MIT) — agent-specific workflow patterns
-- [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC) — AI-focused workflow patterns
-- [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT) — version-aware command syntax, `JJ_CONFIG` agent configuration pattern
-- [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT) — anti-patterns and gotchas
-- [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT) — Git-to-jj mapping patterns
-
 Rust skills reference and adapt guidance from several sources, including:
 
 - [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) by Alice Ryhl
@@ -322,6 +312,16 @@ Rust skills reference and adapt guidance from several sources, including:
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
 Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
+
+Jujutsu (jj) skills reference and adapt guidance from:
+
+- [Jujutsu](https://github.com/jj-vcs/jj) (Apache-2.0)
+- [Steve Klabnik's Jujutsu Tutorial](https://github.com/steveklabnik/jujutsu-tutorial)
+- [jujutsu-skill](https://github.com/danverbraganza/jujutsu-skill) by Dan Verbraganza (MIT)
+- [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC)
+- [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT)
+- [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
+- [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
 
 ## License
 
