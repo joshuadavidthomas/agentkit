@@ -46,6 +46,8 @@ const VCS_STATE = {
   STAGED: "+",
   UNTRACKED: "?",
   EMPTY: "∅",
+  DIVERGENT: "↔",
+  HIDDEN: "◌",
 } as const;
 
 type VcsStateKey = keyof typeof VCS_STATE;
@@ -66,6 +68,8 @@ const VCS_STATE_ORDER: VcsStateKey[] = [
   "STAGED",
   "UNTRACKED",
   "EMPTY",
+  "DIVERGENT",
+  "HIDDEN",
 ];
 
 interface VcsStatus {
@@ -175,18 +179,24 @@ function getJjStatus(): VcsStatus | null {
     'if(conflict, "true", "false")',
     '"\\n"',
     'if(empty, "true", "false")',
+    '"\\n"',
+    'if(divergent, "true", "false")',
+    '"\\n"',
+    'if(hidden, "true", "false")',
   ].join(" ++ ");
 
-  const logOutput = runCmd("jj", "log", "-r", "@", "--no-graph", "-T", `'${template}'`);
+  const logOutput = runCmd("jj", "log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", `'${template}'`);
   if (!logOutput) return null;
 
   const lines = logOutput.split("\n");
-  if (lines.length < 4) return null;
+  if (lines.length < 6) return null;
 
   const changeId = lines[0].trim();
   const bookmarks = lines[1].trim();
   const hasConflict = lines[2].trim() === "true";
   const isEmpty = lines[3].trim() === "true";
+  const isDivergent = lines[4].trim() === "true";
+  const isHidden = lines[5].trim() === "true";
 
   const status: VcsStatus = {
     vcs: "jj",
@@ -198,9 +208,11 @@ function getJjStatus(): VcsStatus | null {
 
   if (hasConflict) status.states.add("CONFLICTED");
   if (isEmpty) status.states.add("EMPTY");
+  if (isDivergent) status.states.add("DIVERGENT");
+  if (isHidden) status.states.add("HIDDEN");
 
   // File-level status from jj diff --summary
-  const diffSummary = runCmd("jj", "diff", "--summary");
+  const diffSummary = runCmd("jj", "diff", "--ignore-working-copy", "--summary");
   if (diffSummary) {
     for (const line of diffSummary.split("\n")) {
       if (!line.trim()) continue;
@@ -223,7 +235,7 @@ function formatVcsStates(status: VcsStatus): string {
   for (const state of VCS_STATE_ORDER) {
     // Skip git-only states for jj, skip jj-only states for git
     if (status.vcs === "jj" && (state === "STASHED" || state === "STAGED")) continue;
-    if (status.vcs === "git" && state === "EMPTY") continue;
+    if (status.vcs === "git" && (state === "EMPTY" || state === "DIVERGENT" || state === "HIDDEN")) continue;
 
     if (status.states.has(state)) {
       result += VCS_STATE[state];
