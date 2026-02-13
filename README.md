@@ -178,6 +178,7 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 |-------|-------------|
 | [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
 | [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
+| [jj-sharing](./skills/jj-sharing/SKILL.md) | Bookmarks, remotes, pushing, pulling, and GitHub/GitLab PR workflows — the bookmark-before-push pattern, stacked PRs, colocated repos |
 
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
