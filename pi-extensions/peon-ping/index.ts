@@ -497,7 +497,31 @@ function createPackPickerSubmenu(
   });
 
   list.onSelect = (item) => onSelect(item.value);
-  list.onCancel = () => onCancel();
+  list.onCancel = () => {
+    killPreviousSound();
+    onCancel();
+  };
+
+  // Preview sound from highlighted pack on cursor move
+  list.onSelectionChange = (item) => {
+    const packsDir = getPacksDir();
+    const packPath = join(packsDir, item.value);
+    const manifest = loadManifest(packPath);
+    if (!manifest) return;
+
+    const cat = manifest.categories["session.start"] || Object.values(manifest.categories)[0];
+    if (!cat?.sounds?.length) return;
+
+    const pick = cat.sounds[Math.floor(Math.random() * cat.sounds.length)];
+    const file = pick.file.includes("/")
+      ? join(packPath, pick.file)
+      : join(packPath, "sounds", pick.file);
+
+    if (existsSync(file)) {
+      const cfg = loadConfig();
+      playSound(file, cfg.volume);
+    }
+  };
 
   // Pre-select current pack
   const idx = packs.findIndex((p) => p.name === currentPack);
