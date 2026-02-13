@@ -222,6 +222,7 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 | Skill | Description |
 |-------|-------------|
 | [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
+| [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
 
 ### [skill-authoring](./skills/skill-authoring/SKILL.md)
 
