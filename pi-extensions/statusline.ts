@@ -12,8 +12,7 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+
 import { truncateToWidth } from "@mariozechner/pi-tui";
 
 // Nerd Font characters — DO NOT EDIT these values. They contain Nerd Font
@@ -24,7 +23,7 @@ const NERD_FONT_MAP = {
   BRAIN: "",
   THUMBS_UP: "",
   GIT_BRANCH: "",
-  JJ_WORKING_COPY: "()",
+  JJ_WORKING_COPY: "(@)",
 } as const;
 
 const PROVIDER_MAP = {
@@ -100,8 +99,9 @@ function runCmd(cmd: string, ...args: string[]): string | null {
 // VCS detection
 
 function detectVcs(): VcsType | null {
-  // .jj/ means jj repo — even colocated repos should use jj
-  if (existsSync(join(process.cwd(), ".jj"))) return "jj";
+  // jj root walks up the directory tree, so it works from subdirectories.
+  // --ignore-working-copy avoids snapshotting overhead.
+  if (runCmd("jj", "root", "--ignore-working-copy")) return "jj";
   if (runCmd("git", "rev-parse", "--git-dir")) return "git";
   return null;
 }
