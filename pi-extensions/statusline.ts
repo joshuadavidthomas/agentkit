@@ -16,6 +16,17 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 
+// Nerd Font characters — DO NOT EDIT these values. They contain Nerd Font
+// glyphs that may render as blank in agent environments. Only a human with
+// a Nerd Font-capable terminal should change these.
+const NERD_FONT_MAP = {
+  ROBOT: "󰚩",
+  BRAIN: "",
+  THUMBS_UP: "",
+  GIT_BRANCH: "",
+  JJ_WORKING_COPY: "()",
+} as const;
+
 const PROVIDER_MAP = {
   "github-copilot": "copilot",
   "google-antigravity": "google",
@@ -157,7 +168,7 @@ function getGitStatus(): VcsStatus | null {
 function getJjStatus(): VcsStatus | null {
   // Single template call to get change ID, bookmarks, conflict, empty status
   const template = [
-    'change_id.shortest()',
+    'change_id.short(8)',
     '"\\n"',
     'if(bookmarks, bookmarks.join(","), "")',
     '"\\n"',
@@ -305,10 +316,9 @@ export default function (pi: ExtensionAPI) {
 
           // Model: "󰚩 claude-sonnet-4 from anthropic" (bold blue)
           if (model) {
-            const modelIcon = "󰚩";
             const modelName = model.name || model.id;
             line1Parts.push(
-              theme.fg("accent", theme.bold(`${modelIcon} ${modelName.toLowerCase()}`)) +
+              theme.fg("accent", theme.bold(`${NERD_FONT_MAP["ROBOT"]} ${modelName.toLowerCase()}`)) +
               theme.fg("dim", " from ") +
               theme.fg("muted", PROVIDER_MAP[model.provider as keyof typeof PROVIDER_MAP] || model.provider)
             );
@@ -337,7 +347,7 @@ export default function (pi: ExtensionAPI) {
             if (contextPercent >= 65) contextColor = "error";
             else if (contextPercent >= 40) contextColor = "warning";
 
-            const contextStr = ` ${contextPercent.toFixed(0)}%`;
+            const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${contextPercent.toFixed(0)}%`;
             const contextDetail = `(${formatTokens(contextTokens)}/${formatTokens(contextWindow)})`;
 
             line1Parts.push(
@@ -351,7 +361,7 @@ export default function (pi: ExtensionAPI) {
           // Sycophancy count (bold yellow)
           const sycophancyCount = countSycophancy(state as any);
           if (sycophancyCount > 0) {
-            line1Parts.push(theme.fg("warning", theme.bold(` ${sycophancyCount}`)));
+            line1Parts.push(theme.fg("warning", theme.bold(`${NERD_FONT_MAP["THUMBS_UP"]} ${sycophancyCount}`)));
           }
 
           // Current directory (basename only, bold cyan)
@@ -362,7 +372,7 @@ export default function (pi: ExtensionAPI) {
           // VCS status
           const vcsStatus = getVcsStatus();
           if (vcsStatus) {
-            const vcsIcon = "";
+            const vcsIcon = vcsStatus.vcs === "jj" ? NERD_FONT_MAP["JJ_WORKING_COPY"] : NERD_FONT_MAP["GIT_BRANCH"];
             let vcsPart = theme.fg("dim", "on ") +
               theme.fg("muted", theme.bold(`${vcsIcon} ${vcsStatus.identifier}`));
 
