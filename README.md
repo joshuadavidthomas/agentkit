@@ -102,21 +102,6 @@ Whimsical working messages while the agent thinks.
 
 Replaces the default "Working..." message with randomly selected playful alternatives like "Percolating...", "Consulting the void...", "Herding pointers...", and "Reticulating splines...". Messages change on each turn for variety and delight.
 
-#### [peon-ping](./pi-extensions/peon-ping/)
-
-Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-ping) / OpenPeon sound packs. Plays themed audio clips (Warcraft III Peon, GLaDOS, Duke Nukem, StarCraft, and more) on lifecycle events:
-
-| Event | Sound category |
-|-------|---------------|
-| Session start | `session.start` — "Ready to work?" |
-| Agent starts working | `task.acknowledge` — "Work, work." |
-| Rapid prompts (≥3 in 10s) | `user.spam` — annoyed voice line |
-| Agent finishes | `task.complete` — completion sound + desktop notification |
-
-`/peon` opens a settings panel to toggle sounds, switch packs, adjust volume, and enable/disable individual categories. Browsing packs previews each one as you scroll. `/peon install` downloads the default 10 packs from the [peon-ping registry](https://peonping.github.io/registry/).
-
-Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
-
 #### [notify](./pi-extensions/notify.ts)
 
 Desktop notifications when the agent finishes. Uses a cheap model to summarize what was done ("Wrote auth.ts") or what's blocking ("Need: which database?") so you know at a glance whether to come back.
@@ -136,6 +121,21 @@ Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagen
 - **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
 
 Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
+
+#### [peon-ping](./pi-extensions/peon-ping/)
+
+Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-ping) / OpenPeon sound packs. Plays themed audio clips (Warcraft III Peon, GLaDOS, Duke Nukem, StarCraft, and more) on lifecycle events:
+
+| Event | Sound category |
+|-------|---------------|
+| Session start | `session.start` — "Ready to work?" |
+| Agent starts working | `task.acknowledge` — "Work, work." |
+| Rapid prompts (≥3 in 10s) | `user.spam` — annoyed voice line |
+| Agent finishes | `task.complete` — completion sound + desktop notification |
+
+`/peon` opens a settings panel to toggle sounds, switch packs, adjust volume, and enable/disable individual categories. Browsing packs previews each one as you scroll. `/peon install` downloads the default 10 packs from the [peon-ping registry](https://peonping.github.io/registry/).
+
+Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
 
 #### [ralph](./pi-extensions/ralph/)
 
@@ -291,8 +291,6 @@ Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
-Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
-
 Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
 Diátaxis reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) ([Repo](https://github.com/evildmp/diataxis-documentation-framework)) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). 
@@ -344,6 +342,8 @@ Jujutsu (jj) skills reference and adapt guidance from:
 - [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
 - [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
 - [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
+
+Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
 ## License
 
