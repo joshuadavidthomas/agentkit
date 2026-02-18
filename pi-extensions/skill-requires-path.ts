@@ -1,20 +1,17 @@
 /**
- * Skill Activation Guard Extension
+ * skill-requires-path
  *
- * Strips skills from the system prompt when their declared path requirements
- * aren't met in the current project.
- *
- * Skills declare requirements via a top-level frontmatter field:
+ * Strips skills from the system prompt when their `requires-path`
+ * frontmatter field doesn't exist in the current project.
  *
  *   ---
  *   name: jj
- *   description: ...
  *   requires-path: ".jj/"
  *   ---
  *
- * The `requires-path` value is checked relative to the working directory.
- * When the path doesn't exist, the skill's <skill> entry is removed from
- * the system prompt so the LLM never sees it.
+ * The value is checked relative to the working directory. When the
+ * path doesn't exist, the skill's <skill> entry is removed from the
+ * system prompt so the LLM never sees it.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
