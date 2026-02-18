@@ -165,26 +165,6 @@ Query codebases semantically using LLMs. Use when asking questions about librari
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### [coolify-compose](./skills/coolify-compose/SKILL.md)
-
-Convert Docker Compose files to Coolify templates.
-
-### [diataxis](./skills/diataxis/SKILL.md)
-
-Structure and write documentation using the [Diátaxis](https://diataxis.fr/) framework. Classifies content into tutorials, how-to guides, reference, and explanation. Includes all diataxis.fr pages as reference material for on-demand loading.
-
-### [frontend-design-principles](./skills/frontend-design-principles/SKILL.md)
-
-Create polished, intentional frontend interfaces. Fights the tendency toward generic AI output by requiring domain exploration and self-checks before generating code.
-
-Includes:
-
-- Required pre-generation gates (intent questions, four outputs: domain, color world, signature, defaults to reject)
-- Required pre-showing checks (swap test, squint test, signature test, token test)
-- Principles for avoiding sameness and default thinking
-- Specialized guidance for app interfaces (dashboards, tools) and marketing (landing pages, creative work)
-- Technical foundations (spacing, oklch colors, depth strategies, dark mode)
-
 ### Jujutsu (jj)
 
 A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
@@ -201,14 +181,6 @@ A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compat
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
 Methodical approach to researching unfamiliar codebases using specialized subagents.
-
-### [Svelte 5](./skills/svelte5/SKILL.md)
-
-Svelte 5 reactivity and state management. Covers runes (`$state`, `$derived`, `$effect`, `$props`, `$bindable`), class-based state (the idiomatic replacement for `writable`/`readable` stores), context API, snippets vs slots, and Svelte 4→5 migration.
-
-### [SvelteKit](./skills/sveltekit/SKILL.md)
-
-SvelteKit application patterns. Covers routing and layouts, data loading (load functions, form actions), authentication (route groups, layout protection, hooks), form validation (server-first with Standard Schema libraries), and remote functions (`command()`, `query()`, `form()`).
 
 ### Rust
 
@@ -251,16 +223,6 @@ A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incrementa
 | [salsa-query-pipeline](./skills/salsa-query-pipeline/SKILL.md) | Designing tracked function pipelines — return modes, LRU, `no_eq`, granularity strategies |
 | [salsa-struct-selection](./skills/salsa-struct-selection/SKILL.md) | Choosing between `#[salsa::input]`, `#[salsa::tracked]`, `#[salsa::interned]`, and plain types |
 
-### [skill-authoring](./skills/skill-authoring/SKILL.md)
-
-Guide for authoring, creating, refining, or troubleshooting agent skills.
-
-### [writing-cli-skills](./skills/writing-cli-skills/SKILL.md)
-
-Guide for writing skills that wrap CLI tools. Use when creating a new CLI skill or reviewing an existing one.
-
-The key constraint: hands-on use over documentation. Install the tool, try it yourself, note what surprises you. Reading docs is no substitute for actually running commands. Provides section templates, organization patterns (group by task, progressive disclosure), and a complete starting template in `references/`.
-
 ### [youtube-transcript](./skills/youtube-transcript/SKILL.md)
 
 Extract and work with YouTube video transcripts.
@@ -289,19 +251,11 @@ code-analyzer, code-locator, code-pattern-finder, and web-searcher agents are in
 
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
-The frontend-design-principles skill was cobbled together from:
-
-- The [frontend-design](https://github.com/anthropics/skills/tree/main/frontend-design) skill in [anthropics/skills](https://github.com/anthropics/skills) (Apache 2.0)
-- [Dammyjay93/interface-design](https://github.com/Dammyjay93/interface-design) (MIT, Damola Akinleye)
-- [Teaching Claude to Design Better: Improving Anthropic's Frontend Design Skill](https://www.justinwetch.com/blog/improvingclaudefrontend) ([relevant PR](https://github.com/anthropics/skills/pull/210) to official anthropics/skills skill) by Justin Wetch
-
 Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
 Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
-
-Diátaxis reference content derived from the [Diátaxis documentation framework](https://diataxis.fr/) ([Repo](https://github.com/evildmp/diataxis-documentation-framework)) by [Daniele Procida](https://vurt.eu) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). 
 
 Salsa skills reference code and patterns from:
 
@@ -350,13 +304,6 @@ Jujutsu (jj) skills reference and adapt guidance from:
 - [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
 - [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
 - [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
-
-Svelte 5 and SvelteKit skills reference and adapt guidance from:
-
-- [svelte-claude-skills](https://github.com/spences10/svelte-claude-skills) by Scott Spence (MIT)
-- [Svelte documentation](https://svelte.dev/docs) (MIT)
-- [Modern SvelteKit Tutorial](https://github.com/stolinski/Modern-Svelte-Kit-Tutorial) by Scott Tolinski
-- [Svelte Stores Streams Effect](https://github.com/bmdavis419/Svelte-Stores-Streams-Effect) by Ben Davis ([video](https://www.youtube.com/watch?v=kMBDsyozllk))
 
 Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
