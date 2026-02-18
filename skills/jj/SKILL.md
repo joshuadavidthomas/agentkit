@@ -2,8 +2,7 @@
 name: jj
 description: "Jujutsu (jj) — the Git-compatible version control system. Activate ONLY when a .jj/ directory is present in the project or when jj/jujutsu is explicitly mentioned. Do NOT activate for plain git repos without .jj/. Use for any VCS operations in jj-managed projects: commit, push, pull, branch, bookmark, rebase, squash, merge, diff, log, status, working copy, change ID, revset, fileset, template, configuration, workspaces."
 compatibility: "Requires a jj-managed repository (.jj/ directory present in project root)"
-metadata:
-  requires-path: ".jj/"
+requires-path: ".jj/"
 ---
 
 # Jujutsu (jj) Version Control
