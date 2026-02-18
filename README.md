@@ -149,7 +149,7 @@ Overrides the built-in read tool to handle directories gracefully.
 
 When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
 
-#### [skill-requires-path](./pi-extensions/skill-requires-path.ts)
+#### [skill-requires-path](./pi-extensions/skill-requires-path/)
 
 Strips skills from the system prompt when their `requires-path` frontmatter field doesn't exist in the current project. Skills declare a path requirement (e.g., `requires-path: ".jj/"`) and the extension removes them from the LLM's context when the path is absent — the LLM never sees the skill.
 

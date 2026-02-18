@@ -17,6 +17,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 interface SkillGuard {
 	name: string;
@@ -24,23 +25,16 @@ interface SkillGuard {
 }
 
 /**
- * Extract a field value from YAML frontmatter.
- * Handles quoted and unquoted values.
+ * Extract frontmatter from a markdown file and parse it as YAML.
  */
-function extractField(frontmatter: string, field: string): string | undefined {
-	const pattern = new RegExp(`^${field}:\\s*(.+)`, "m");
-	const match = frontmatter.match(pattern);
-	if (!match) return undefined;
-	return match[1].trim().replace(/^["']|["']$/g, "");
-}
-
-/**
- * Parse frontmatter block from markdown content.
- * Returns the raw YAML string between --- delimiters.
- */
-function getFrontmatter(content: string): string | undefined {
+function parseFrontmatter(content: string): Record<string, unknown> {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-	return match?.[1];
+	if (!match) return {};
+	try {
+		return parseYaml(match[1]) ?? {};
+	} catch {
+		return {};
+	}
 }
 
 /**
@@ -66,13 +60,11 @@ function scanSkillDir(dir: string): SkillGuard[] {
 
 			try {
 				const content = readFileSync(skillFile, "utf-8");
-				const fm = getFrontmatter(content);
-				if (!fm) continue;
+				const fm = parseFrontmatter(content);
+				const requiresPath = fm["requires-path"];
+				if (typeof requiresPath !== "string") continue;
 
-				const requiresPath = extractField(fm, "requires-path");
-				if (!requiresPath) continue;
-
-				const name = extractField(fm, "name") || basename(fullPath);
+				const name = typeof fm.name === "string" ? fm.name : basename(fullPath);
 				guards.push({ name, requiresPath });
 			} catch {
 				// Skip unreadable skills
