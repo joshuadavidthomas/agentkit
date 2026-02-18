@@ -23,7 +23,7 @@ const NERD_FONT_MAP = {
   BRAIN: "",
   THUMBS_UP: "",
   GIT_BRANCH: "",
-  JJ_WORKING_COPY: "(@)",
+  JJ_WORKING_COPY: "@",
 } as const;
 
 const PROVIDER_MAP = {
@@ -47,7 +47,7 @@ const VCS_STATE = {
   EMPTY: "∅",
   DIVERGENT: "↔",
   HIDDEN: "◌",
-  IMMUTABLE: "🔒",
+  IMMUTABLE: "󰌾",
 } as const;
 
 type VcsStateKey = keyof typeof VCS_STATE;
