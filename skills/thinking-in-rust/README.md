@@ -1,8 +1,10 @@
-# rust-idiomatic
+# thinking-in-rust
 
-The paradigm shift skill for Rust. Encodes the core "think in Rust" defaults that AI agents consistently get wrong: newtypes for domain strings, enums over booleans, exhaustive matching, structured errors, parse-don't-validate, enums as the primary modeling tool, and borrow-by-default.
+The paradigm shift skill for Rust. Changes agent defaults from "compiles" to "thinks in Rust" — catching patterns imported from Python, Java, TypeScript, and Go.
 
-The `SKILL.md` provides 9 hard rules with code examples, ecosystem citations, and a 10-point review checklist. The `references/` directory contains deep-dive content on specific patterns: newtypes, enums-as-modeling-tool, and boundary parsing.
+The `SKILL.md` provides 18 rules covering domain modeling (newtypes, enums, parse-don't-validate), API design (borrow-by-default, visibility, iterators), and control flow (pattern matching, ownership restructuring). Each rule has a dedicated reference file in `references/` with code examples, anti-patterns, and "Common Source Languages" context explaining where the bad habit comes from.
+
+This is the general-purpose entry point for Rust review. It delegates to **rust-error-handling**, **rust-traits**, **rust-ownership**, **rust-type-design**, and **rust-project-structure** for specialized problems.
 
 ## Attribution & License
 
