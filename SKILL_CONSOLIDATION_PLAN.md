@@ -134,52 +134,49 @@ The router teaches:
 - Common mistakes table (6 entries)
 - Topics table at top, reference index at bottom
 
-## Remaining: jj
+## Completed: jj
 
-**Current:** 6 skills, 3,427 description chars, 1,768 SKILL.md lines total, already has `jj-overview` as a partial router
+**Before:** 6 skills, 3,427 description chars, 1,768 SKILL.md lines total
 
-| Skill | SKILL.md Lines | Reference Files | Reference Lines |
-|-------|---------------|-----------------|-----------------|
-| jj-overview | 174 | 3 | 304 |
-| jj-config | 293 | 1 | 2,111 |
-| jj-history | 399 | 2 | 331 |
-| jj-revsets | 323 | 3 | 1,516 |
-| jj-sharing | 366 | 3 | 770 |
-| jj-workspaces | 213 | 1 | 188 |
+**After:** 1 skill (`jj`), 599 description chars, 182-line router SKILL.md
 
-### Plan
-
-Consolidate into single `jj` skill. `jj-overview` already has the teaching content and mental model — absorb it into SKILL.md and add routing to the 5 topic files.
-
-No reference filename collisions, so flat references work. One rename needed: `jj-config/references/config.md` would collide with topic file `config.md` — rename to `config-reference.md` or similar.
-
-Estimated router SKILL.md: ~200 lines (absorb jj-overview content + routing table + reference index).
-
-### Proposed Structure
+### Structure
 
 ```
 jj/
-├── SKILL.md                              # ~200 lines — mental model, agent rules, daily workflow + routes
+├── SKILL.md                              # 182 lines — mental model, agent rules, daily workflow + routes
 ├── config.md                             # Deep dive: configuration, aliases, diff/merge tools
 ├── history.md                            # Deep dive: squash, absorb, rebase, split, conflicts
 ├── revsets.md                            # Deep dive: revsets, filesets, templates
 ├── sharing.md                            # Deep dive: bookmarks, remotes, push/pull, PRs
 ├── workspaces.md                         # Deep dive: parallel agents, isolated working copies
-└── references/
+└── references/                           # Flat — one rename (config.md → config-reference.md)
+    ├── bookmarks.md
+    ├── command-gotchas.md
     ├── config-reference.md               # Renamed to avoid topic collision
     ├── conflicts.md
     ├── divergence.md
-    ├── git-to-jj.md
-    ├── git-experts.md
-    ├── command-gotchas.md
     ├── filesets.md
-    ├── revsets.md
-    ├── templates.md
-    ├── bookmarks.md
     ├── git-compatibility.md
+    ├── git-experts.md
+    ├── git-to-jj.md
     ├── github.md
-    └── parallel-agents.md
+    ├── parallel-agents.md
+    ├── revsets.md
+    └── templates.md
 ```
+
+### SKILL.md Content
+
+The router teaches:
+- Mental model (5 concepts: working copy is a commit, change IDs, mutable history, bookmarks, conflicts)
+- Agent rules (non-negotiable table + config block)
+- Core workflow (daily loop, curating history, non-linear work, pushing)
+- Essential commands table
+- Recovery (undo, op log, op restore, evolog)
+- Detecting a jj repo
+- Common mistakes table (7 entries merged from all skills)
+- Topics table at top, reference index at bottom linking all 13 reference files
 
 ## Remaining: Rust
 
@@ -306,7 +303,7 @@ salsa/
 |--------|--------|-------|-------------------|
 | **Svelte5** | 2 skills, 365 chars | ✅ 1 skill, 449 chars | -1 entry |
 | **SvelteKit** | 5 skills, 1,100 chars | ✅ 1 skill, 561 chars | -4 entries |
-| **jj** | 6 skills, 3,427 chars | → 1 skill, ~500 chars | -5 entries |
+| **jj** | 6 skills, 3,427 chars | ✅ 1 skill, 599 chars | -5 entries |
 | **Rust** | 14 skills, 4,123 chars | → 1 skill, ~500 chars | -13 entries |
 | **Salsa** | 13 skills, 4,169 chars | → 1 skill, ~500 chars | -12 entries |
 | **Total** | **40 skills, ~13,200 chars** | **5 skills, ~2,500 chars** | **-35 entries, ~10,700 chars saved** |

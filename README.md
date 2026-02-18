@@ -149,6 +149,10 @@ Overrides the built-in read tool to handle directories gracefully.
 
 When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
 
+#### [skill-requires-path](./pi-extensions/skill-requires-path.ts)
+
+Strips skills from the system prompt when their `requires-path` frontmatter field doesn't exist in the current project. Skills declare a path requirement (e.g., `requires-path: ".jj/"`) and the extension removes them from the LLM's context when the path is absent — the LLM never sees the skill.
+
 #### [statusline](./pi-extensions/statusline.ts)
 
 Starship-style custom footer with model context, git status, costs, and token stats.
@@ -165,18 +169,9 @@ Query codebases semantically using LLMs. Use when asking questions about librari
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### Jujutsu (jj)
+### [jj](./skills/jj/SKILL.md)
 
-A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
-
-| Skill | Description |
-|-------|-------------|
-| [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
-| [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
-| [jj-sharing](./skills/jj-sharing/SKILL.md) | Bookmarks, remotes, pushing, pulling, and GitHub/GitLab PR workflows — the bookmark-before-push pattern, stacked PRs, colocated repos |
-| [jj-history](./skills/jj-history/SKILL.md) | History rewriting and investigation — squashing, absorbing, rebasing, splitting commits, resolving conflicts, investigating history, cleanup and verification |
-| [jj-workspaces](./skills/jj-workspaces/SKILL.md) | Workspaces for parallel agents — isolated working copies, agent assignment, monitoring, stale workspace handling, conflict mitigation, and cleanup |
-| [jj-config](./skills/jj-config/SKILL.md) | Configuration and customization — config file precedence, agent-specific setup (`JJ_CONFIG`), aliases, diff/merge tools, signing, auto-track, conditional config, `jj fix` |
+[Jujutsu (jj)](https://github.com/jj-vcs/jj) — a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. Covers the mental model, agent-specific rules, daily workflows, revsets/filesets/templates, bookmarks and sharing, history rewriting, workspaces for parallel agents, and configuration.
 
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 

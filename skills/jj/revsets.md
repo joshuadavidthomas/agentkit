@@ -1,8 +1,3 @@
----
-name: jj-revsets
-description: "Jujutsu (jj) query languages — revsets, filesets, and templates. Use when writing revset expressions, filtering commits with jj log -r, selecting files with filesets, customizing output with jj log -T, using operators like ::@ or x..y, writing string patterns (glob:, substring:, exact:, regex:), or debugging revset errors. Triggers on: revset, fileset, template, jj log -r, jj log -T, ancestors, descendants, mine(), bookmarks(), trunk(), immutable(), mutable(), description(), author(), string pattern, date pattern."
----
-
 # Revsets, Filesets, and Templates
 
 jj has three domain-specific languages for querying and formatting: **revsets** select commits, **filesets** select files, and **templates** format output. This skill covers practical usage of all three.
@@ -311,13 +306,3 @@ Then use: `jj log -T short_log`.
 - **Confusing `::` and `..`** — `x::y` is the ancestry path (both descendant of x AND ancestor of y). `x..y` is the range (ancestor of y minus ancestors of x). On linear history they're the same; on branchy history they differ.
 - **Forgetting `present()`** — If a bookmark might not exist, wrap in `present()` to avoid errors: `present(bookmarks("feature"))`.
 - **Using `..x` expecting root included** — `..x` excludes root. Use `::x` if you need root included.
-
-## Cross-References
-
-| I need to... | Load |
-|--------------|------|
-| Understand the mental model, daily workflow, or agent rules | **jj-overview** |
-| Push, pull, manage bookmarks, or work with GitHub | **jj-sharing** |
-| Split, rebase, squash, or resolve conflicts | **jj-history** |
-| Run parallel agents with isolated working copies | **jj-workspaces** |
-| Configure jj, set up aliases, or customize diffs | **jj-config** |

@@ -1,13 +1,11 @@
----
-name: jj-config
-description: "Jujutsu (jj) configuration and customization — config files, aliases, diff/merge tools, signing, and agent-specific setup. Use when configuring jj, setting up aliases, customizing diff output, configuring merge tools, setting up commit signing, changing the pager, adjusting immutable commits, configuring auto-track for remotes, using JJ_CONFIG for agent environments, setting up jj fix tools, or troubleshooting config precedence. Triggers on: jj config, jj config edit, jj config set, jj config list, jj config path, ui.diff-formatter, ui.editor, ui.merge-editor, ui.pager, aliases, revset-aliases, template-aliases, signing, JJ_CONFIG, .jjconfig.toml, auto-track, jj fix, conditional config."
----
-
 # Jujutsu (jj) Configuration
 
 Configuration reference for jj. Covers config file locations, precedence, agent-specific setup, useful aliases, diff/merge tool configuration, signing, and customization.
 
 **Target version: jj 0.36+**
+
+For the full configuration reference, see:
+- [references/config-reference.md](references/config-reference.md) — Complete configuration reference (~2100 lines)
 
 **Authority:** jj official docs (config.md).
 
@@ -68,8 +66,6 @@ Key settings for agents:
 - **`ui.editor`** — set to a string that will error clearly if jj tries to open an editor
 - **`ui.diff-formatter`** — use `:git` for machine-parseable diffs (default `:color-words` is human-oriented)
 - **`ui.paginate`** — set to `"never"` to prevent pager from blocking
-
-See **jj-overview** for the full agent rules.
 
 ## Aliases
 
@@ -228,8 +224,6 @@ auto-track-bookmarks = "alice/*"
 'format_short_signature(signature)' = 'signature.email().local()'
 ```
 
-See **jj-revsets** for the full template language reference.
-
 ## Conditional Config
 
 **Authority:** jj official docs (config.md, "Conditional variables").
@@ -284,10 +278,3 @@ enabled = false  # Enable per-repo with: jj config set --repo fix.tools.rustfmt.
 | Bookmarks not tracking | `auto-track-bookmarks` too restrictive | Check `remotes.<name>.auto-track-bookmarks` pattern |
 | `jj fix` not running | Tool not enabled | Set `fix.tools.<name>.enabled = true` per-repo |
 | Dotted TOML keys break | Mixed with headings incorrectly | Put dotted keys before the first `[heading]` |
-
-## Cross-References
-
-- **jj-overview** — mental model, agent rules, daily workflow
-- **jj-revsets** — revset, fileset, and template language details
-- **jj-sharing** — bookmark and remote workflows (auto-track in context)
-- [references/config.md](references/config.md) — full configuration reference (~2100 lines)
