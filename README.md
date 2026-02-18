@@ -165,18 +165,9 @@ Query codebases semantically using LLMs. Use when asking questions about librari
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### Jujutsu (jj)
+### [jj](./skills/jj/SKILL.md)
 
-A suite of skills for [Jujutsu (jj)](https://github.com/jj-vcs/jj), a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. The skills cover daily workflows, query languages, sharing and collaboration, history rewriting, workspaces for parallel agents, and configuration.
-
-| Skill | Description |
-|-------|-------------|
-| [jj-overview](./skills/jj-overview/SKILL.md) | Start here — mental model, agent rules, core workflow, essential commands, and routing to specialized skills |
-| [jj-revsets](./skills/jj-revsets/SKILL.md) | The three query languages — revsets for selecting commits, filesets for selecting files, templates for formatting output |
-| [jj-sharing](./skills/jj-sharing/SKILL.md) | Bookmarks, remotes, pushing, pulling, and GitHub/GitLab PR workflows — the bookmark-before-push pattern, stacked PRs, colocated repos |
-| [jj-history](./skills/jj-history/SKILL.md) | History rewriting and investigation — squashing, absorbing, rebasing, splitting commits, resolving conflicts, investigating history, cleanup and verification |
-| [jj-workspaces](./skills/jj-workspaces/SKILL.md) | Workspaces for parallel agents — isolated working copies, agent assignment, monitoring, stale workspace handling, conflict mitigation, and cleanup |
-| [jj-config](./skills/jj-config/SKILL.md) | Configuration and customization — config file precedence, agent-specific setup (`JJ_CONFIG`), aliases, diff/merge tools, signing, auto-track, conditional config, `jj fix` |
+[Jujutsu (jj)](https://github.com/jj-vcs/jj) — a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. Covers the mental model, agent-specific rules, daily workflows, revsets/filesets/templates, bookmarks and sharing, history rewriting, workspaces for parallel agents, and configuration.
 
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 

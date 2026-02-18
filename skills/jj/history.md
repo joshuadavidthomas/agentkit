@@ -1,8 +1,3 @@
----
-name: jj-history
-description: "Jujutsu (jj) history rewriting and investigation — squashing, absorbing, rebasing, splitting commits, resolving conflicts, and investigating history. Use when squashing commits, running jj absorb, rebasing with jj rebase, splitting a commit into pieces, resolving merge conflicts, editing conflict markers, handling divergent changes, investigating who changed a line (jj file annotate), viewing commit evolution (jj evolog), abandoning commits, cleaning up empty commits, or verifying history after major rewrites. Triggers on: jj squash, jj absorb, jj rebase, jj split, jj restore, jj abandon, jj file annotate, jj evolog, jj show, jj diff -r, conflict markers, conflict resolution, divergent, immutable, --ignore-immutable, history rewriting."
----
-
 # History Rewriting and Investigation
 
 Rewriting history and investigating past changes in jj. Covers squashing, absorbing, rebasing, splitting commits (agent-safe), conflict resolution, investigating history, and cleanup.
@@ -387,13 +382,3 @@ After any major history rewrite (split, rebase, large squash):
 - **Using `--ignore-immutable` on shared history** — rewrites commit IDs, breaking collaborators. Only use on local-only commits.
 - **Abandoning merge commits carelessly** — merge commits may carry resolution data. Check with `jj show` first.
 - **Not using `jj undo` for recovery** — if a split, squash, or rebase goes wrong, `jj undo` immediately reverses it. Don't try to manually fix broken state.
-
-## Cross-References
-
-| I need to... | Load |
-|--------------|------|
-| Understand the mental model, daily workflow, or agent rules | **jj-overview** |
-| Write revset, fileset, or template expressions | **jj-revsets** |
-| Push, pull, manage bookmarks, or work with GitHub | **jj-sharing** |
-| Run parallel agents with isolated working copies | **jj-workspaces** |
-| Configure jj, set up aliases, or customize diffs | **jj-config** |
