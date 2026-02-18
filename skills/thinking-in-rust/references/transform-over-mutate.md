@@ -68,7 +68,7 @@ let point = Point::new(1.0, 2.0)
     .scale(2.0);
 ```
 
-## Non-Consuming Builders: `&mut self -> &mut Self`
+### Non-consuming builders: `&mut self -> &mut Self`
 
 When construction involves reuse, loops, or non-`Clone` intermediate state, a non-consuming builder is often better:
 

@@ -74,6 +74,8 @@ Rust's iterators aren't just syntactic sugar:
 - **Fusion.** `.iter().map().filter().collect()` can compile into a single pass with no intermediate allocations.
 - **Preallocation via `size_hint()`.** When you `.collect()`, the iterator's `size_hint()` tells the allocator how much space to reserve. This means one allocation instead of repeated growth.
 
+## Pipeline Patterns
+
 ### Avoid intermediate `collect()` — keep the pipeline going
 
 ```rust

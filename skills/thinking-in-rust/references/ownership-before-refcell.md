@@ -124,15 +124,6 @@ Before reaching for `.clone()` or `Rc<RefCell<T>>`:
 5. **Can I use an arena/index approach?** For trees and graphs, almost always yes.
 6. **Is the clone actually cheap?** `Arc::clone` = cheap (ref count bump). `Vec<String>::clone` = not cheap.
 
-## When `Rc<RefCell<T>>` Is the Right Tool
-
-- **Graph structures** that genuinely need shared ownership and can't use an arena.
-- **Callback/observer patterns** where multiple closures capture and mutate shared state.
-- **GUI frameworks** (e.g., GTK bindings) where the framework's architecture requires shared mutable state.
-- **Prototyping.** Get it working, then refactor the ownership.
-
-`Arc<Mutex<T>>` is the thread-safe equivalent — same concerns, plus potential deadlocks.
-
 ## In Async Code: Even Worse
 
 `Arc<Mutex<T>>` across `.await` points compounds the problem. Holding a `std::sync::MutexGuard` across an `.await` can stall the entire runtime worker thread — other unrelated tasks stop making progress. It can also cause logical deadlocks if the awaited operation needs the same lock.
@@ -160,6 +151,15 @@ async fn update(state: &Mutex<State>) {
 - `tokio::sync::Mutex` — only when you *must* hold the lock across `.await`. Slower. Rarely needed.
 
 If you find yourself reaching for `Arc<Mutex<T>>` in async code, the same restructuring strategies above apply: pass data through parameters, split borrows, use channels instead of shared state. See **rust-async** for the full pattern.
+
+## When `Rc<RefCell<T>>` Is the Right Tool
+
+- **Graph structures** that genuinely need shared ownership and can't use an arena.
+- **Callback/observer patterns** where multiple closures capture and mutate shared state.
+- **GUI frameworks** (e.g., GTK bindings) where the framework's architecture requires shared mutable state.
+- **Prototyping.** Get it working, then refactor the ownership.
+
+`Arc<Mutex<T>>` is the thread-safe equivalent — same concerns, plus potential deadlocks.
 
 ## When `.clone()` Is Fine
 
