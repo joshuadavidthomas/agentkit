@@ -191,7 +191,6 @@ A suite of skills encoding idiomatic defaults and "think in Rust" principles for
 | [rust-async](./skills/rust-async/SKILL.md) | Async patterns and Tokio. Channel selection, blocking avoidance, graceful shutdown, cancellation safety, and sync↔async bridging. |
 | [rust-atomics](./skills/rust-atomics/SKILL.md) | Atomics and memory ordering defaults. Atomic-vs-lock decisions, ordering selection, compare_exchange patterns, publication edges, and unsound-concurrency traps. |
 | [rust-error-handling](./skills/rust-error-handling/SKILL.md) | Error strategy and design. Library-vs-application axis, structured errors (thiserror), ergonomic propagation (anyhow), and boundary rules. |
-| [rust-idiomatic](./skills/rust-idiomatic/SKILL.md) | **The paradigm shift skill.** Core defaults agents consistently miss: newtypes for domain strings, enums over booleans, exhaustive matching, parse-don't-validate. |
 | [rust-interop](./skills/rust-interop/SKILL.md) | Cross-language integration. Framework selection (PyO3, napi-rs, wasm-bindgen, cxx) and boundary ownership/panic rules. |
 | [rust-macros](./skills/rust-macros/SKILL.md) | Declarative (macro_rules!) and procedural macros. Grammar patterns, hygiene, syn/quote conventions, and expansion debugging. |
 | [rust-ownership](./skills/rust-ownership/SKILL.md) | Ownership, borrowing, and lifetimes. Decision framework for smart pointers, function signatures, and navigating borrow checker errors. |
@@ -202,6 +201,7 @@ A suite of skills encoding idiomatic defaults and "think in Rust" principles for
 | [rust-traits](./skills/rust-traits/SKILL.md) | Trait design and dispatch. Enforces enum → generics → trait objects hierarchy; covers object safety and standard-trait patterns. |
 | [rust-type-design](./skills/rust-type-design/SKILL.md) | Type-driven domain modeling. Patterns for newtypes, typestate, builders, phantom types, and sealing. |
 | [rust-unsafe](./skills/rust-unsafe/SKILL.md) | Soundness, safety invariants, and UB avoidance. Mandatory documentation requirements (// SAFETY:), Miri validation, and FFI boundaries. |
+| [thinking-in-rust](./skills/thinking-in-rust/SKILL.md) | **The paradigm shift skill.** 18 rules for shifting from "compiles" to "thinks in Rust" — newtypes, enums over booleans, exhaustive matching, parse-don't-validate, iterators over indexing, Option over sentinels, ownership restructuring, visibility as design. General-purpose entry point; delegates to specialized skills. |
 
 #### Salsa
 
