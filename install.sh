@@ -9,7 +9,21 @@ SKILLS_DIR="$HOME/.agents/skills"
 
 # Install skills
 mkdir -p "$SKILLS_DIR"
-for skill in "$REPO_DIR/skills/"*/; do
+
+# Remove stale links from this repo (skills removed or renamed since last install)
+for existing in "$SKILLS_DIR"/*; do
+    [[ -L "$existing" ]] || continue
+    target=$(readlink "$existing")
+    [[ "$target" == "$REPO_DIR/skills/"* ]] || continue
+
+    skill_name=$(basename "$existing")
+    if [[ ! -d "$REPO_DIR/skills/$skill_name" ]]; then
+        rm "$existing"
+        echo "Removed stale skill link: $skill_name"
+    fi
+done
+
+for skill in "$REPO_DIR/skills"/*; do
     [[ -d "$skill" ]] || continue
     skill_name=$(basename "$skill")
     ln -sfn "$skill" "$SKILLS_DIR/$skill_name"
