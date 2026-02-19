@@ -1,11 +1,11 @@
 ---
 # agentkit-f6y4
 title: Usage-aware model selection for scouts
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-02-19T22:43:51Z
-updated_at: 2026-02-19T22:43:54Z
+updated_at: 2026-02-19T22:57:01Z
 ---
 
 Integrate vibeusage data into scout model selection so subagents prefer providers with more quota headroom.
@@ -55,4 +55,4 @@ For each available model, look up its provider's usage. Use the tightest (most-u
 - [x] Update `model-selection.ts` to accept and use usage data
 - [x] Update `scout-core.ts` to await async model selection
 - [x] Handle vibeusage-not-installed gracefully (returns null → original heuristic)
-- [ ] Test with vibeusage available and unavailable
+- [x] Test with vibeusage available and unavailable (finder and librarian both working)
