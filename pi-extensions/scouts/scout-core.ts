@@ -510,7 +510,7 @@ export function renderScoutResult(
         ? theme.fg("error", "✗")
         : status === "aborted"
           ? theme.fg("warning", "◼")
-          : theme.fg("warning", "⏳");
+          : theme.fg("warning", "...");
 
   const header =
     icon +
@@ -571,14 +571,15 @@ export function renderScoutResult(
       const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
       if (isLastText) {
         c.addChild(new Spacer(1));
+        const mdTheme = getMarkdownTheme();
         if (expanded) {
-          const mdTheme = getMarkdownTheme();
           c.addChild(new Markdown(item.text, 0, 0, mdTheme));
         } else {
-          // Collapsed: show first ~18 lines
-          const previewLines = item.text.trim().split("\n").slice(0, 18).join("\n");
-          c.addChild(new Text(theme.fg("toolOutput", previewLines), 0, 0));
-          if (item.text.trim().split("\n").length > 18) {
+          // Collapsed: render first ~18 lines as markdown, hint to expand if truncated
+          const lines = item.text.trim().split("\n");
+          const preview = lines.slice(0, 18).join("\n");
+          c.addChild(new Markdown(preview, 0, 0, mdTheme));
+          if (lines.length > 18) {
             c.addChild(new Text(theme.fg("muted", "(Ctrl+O to expand)"), 0, 0));
           }
         }
@@ -590,12 +591,14 @@ export function renderScoutResult(
     }
   }
 
-  // Footer with metadata
-  c.addChild(new Spacer(1));
-  if (details.workspace) {
-    c.addChild(new Text(theme.fg("dim", `workspace: ${shortenPath(details.workspace)}`), 0, 0));
+  // Footer with metadata — only show workspace for non-cwd locations (e.g., librarian temp dirs)
+  const ws = details.workspace ? shortenPath(details.workspace) : undefined;
+  if (ws && ws !== ".") {
+    c.addChild(new Spacer(1));
+    c.addChild(new Text(theme.fg("dim", `workspace: ${ws}`), 0, 0));
   }
   if (expanded && details.subagentSelection) {
+    c.addChild(new Spacer(1));
     c.addChild(new Text(theme.fg("dim", `selection: ${details.subagentSelection.reason}`), 0, 0));
   }
 
