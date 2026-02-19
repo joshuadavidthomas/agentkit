@@ -104,7 +104,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       "Read-only workspace scout for coding and personal-assistant tasks. Use when exact file/folder locations are unknown, you'd otherwise do exploratory ls/rg/fd/find/grep/read, or you need targeted evidence from large directories. Finder handles the reconnaissance and returns concise, relevant output: Summary, Locations (path:lineStart-lineEnd), Evidence, and Searched.",
     parameters: FinderParams as any,
 
-    async execute(_toolCallId: string, params: unknown, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
+    // pi 0.53 runtime signature: (toolCallId, params, signal, onUpdate, ctx)
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
       const rawQuery = (params as any).query;
       const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
 
@@ -136,7 +137,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       "GitHub research scout for coding and personal-assistant tasks. Use when the answer likely lives in GitHub repos, exact repo/path locations are unknown, or you'd otherwise do exploratory gh search/tree probes plus ls/rg/fd/find/grep/read on fetched files. Librarian performs targeted reconnaissance in an isolated workspace and returns concise, path-first findings with line-ranged evidence.",
     parameters: LibrarianParams as any,
 
-    async execute(_toolCallId: string, params: unknown, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) {
+    // pi 0.53 runtime signature: (toolCallId, params, signal, onUpdate, ctx)
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
       const rawQuery = (params as any).query;
       const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
 
