@@ -1,11 +1,19 @@
-// Inlined from pi-subagent-model-selection v0.1.4
-// https://github.com/default-anton/pi-subagent-model-selection
+// Model selection for scout subagents.
 //
-// Deterministic model selection for scout subagents.
-// Picks the cheapest/fastest model available based on auth mode.
+// Originally from pi-subagent-model-selection v0.1.4, now extended with
+// usage-aware selection via vibeusage. When usage data is available,
+// candidates are scored by provider headroom (lower utilization = preferred).
+// When unavailable, falls back to the original heuristic.
 
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
+
+import {
+  type UsageSnapshot,
+  getProviderUtilization,
+  getUsageSnapshot,
+  mapProvider,
+} from "./usage-cache.ts";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type AuthMode = "oauth" | "api-key";
@@ -25,67 +33,74 @@ interface AuthResolution {
   basis: string;
 }
 
-const OAUTH_PRIMARY_MODEL = {
-  provider: "openai-codex",
-  id: "gpt-5.3-codex-spark",
-  thinkingLevel: "high" as ThinkingLevel,
-};
+// Utilization thresholds
+const DEPRIORITIZE_THRESHOLD = 85; // >85% → push down the list
+const SKIP_THRESHOLD = 95; // >95% → skip entirely
 
-const ANTIGRAVITY_GEMINI_FLASH = {
-  provider: "google-antigravity",
-  id: "gemini-3-flash",
-  thinkingLevel: "low" as ThinkingLevel,
-};
-
-const VERTEX_PROVIDER = "google-vertex";
-const GEMINI_PROVIDER = "google";
-
-const GEMINI_3_FLASH_MODEL_IDS = ["gemini-3-flash", "gemini-3-flash-preview"];
-const HAIKU_4_5_MODEL_IDS = ["claude-haiku-4-5"];
-
-function exactProviderModel(
-  available: Model<Api>[],
-  provider: string,
-  modelId: string,
-): Model<Api> | null {
-  return available.find((c) => c.provider === provider && c.id === modelId) ?? null;
+// Candidate models for scouts, in preference order.
+// Each entry is a provider + model ID pattern + thinking level.
+interface CandidateSpec {
+  provider: string;
+  match: (id: string) => boolean;
+  thinkingLevel: ThinkingLevel;
+  label: string;
 }
 
-function findBestGeminiFlash(
-  available: Model<Api>[],
-  provider?: string,
-): Model<Api> | null {
-  const candidates = provider ? available.filter((m) => m.provider === provider) : available;
+// OAuth candidates (when using subscription auth)
+const OAUTH_CANDIDATES: CandidateSpec[] = [
+  {
+    provider: "openai-codex",
+    match: (id) => id === "gpt-5.3-codex-spark",
+    thinkingLevel: "high",
+    label: "openai-codex/gpt-5.3-codex-spark",
+  },
+  {
+    provider: "google-antigravity",
+    match: (id) => id === "gemini-3-flash",
+    thinkingLevel: "low",
+    label: "google-antigravity/gemini-3-flash",
+  },
+];
 
-  for (const preferredId of GEMINI_3_FLASH_MODEL_IDS) {
-    const exact = candidates.find((c) => c.id === preferredId);
-    if (exact) return exact;
-  }
+// API-key candidates
+const API_KEY_CANDIDATES: CandidateSpec[] = [
+  {
+    provider: "google-vertex",
+    match: (id) => id.includes("gemini-3-flash"),
+    thinkingLevel: "low",
+    label: "google-vertex/gemini-3-flash",
+  },
+  {
+    provider: "google",
+    match: (id) => id.includes("gemini-3-flash"),
+    thinkingLevel: "low",
+    label: "google/gemini-3-flash",
+  },
+];
 
-  const startsWith = candidates.find((c) => c.id.startsWith("gemini-3-flash"));
-  if (startsWith) return startsWith;
-
-  const contains = candidates.find((c) => c.id.includes("gemini-3-flash"));
-  return contains ?? null;
-}
-
-function findBestHaiku45(
-  available: Model<Api>[],
-  provider: string,
-): Model<Api> | null {
-  const candidates = available.filter((m) => m.provider === provider);
-
-  for (const preferredId of HAIKU_4_5_MODEL_IDS) {
-    const exact = candidates.find((c) => c.id === preferredId);
-    if (exact) return exact;
-  }
-
-  const startsWith = candidates.find((c) => c.id.startsWith("claude-haiku-4-5"));
-  if (startsWith) return startsWith;
-
-  const contains = candidates.find((c) => c.id.includes("haiku-4-5"));
-  return contains ?? null;
-}
+// Universal fallback candidates (tried after primary list)
+const FALLBACK_CANDIDATE_FINDERS: Array<
+  (available: Model<Api>[], currentProvider?: string) => { model: Model<Api>; thinkingLevel: ThinkingLevel; label: string } | null
+> = [
+  // Gemini Flash on current provider
+  (available, currentProvider) => {
+    if (!currentProvider) return null;
+    const m = available.find((c) => c.provider === currentProvider && c.id.includes("gemini-3-flash"));
+    return m ? { model: m, thinkingLevel: "low" as ThinkingLevel, label: `${currentProvider}/gemini-3-flash (fallback)` } : null;
+  },
+  // Haiku 4.5 on current provider
+  (available, currentProvider) => {
+    if (!currentProvider) return null;
+    const m = available.find((c) => c.provider === currentProvider && c.id.includes("haiku-4-5"));
+    return m ? { model: m, thinkingLevel: "low" as ThinkingLevel, label: `${currentProvider}/haiku-4.5 (fallback)` } : null;
+  },
+  // Current model with low thinking (last resort)
+  (available, currentProvider) => {
+    if (!currentProvider) return null;
+    const m = available.find((c) => c.provider === currentProvider);
+    return m ? { model: m, thinkingLevel: "low" as ThinkingLevel, label: `${m.provider}/${m.id} (fallback, low thinking)` } : null;
+  },
+];
 
 function detectAuthResolution(
   modelRegistry: ModelRegistry,
@@ -99,7 +114,6 @@ function detectAuthResolution(
     };
   }
 
-  // ModelRegistry may or may not have getAuthSource depending on pi version.
   const registry = modelRegistry as any;
   if (typeof registry.getAuthSource === "function") {
     const authSource: AuthSource = registry.getAuthSource(currentModel.provider);
@@ -115,94 +129,123 @@ function detectAuthResolution(
   };
 }
 
-function selection(
+function makeSelection(
   model: Model<Api>,
   thinkingLevel: ThinkingLevel,
-  authResolution: AuthResolution,
+  auth: AuthResolution,
   reason: string,
 ): SelectedSmallModel {
   return {
     model,
     thinkingLevel,
-    authMode: authResolution.authMode,
-    authSource: authResolution.authSource,
-    reason: `${reason}; ${authResolution.basis}`,
+    authMode: auth.authMode,
+    authSource: auth.authSource,
+    reason: `${reason}; ${auth.basis}`,
   };
 }
 
-function fallbackSelection(
+// Score a pi provider using vibeusage data.
+// Returns utilization 0-100, or undefined if no data.
+function scoreProvider(provider: string, usage: UsageSnapshot | null): number | undefined {
+  if (!usage) return undefined;
+  const vibeProvider = mapProvider(provider);
+  if (!vibeProvider) return undefined;
+  return getProviderUtilization(usage, vibeProvider);
+}
+
+// Try to find a matching available model for a candidate spec
+function findCandidate(
   available: Model<Api>[],
-  currentModel: Model<Api> | undefined,
-  authResolution: AuthResolution,
+  spec: CandidateSpec,
+): Model<Api> | null {
+  return available.find((m) => m.provider === spec.provider && spec.match(m.id)) ?? null;
+}
+
+// Core selection: walk the candidate list, apply usage scoring
+function selectFromCandidates(
+  available: Model<Api>[],
+  candidates: CandidateSpec[],
+  usage: UsageSnapshot | null,
+  auth: AuthResolution,
+  currentProvider?: string,
 ): SelectedSmallModel | null {
-  const currentProvider = currentModel?.provider;
+  // Phase 1: Try candidates in preference order, skip exhausted providers
+  const deprioritized: Array<{ model: Model<Api>; spec: CandidateSpec; utilization: number }> = [];
 
-  if (currentProvider) {
-    const geminiFlash = findBestGeminiFlash(available, currentProvider);
-    if (geminiFlash) {
-      return selection(geminiFlash, "low", authResolution, "fallback: current provider gemini-3-flash");
+  for (const spec of candidates) {
+    const model = findCandidate(available, spec);
+    if (!model) continue;
+
+    const utilization = scoreProvider(spec.provider, usage);
+
+    // No usage data → use this candidate (original heuristic behavior)
+    if (utilization === undefined) {
+      return makeSelection(model, spec.thinkingLevel, auth, spec.label);
     }
 
-    const haiku45 = findBestHaiku45(available, currentProvider);
-    if (haiku45) {
-      return selection(haiku45, "low", authResolution, "fallback: current provider claude-haiku-4-5");
+    // Skip exhausted providers
+    if (utilization >= SKIP_THRESHOLD) continue;
+
+    // Deprioritize but remember high-usage providers
+    if (utilization >= DEPRIORITIZE_THRESHOLD) {
+      deprioritized.push({ model, spec, utilization });
+      continue;
     }
+
+    // Good headroom — use it
+    return makeSelection(
+      model,
+      spec.thinkingLevel,
+      auth,
+      `${spec.label} (${utilization}% used)`,
+    );
   }
 
-  if (currentModel) {
-    const sameModel = exactProviderModel(available, currentModel.provider, currentModel.id);
-    if (sameModel) {
-      return selection(sameModel, "low", authResolution, "fallback: current model with low thinking");
-    }
+  // Phase 2: If all preferred candidates were deprioritized, pick the least-used
+  if (deprioritized.length > 0) {
+    deprioritized.sort((a, b) => a.utilization - b.utilization);
+    const best = deprioritized[0];
+    return makeSelection(
+      best.model,
+      best.spec.thinkingLevel,
+      auth,
+      `${best.spec.label} (${best.utilization}% used, deprioritized)`,
+    );
+  }
+
+  // Phase 3: Universal fallbacks
+  for (const finder of FALLBACK_CANDIDATE_FINDERS) {
+    const found = finder(available, currentProvider);
+    if (!found) continue;
+
+    const utilization = scoreProvider(found.model.provider, usage);
+    if (utilization !== undefined && utilization >= SKIP_THRESHOLD) continue;
+
+    const usageNote = utilization !== undefined ? ` (${utilization}% used)` : "";
+    return makeSelection(found.model, found.thinkingLevel, auth, `${found.label}${usageNote}`);
   }
 
   return null;
 }
 
-export function getSmallModelFromProvider(
+// Main entry point — async because it may fetch usage data
+export async function getSmallModelFromProvider(
   modelRegistry: ModelRegistry,
   currentModel: Model<Api> | undefined,
-): SelectedSmallModel | null {
+): Promise<SelectedSmallModel | null> {
   const available = modelRegistry.getAvailable();
-  const authResolution = detectAuthResolution(modelRegistry, currentModel);
+  const auth = detectAuthResolution(modelRegistry, currentModel);
 
-  if (authResolution.authMode === "oauth") {
-    const oauthPrimary = exactProviderModel(available, OAUTH_PRIMARY_MODEL.provider, OAUTH_PRIMARY_MODEL.id);
-    if (oauthPrimary) {
-      return selection(
-        oauthPrimary,
-        OAUTH_PRIMARY_MODEL.thinkingLevel,
-        authResolution,
-        "oauth: prefer openai-codex/gpt-5.3-codex-spark",
-      );
-    }
+  // Fetch usage data (returns cached if fresh, null if unavailable)
+  const usage = await getUsageSnapshot();
 
-    const antigravity = exactProviderModel(
-      available,
-      ANTIGRAVITY_GEMINI_FLASH.provider,
-      ANTIGRAVITY_GEMINI_FLASH.id,
-    );
-    if (antigravity) {
-      return selection(
-        antigravity,
-        ANTIGRAVITY_GEMINI_FLASH.thinkingLevel,
-        authResolution,
-        "oauth: fallback to google-antigravity/gemini-3-flash",
-      );
-    }
+  const candidates = auth.authMode === "oauth" ? OAUTH_CANDIDATES : API_KEY_CANDIDATES;
 
-    return fallbackSelection(available, currentModel, authResolution);
-  }
-
-  const vertexFlash = findBestGeminiFlash(available, VERTEX_PROVIDER);
-  if (vertexFlash) {
-    return selection(vertexFlash, "low", authResolution, "api-key: prefer google-vertex gemini-3-flash");
-  }
-
-  const geminiFlash = findBestGeminiFlash(available, GEMINI_PROVIDER);
-  if (geminiFlash) {
-    return selection(geminiFlash, "low", authResolution, "api-key: prefer google gemini-3-flash");
-  }
-
-  return fallbackSelection(available, currentModel, authResolution);
+  return selectFromCandidates(
+    available,
+    candidates,
+    usage,
+    auth,
+    currentModel?.provider,
+  );
 }

@@ -19,7 +19,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
-import { type SelectedSmallModel, getSmallModelFromProvider } from "./model-selection.ts";
+import { getSmallModelFromProvider } from "./model-selection.ts";
 
 export const MAX_TOOL_CALLS_TO_KEEP = 80;
 
@@ -233,7 +233,7 @@ export async function executeScout(
     ];
 
     const modelRegistry = ctx.modelRegistry;
-    const subModelSelection = getSmallModelFromProvider(modelRegistry, ctx.model);
+    const subModelSelection = await getSmallModelFromProvider(modelRegistry, ctx.model);
 
     if (!subModelSelection) {
       const error = "No models available. Configure credentials (e.g. /login or auth.json) and try again.";
