@@ -511,7 +511,7 @@ export function renderScoutResult(
         ? theme.fg("error", "✗")
         : status === "aborted"
           ? theme.fg("warning", "◼")
-          : theme.fg("warning", "...");
+          : theme.fg("warning", brailleFrame());
 
   const header =
     icon +
@@ -604,6 +604,12 @@ export function renderScoutResult(
   }
 
   return c;
+}
+
+const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function brailleFrame(): string {
+  return BRAILLE_FRAMES[Math.floor(Date.now() / 80) % BRAILLE_FRAMES.length]!;
 }
 
 function formatDuration(ms: number): string {
