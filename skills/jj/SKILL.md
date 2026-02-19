@@ -15,6 +15,7 @@ Jujutsu is a Git-compatible VCS with mutable commits, automatic change tracking,
 
 | I need to... | Deep dive |
 |--------------|-----------|
+| Understand how jj relates to Git, or use raw git in a jj repo | [git.md](git.md) |
 | Write revset, fileset, or template expressions | [revsets.md](revsets.md) |
 | Push, pull, manage bookmarks, or work with GitHub | [sharing.md](sharing.md) |
 | Split, rebase, squash, or resolve conflicts | [history.md](history.md) |
@@ -158,9 +159,12 @@ jj evolog -r <change-id>     # see how a change evolved
 
 ## Reference Index
 
-**Overview:**
+**Git Interop:**
 - [references/git-to-jj.md](references/git-to-jj.md) — Git-to-jj command mapping
 - [references/git-experts.md](references/git-experts.md) — Why jj improves on Git
+- [references/git-compatibility.md](references/git-compatibility.md) — Git interop and colocated repos
+
+**Commands:**
 - [references/command-gotchas.md](references/command-gotchas.md) — Flag semantics, quoting, deprecated flags
 
 **Revsets & Templates:**
@@ -171,7 +175,6 @@ jj evolog -r <change-id>     # see how a change evolved
 **Sharing:**
 - [references/bookmarks.md](references/bookmarks.md) — Complete bookmarks reference
 - [references/github.md](references/github.md) — GitHub/GitLab workflow details
-- [references/git-compatibility.md](references/git-compatibility.md) — Git interop and colocated repos
 
 **History:**
 - [references/conflicts.md](references/conflicts.md) — Conflict handling and marker formats

@@ -138,13 +138,14 @@ The router teaches:
 
 **Before:** 6 skills, 3,427 description chars, 1,768 SKILL.md lines total
 
-**After:** 1 skill (`jj`), 599 description chars, 182-line router SKILL.md
+**After:** 1 skill (`jj`), 599 description chars, 187-line router SKILL.md
 
 ### Structure
 
 ```
 jj/
-├── SKILL.md                              # 182 lines — mental model, agent rules, daily workflow + routes
+├── SKILL.md                              # 187 lines — mental model, agent rules, daily workflow + routes
+├── git.md                                # Deep dive: colocated repos, concept mapping, when to use raw git
 ├── config.md                             # Deep dive: configuration, aliases, diff/merge tools
 ├── history.md                            # Deep dive: squash, absorb, rebase, split, conflicts
 ├── revsets.md                            # Deep dive: revsets, filesets, templates
@@ -176,7 +177,7 @@ The router teaches:
 - Recovery (undo, op log, op restore, evolog)
 - Detecting a jj repo
 - Common mistakes table (7 entries merged from all skills)
-- Topics table at top, reference index at bottom linking all 13 reference files
+- Topics table at top (6 topics including git interop), reference index at bottom linking all 13 reference files
 
 ## Remaining: Rust
 

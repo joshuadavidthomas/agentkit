@@ -239,14 +239,9 @@ jj git push -b my-feature
 
 ## Colocated Repos
 
-Both `.jj/` and `.git/` exist — this is the default from `jj git clone`.
+Most jj repos are colocated (both `.jj/` and `.git/`). The key rule for sharing: **always use `jj git push`, never raw `git push`** — raw push desyncs bookmark tracking.
 
-**Authority:** jj official docs (git-compatibility.md).
-
-- Git shows "detached HEAD" — **normal**, not an error.
-- **Prefer `jj git push` over `git push`** even in colocated repos. Raw `git push` desyncs bookmark tracking.
-- Use `git` only for operations jj doesn't support: submodules, LFS, annotated tags.
-- After raw `git` operations, run any `jj` command to re-sync state.
+→ Full colocated repo guide: [git.md](git.md)
 
 ## Using GitHub CLI
 
