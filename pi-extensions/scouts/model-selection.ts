@@ -47,18 +47,19 @@ interface CandidateSpec {
 }
 
 // OAuth candidates (when using subscription auth)
+// Prioritize cheap/fast models — scouts don't need flagship reasoning.
 const OAUTH_CANDIDATES: CandidateSpec[] = [
   {
-    provider: "openai-codex",
-    match: (id) => id === "gpt-5.3-codex-spark",
-    thinkingLevel: "high",
-    label: "openai-codex/gpt-5.3-codex-spark",
-  },
-  {
     provider: "google-antigravity",
-    match: (id) => id === "gemini-3-flash",
+    match: (id) => id.includes("gemini-3-flash"),
     thinkingLevel: "low",
     label: "google-antigravity/gemini-3-flash",
+  },
+  {
+    provider: "anthropic",
+    match: (id) => id.includes("haiku-4-5"),
+    thinkingLevel: "low",
+    label: "anthropic/claude-haiku-4.5",
   },
 ];
 

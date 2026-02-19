@@ -336,7 +336,7 @@ export async function executeScout(
     try {
       const resourceLoader = new DefaultResourceLoader({
         noExtensions: true,
-        additionalExtensionPaths: ["npm:pi-subdir-context"],
+        additionalExtensionPaths: [],
         noSkills: true,
         noPromptTemplates: true,
         noThemes: true,
