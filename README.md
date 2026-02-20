@@ -108,20 +108,6 @@ Desktop notifications when the agent finishes. Uses a cheap model to summarize w
 
 Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
 
-#### [pi-subagents](./pi-extensions/pi-subagents/)
-
-Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
-
-- **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
-- **`subagent_status` without args**: Lists recent runs (async AND sync) by scanning artifact metadata files
-- **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
-- **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
-- **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
-- **Reduced false positives**: Exit code 1 from search tools (grep, rg, find, fd) means "no matches", not failure
-- **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
-
-Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
-
 #### [peon-ping](./pi-extensions/peon-ping/)
 
 Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-ping) / OpenPeon sound packs. Plays themed audio clips (Warcraft III Peon, GLaDOS, Duke Nukem, StarCraft, and more) on lifecycle events:
@@ -137,6 +123,20 @@ Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-pi
 
 Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
 
+#### [pi-subagents](./pi-extensions/pi-subagents/)
+
+Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
+
+- **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
+- **`subagent_status` without args**: Lists recent runs (async AND sync) by scanning artifact metadata files
+- **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
+- **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
+- **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
+- **Reduced false positives**: Exit code 1 from search tools (grep, rg, find, fd) means "no matches", not failure
+- **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
+
+Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
+
 #### [ralph](./pi-extensions/ralph/)
 
 **Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
@@ -148,6 +148,21 @@ Uses the pi SDK in-process (no subprocess, no RPC) to run repeated agent turns a
 Overrides the built-in read tool to handle directories gracefully.
 
 When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
+
+#### [scouts](./pi-extensions/scouts/)
+
+Vendored from [default-anton/pi-finder](https://github.com/default-anton/pi-finder) and [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian) with modifications:
+
+- **Unified extension**: Consolidated two separate packages into a single extension with shared infrastructure (`scout-core.ts`)
+- **Usage-aware model selection**: Shells out to [vibeusage](https://github.com/joshuadavidthomas/vibeusage) to check provider utilization before selecting a subagent model, deprioritizing providers above 85% and skipping those above 95%
+- **Cheap model candidates**: Uses fast/cheap models (Gemini 3 Flash, Haiku 4.5) instead of expensive ones
+- **Interleaved TUI rendering**: Tool calls and text rendered chronologically (inspired by pi-subagents) instead of dumped separately
+- **Turn budget extension**: Blocks tool use on the final turn to force a summary response
+
+Registers two tools:
+
+- **finder**: Read-only workspace scout — locates files, directories, and components when exact locations are unknown
+- **librarian**: GitHub research scout — searches and fetches code from GitHub repos to answer questions about external codebases
 
 #### [skill-requires-path](./pi-extensions/skill-requires-path/)
 
@@ -249,6 +264,8 @@ Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/ag
 Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
+
+Scouts pi extension from [default-anton/pi-finder](https://github.com/default-anton/pi-finder) and [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian) (MIT, Anton Kuzmenko).
 
 Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
