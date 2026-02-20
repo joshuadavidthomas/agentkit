@@ -511,17 +511,13 @@ export function renderScoutResult(
         ? theme.fg("error", "✗")
         : status === "aborted"
           ? theme.fg("warning", "◼")
-          : theme.fg("warning", brailleFrame());
+          : "";
 
-  const header =
-    icon +
-    " " +
-    theme.fg("toolTitle", theme.bold(scoutName)) +
-    " " +
-    theme.fg(
-      "dim",
-      `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
-    );
+  const stats = theme.fg(
+    "dim",
+    `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
+  );
+  const header = icon ? `${icon} ${stats}` : stats;
 
   // Running state: compact fixed-height view with recent tool calls
   if (status === "running") {
