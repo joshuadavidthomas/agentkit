@@ -265,7 +265,7 @@ Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
-Scouts pi extension from [default-anton/pi-finder](https://github.com/default-anton/pi-finder) and [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian) (MIT, Anton Kuzmenko).
+Scouts pi extension from [default-anton/pi-finder](https://github.com/default-anton/pi-finder), [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian), and [default-anton/pi-subagent-model-selection](https://github.com/default-anton/pi-subagent-model-selection) (MIT, Anton Kuzmenko).
 
 Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
