@@ -529,13 +529,13 @@ export function renderScoutResult(
     const hiddenCount = Math.max(0, toolItems.length - MAX_RUNNING_TOOLS);
 
     if (hiddenCount > 0) {
-      c.addChild(new Text(theme.fg("dim", `  ... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`), 0, 0));
+      c.addChild(new Text(theme.fg("dim", `... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`), 0, 0));
     }
     for (const item of toolItems.slice(-MAX_RUNNING_TOOLS)) {
       const { label, summary } = formatToolCallParts(item.name, item.args);
       const itemIcon = item.isError ? theme.fg("error", "✗") : theme.fg("accent", "▸");
       c.addChild(
-        new Text(`  ${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
+        new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
     }
 
@@ -561,7 +561,7 @@ export function renderScoutResult(
       const { label, summary } = formatToolCallParts(item.name, item.args);
       const itemIcon = item.isError ? theme.fg("error", "✗") : theme.fg("accent", "▸");
       c.addChild(
-        new Text(`  ${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
+        new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
     } else if (item.type === "text" && item.text.trim()) {
       // Is this the last text item?
@@ -583,7 +583,7 @@ export function renderScoutResult(
       } else {
         // Intermediate text — show truncated and dim
         const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
-        c.addChild(new Text(theme.fg("dim", `  ${preview}${item.text.length > 120 ? "..." : ""}`), 0, 0));
+        c.addChild(new Text(theme.fg("dim", `${preview}${item.text.length > 120 ? "..." : ""}`), 0, 0));
       }
     }
   }
