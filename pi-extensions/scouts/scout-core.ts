@@ -68,7 +68,6 @@ export interface ScoutConfig {
   getWorkspace?: (ctx: ExtensionContext) => Promise<string>;
   buildSystemPrompt: (maxTurns: number, workspace: string) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
-  runningMessage?: string;
 }
 
 // Turn budget extension — blocks tool use on the final turn
@@ -484,11 +483,10 @@ export function renderScoutCall(
 }
 
 export function renderScoutResult(
-  scoutName: string,
+  _scoutName: string,
   result: any,
   options: { expanded: boolean; isPartial: boolean },
   theme: any,
-  runningMessage = "Searching…",
 ): any {
   const details = result.details as ScoutDetails | undefined;
   if (!details) {
@@ -539,8 +537,6 @@ export function renderScoutResult(
       );
     }
 
-    c.addChild(new Spacer(1));
-    c.addChild(new Text(theme.fg("muted", runningMessage), 0, 0));
     return c;
   }
 

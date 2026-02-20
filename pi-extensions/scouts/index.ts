@@ -77,7 +77,7 @@ const FINDER_CONFIG: ScoutConfig = {
   maxTurns: 6,
   buildSystemPrompt: buildFinderSystemPrompt,
   buildUserPrompt: buildFinderUserPrompt,
-  runningMessage: "Searching workspace…",
+
 };
 
 const LIBRARIAN_CONFIG: ScoutConfig = {
@@ -92,7 +92,7 @@ const LIBRARIAN_CONFIG: ScoutConfig = {
   },
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
-  runningMessage: "Searching GitHub…",
+
 };
 
 export default function scoutsExtension(pi: ExtensionAPI) {
@@ -125,7 +125,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     },
 
     renderResult(result: any, options: any, theme: any) {
-      return renderScoutResult("finder", result, options, theme, "Searching workspace…");
+      return renderScoutResult("finder", result, options, theme);
     },
   });
 
@@ -161,7 +161,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     },
 
     renderResult(result: any, options: any, theme: any) {
-      return renderScoutResult("librarian", result, options, theme, "Searching GitHub…");
+      return renderScoutResult("librarian", result, options, theme);
     },
   });
 }
