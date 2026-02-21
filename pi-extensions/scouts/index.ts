@@ -1,13 +1,15 @@
-// Scouts extension — registers finder and librarian tools.
+// Scouts extension — registers finder, librarian, and oracle tools.
 //
-// Vendored from pi-finder v1.2.2 and pi-librarian v1.1.2, consolidated
-// into a single extension with shared infrastructure in scout-core.ts.
+// Finder and librarian originally vendored from pi-finder v1.2.2 and
+// pi-librarian v1.1.2, consolidated into a single extension with shared
+// infrastructure in scout-core.ts.
 //
 // Original authors: Anton Kuzmenko
 // pi-finder: https://github.com/default-anton/pi-finder
 // pi-librarian: https://github.com/default-anton/pi-librarian
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createReadTool } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -21,6 +23,15 @@ import { buildFinderSystemPrompt, buildFinderUserPrompt } from "./finder-prompts
 import { createGitHubTools } from "./github-tools.ts";
 import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
+import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts.md.ts";
+import { createReadOnlyBashTool } from "./read-only-bash.ts";
+
+// Shared parameter: modelTier override
+const ModelTierParam = Type.Optional(
+  Type.Union([Type.Literal("fast"), Type.Literal("capable")], {
+    description: "Model tier override. 'fast' uses cheap/quick models (Haiku/Flash), 'capable' uses mid-tier reasoning models (Sonnet/Pro). Each scout has a sensible default.",
+  }),
+);
 
 // Finder tool parameters
 const FinderParams = Type.Object({
@@ -34,6 +45,7 @@ const FinderParams = Type.Object({
       "- Personal: 'In ~/Documents and ~/Desktop, find my latest trip itinerary PDF and list the top candidate paths with evidence.'",
     ].join("\n"),
   }),
+  modelTier: ModelTierParam,
 });
 
 // Librarian tool parameters
@@ -68,6 +80,23 @@ const LibrarianParams = Type.Object({
       default: DEFAULT_MAX_SEARCH_RESULTS,
     }),
   ),
+  modelTier: ModelTierParam,
+});
+
+// Oracle tool parameters
+const OracleParams = Type.Object({
+  query: Type.String({
+    description: [
+      "Describe what to analyze in the codebase.",
+      "Include: specific goal, relevant files/components if known, what kind of analysis (trace data flow, explain architecture, find patterns, review implementation).",
+      "Oracle reads code deeply and reasons about it. Use for questions that need understanding, not just location.",
+      "Examples:",
+      "- 'Trace the request lifecycle through the auth middleware in src/auth/. How does token validation work?'",
+      "- 'Analyze the caching strategy in pkg/cache/. What are the eviction policies and edge cases?'",
+      "- 'Find all implementations of the Repository pattern and show how they handle errors.'",
+    ].join("\n"),
+  }),
+  modelTier: ModelTierParam,
 });
 
 // Scout configurations
@@ -76,12 +105,12 @@ const FINDER_CONFIG: ScoutConfig = {
   maxTurns: 6,
   buildSystemPrompt: buildFinderSystemPrompt,
   buildUserPrompt: buildFinderUserPrompt,
-
 };
 
 const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
   maxTurns: 10,
+  defaultModelTier: "fast",
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [
@@ -89,6 +118,28 @@ const LIBRARIAN_CONFIG: ScoutConfig = {
     ...createGitHubTools(),
   ],
 };
+
+const ORACLE_CONFIG: ScoutConfig = {
+  name: "oracle",
+  maxTurns: 12,
+  defaultModelTier: "capable",
+  buildSystemPrompt: buildOracleSystemPrompt,
+  buildUserPrompt: buildOracleUserPrompt,
+};
+
+// Helper: validate query param, return error result or null
+function validateQuery(params: unknown): { content: Array<{ type: "text"; text: string }>; details: ScoutDetails; isError: true } | null {
+  const rawQuery = (params as any).query;
+  const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
+  if (!query) {
+    return {
+      content: [{ type: "text", text: "Invalid parameters: expected `query` to be a non-empty string." }],
+      details: { status: "error", runs: [] } satisfies ScoutDetails,
+      isError: true,
+    };
+  }
+  return null;
+}
 
 export default function scoutsExtension(pi: ExtensionAPI) {
   // Finder — local workspace scout
@@ -99,19 +150,9 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       "Read-only workspace scout for coding and personal-assistant tasks. Use when exact file/folder locations are unknown, you'd otherwise do exploratory ls/rg/fd/find/grep/read, or you need targeted evidence from large directories. Finder handles the reconnaissance and returns concise, relevant output: Summary, Locations (path:lineStart-lineEnd), Evidence, and Searched.",
     parameters: FinderParams as any,
 
-    // pi 0.53 runtime signature: (toolCallId, params, signal, onUpdate, ctx)
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const rawQuery = (params as any).query;
-      const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
-
-      if (!query) {
-        return {
-          content: [{ type: "text", text: "Invalid parameters: expected `query` to be a non-empty string." }],
-          details: { status: "error", runs: [] } satisfies ScoutDetails,
-          isError: true,
-        };
-      }
-
+      const error = validateQuery(params);
+      if (error) return error;
       return executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
@@ -132,19 +173,9 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       "GitHub research scout for coding and personal-assistant tasks. Use when the answer likely lives in GitHub repos, exact repo/path locations are unknown, or you'd otherwise do exploratory gh search/tree probes plus ls/rg/fd/find/grep/read on fetched files. Librarian performs targeted reconnaissance in an isolated workspace and returns concise, path-first findings with line-ranged evidence.",
     parameters: LibrarianParams as any,
 
-    // pi 0.53 runtime signature: (toolCallId, params, signal, onUpdate, ctx)
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const rawQuery = (params as any).query;
-      const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
-
-      if (!query) {
-        return {
-          content: [{ type: "text", text: "Invalid parameters: expected `query` to be a non-empty string." }],
-          details: { status: "error", runs: [] } satisfies ScoutDetails,
-          isError: true,
-        };
-      }
-
+      const error = validateQuery(params);
+      if (error) return error;
       return executeScout(LIBRARIAN_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
@@ -157,6 +188,39 @@ export default function scoutsExtension(pi: ExtensionAPI) {
 
     renderResult(result: any, options: any, theme: any) {
       return renderScoutResult("librarian", result, options, theme);
+    },
+  });
+
+  // Oracle — deep code analysis scout
+  pi.registerTool({
+    name: "oracle",
+    label: "Oracle",
+    description:
+      "Deep code analysis scout. Use when you need to understand HOW code works — trace data flow, analyze architecture, find patterns, or get implementation details with precise file:line references. Oracle reads code deeply and reasons about it. For finding WHERE code is, use finder instead.",
+    parameters: OracleParams as any,
+
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
+      const error = validateQuery(params);
+      if (error) return error;
+
+      // Oracle gets read-only bash + read, scoped to the workspace
+      const oracleConfig: ScoutConfig = {
+        ...ORACLE_CONFIG,
+        getTools: () => [
+          createReadOnlyBashTool(ctx.cwd),
+          createReadTool(ctx.cwd),
+        ],
+      };
+
+      return executeScout(oracleConfig, params as Record<string, unknown>, signal, onUpdate, ctx);
+    },
+
+    renderCall(args: any, theme: any) {
+      return renderScoutCall("oracle", args as Record<string, unknown>, theme);
+    },
+
+    renderResult(result: any, options: any, theme: any) {
+      return renderScoutResult("oracle", result, options, theme);
     },
   });
 }
