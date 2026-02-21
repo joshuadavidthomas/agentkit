@@ -221,7 +221,7 @@ When blocked, the agent is instructed to ask if the server is already running, a
 
 ## Acknowledgements
 
-Scout subagent architecture (finder, librarian, oracle) inspired by [Amp](https://ampcode.com/)'s agent design.
+Oracle and librarian scout design inspired by [Amp](https://ampcode.com/)'s agent architecture.
 
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
