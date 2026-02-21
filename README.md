@@ -1,6 +1,6 @@
 # agentkit
 
-A personal collection of agents, skills, extensions, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic LLM tools.
+A personal collection of skills and extensions for Pi and other agentic LLM tools.
 
 ## Installation
 
@@ -12,31 +12,9 @@ This installs everything:
 
 | What | Where |
 |------|-------|
-| Agents | `~/.config/opencode/agents/`, `~/.pi/agent/agents/` (transformed) |
 | Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
 | Skills | `~/.agents/skills/` (symlinked) |
-| [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
-
-
-## Agents
-
-Agents live in `agents/` using a superset frontmatter format that supports multiple harnesses. The install script transforms them to harness-specific formats. See [agents/README.md](./agents/README.md) for format details.
-
-### [code-analyzer](./agents/code-analyzer.md)
-
-Analyzes codebase implementation details with precise file:line references. Call when you need to understand HOW code works—traces data flow, identifies patterns, explains technical workings.
-
-### [code-locator](./agents/code-locator.md)
-
-Locates files, directories, and components relevant to a feature or task. A "super grep/glob/ls tool"—finds WHERE code lives without analyzing contents.
-
-### [code-pattern-finder](./agents/code-pattern-finder.md)
-
-Finds similar implementations, usage examples, or existing patterns to model after. Like code-locator but includes actual code snippets and details.
-
-### [web-searcher](./agents/web-searcher.md)
-
-Web research specialist for finding modern information not in training data. Searches strategically, fetches content, synthesizes findings with citations.
+| [dcg](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
 
 ## Pi Extensions
 
@@ -123,20 +101,6 @@ Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-pi
 
 Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
 
-#### [pi-subagents](./pi-extensions/pi-subagents/)
-
-Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
-
-- **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
-- **`subagent_status` without args**: Lists recent runs (async AND sync) by scanning artifact metadata files
-- **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
-- **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
-- **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
-- **Reduced false positives**: Exit code 1 from search tools (grep, rg, find, fd) means "no matches", not failure
-- **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
-
-Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
-
 #### [ralph](./pi-extensions/ralph/)
 
 **Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
@@ -151,18 +115,20 @@ When called on a directory, returns an `ls -la` listing with a hint instead of e
 
 #### [scouts](./pi-extensions/scouts/)
 
-Vendored from [default-anton/pi-finder](https://github.com/default-anton/pi-finder) and [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian) with modifications:
+Scout subagent system — spins up focused small-model sessions with purpose-built tool sets, returning structured results with custom TUI rendering. Originally vendored from [pi-finder](https://github.com/default-anton/pi-finder) and [pi-librarian](https://github.com/default-anton/pi-librarian), now significantly expanded.
 
-- **Unified extension**: Consolidated two separate packages into a single extension with shared infrastructure (`scout-core.ts`)
-- **Usage-aware model selection**: Shells out to [vibeusage](https://github.com/joshuadavidthomas/vibeusage) to check provider utilization before selecting a subagent model, deprioritizing providers above 85% and skipping those above 95%
-- **Cheap model candidates**: Uses fast/cheap models (Gemini 3 Flash, Haiku 4.5) instead of expensive ones
-- **Interleaved TUI rendering**: Tool calls and text rendered chronologically (inspired by pi-subagents) instead of dumped separately
-- **Turn budget extension**: Blocks tool use on the final turn to force a summary response
+Features:
+- **Model tier system**: Each scout has a default tier (`fast` or `capable`) overridable per-call via `modelTier` parameter
+- **Usage-aware model selection**: Checks provider utilization via [vibeusage](https://github.com/joshuadavidthomas/vibeusage), deprioritizing providers above 85% and skipping those above 95%
+- **Interleaved TUI rendering**: Tool calls and text rendered chronologically with collapsible markdown output
+- **Turn budget enforcement**: Blocks tool use on the final turn to force a summary response
 
-Registers two tools:
+Registers four tools:
 
-- **finder**: Read-only workspace scout — locates files, directories, and components when exact locations are unknown
-- **librarian**: GitHub research scout — searches and fetches code from GitHub repos to answer questions about external codebases
+- **finder** (fast): Read-only workspace scout — locates files, directories, and components when exact locations are unknown
+- **librarian** (fast, overridable to capable): External research scout — searches GitHub repos and the web, fetches code and documentation
+- **oracle** (capable): Deep code analysis scout — traces data flow, analyzes architecture, finds patterns with precise file:line references. Read-only (restricted bash allowlist)
+- **scouts**: Parallel dispatch — runs multiple scouts concurrently for independent research tasks
 
 #### [skill-requires-path](./pi-extensions/skill-requires-path/)
 
@@ -180,17 +146,17 @@ Web search and content extraction via Brave Search API.
 
 ### [btca](./skills/btca/SKILL.md)
 
-Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code—searches actual source, not outdated docs.
+Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code — searches actual source, not outdated docs.
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### [jj](./skills/jj/SKILL.md)
-
-[Jujutsu (jj)](https://github.com/jj-vcs/jj) — a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. Covers the mental model, agent-specific rules, daily workflows, revsets/filesets/templates, bookmarks and sharing, history rewriting, workspaces for parallel agents, and configuration.
-
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
-Methodical approach to researching unfamiliar codebases using specialized subagents.
+Methodical approach to researching unfamiliar codebases using scout subagents.
+
+### [shadcn-svelte-forms](./skills/shadcn-svelte-forms/SKILL.md)
+
+Patterns for building forms with shadcn-svelte and bits-ui. Covers Field.* component patterns, checkbox groups, radio groups, and form validation display.
 
 ### Rust
 
@@ -213,7 +179,7 @@ A suite of skills encoding idiomatic defaults and "think in Rust" principles for
 | [rust-unsafe](./skills/rust-unsafe/SKILL.md) | Soundness, safety invariants, and UB avoidance. Mandatory documentation requirements (// SAFETY:), Miri validation, and FFI boundaries. |
 | [thinking-in-rust](./skills/thinking-in-rust/SKILL.md) | **The paradigm shift skill.** 18 rules for shifting from "compiles" to "thinks in Rust" — newtypes, enums over booleans, exhaustive matching, parse-don't-validate, iterators over indexing, Option over sentinels, ownership restructuring, visibility as design. General-purpose entry point; delegates to specialized skills. |
 
-#### Salsa
+### Salsa
 
 A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
 
@@ -255,9 +221,7 @@ When blocked, the agent is instructed to ask if the server is already running, a
 
 ## Acknowledgements
 
-This repository includes and adapts work from several sources.
-
-code-analyzer, code-locator, code-pattern-finder, and web-searcher agents are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
+Oracle and librarian scout design inspired by [Amp](https://ampcode.com/)'s agent architecture.
 
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
@@ -266,8 +230,6 @@ Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
 Scouts pi extension from [default-anton/pi-finder](https://github.com/default-anton/pi-finder), [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian), and [default-anton/pi-subagent-model-selection](https://github.com/default-anton/pi-subagent-model-selection) (MIT, Anton Kuzmenko).
-
-Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
 Salsa skills reference code and patterns from:
 
@@ -304,18 +266,7 @@ Rust skills reference and adapt guidance from several sources, including:
 - [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
-Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
-
-Jujutsu (jj) skills reference and adapt guidance from:
-
-- [Jujutsu](https://github.com/jj-vcs/jj) (Apache-2.0)
-- [Steve Klabnik's Jujutsu Tutorial](https://github.com/steveklabnik/jujutsu-tutorial)
-- [jujutsu-skill](https://github.com/danverbraganza/jujutsu-skill) by Dan Verbraganza (MIT)
-- [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC)
-- [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT)
-- [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
-- [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
-- [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
+Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
 Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 

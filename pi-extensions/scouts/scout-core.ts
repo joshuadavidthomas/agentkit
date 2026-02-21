@@ -20,7 +20,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
-import { getSmallModelFromProvider } from "./model-selection.ts";
+import { type ModelTier, getModelForTier } from "./model-selection.ts";
 
 const MAX_DISPLAY_ITEMS = 120;
 
@@ -57,6 +57,8 @@ export interface ScoutDetails {
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
+  /** Model tier: "fast" (Haiku/Flash) or "capable" (Sonnet/Pro). Defaults to "fast". */
+  defaultModelTier?: ModelTier;
   buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
   /**
@@ -246,7 +248,10 @@ export async function executeScout(
     ];
 
     const modelRegistry = ctx.modelRegistry;
-    const subModelSelection = await getSmallModelFromProvider(modelRegistry, ctx.model);
+    // Resolve model tier: param override > config default > "fast"
+    const paramTier = typeof params.modelTier === "string" ? params.modelTier as ModelTier : undefined;
+    const tier: ModelTier = paramTier ?? config.defaultModelTier ?? "fast";
+    const subModelSelection = await getModelForTier(modelRegistry, ctx.model, tier);
 
     if (!subModelSelection) {
       const error = "No models available. Configure credentials (e.g. /login or auth.json) and try again.";
@@ -591,6 +596,88 @@ export function renderScoutResult(
         // Intermediate text — show truncated and dim
         const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
         c.addChild(new Text(theme.fg("dim", `${preview}${item.text.length > 120 ? "..." : ""}`), 0, 0));
+      }
+    }
+  }
+
+  return c;
+}
+
+// Parallel result rendering
+export function renderParallelResult(
+  result: any,
+  options: { expanded: boolean; isPartial: boolean },
+  theme: any,
+): any {
+  const details = result.details;
+  if (!details || details.mode !== "parallel") {
+    const text = result.content?.[0];
+    return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+  }
+
+  const { expanded, isPartial } = options;
+  const parallelResults = details.results as Array<{
+    scout: string;
+    details: ScoutDetails;
+    content: Array<{ type: "text"; text: string }>;
+    isError: boolean;
+  }>;
+
+  const allDone = parallelResults.every((r) => r.details.status === "done");
+  const anyError = parallelResults.some((r) => r.details.status === "error");
+  const anyRunning = isPartial || parallelResults.some((r) => r.details.status === "running");
+
+  const statusIcon = anyRunning
+    ? theme.fg("warning", "…")
+    : anyError
+      ? theme.fg("error", "✗")
+      : theme.fg("success", "✓");
+
+  const doneCount = parallelResults.filter((r) => r.details.status === "done").length;
+  const total = parallelResults.length;
+
+  const c = new Container();
+  c.addChild(new Text(
+    `${statusIcon} ${theme.fg("dim", `${doneCount}/${total} scouts completed`)}`,
+    0, 0,
+  ));
+
+  for (const pr of parallelResults) {
+    c.addChild(new Spacer(1));
+
+    // Render each scout's result using the standard renderer, wrapped with a header
+    const scoutDetails = pr.details;
+    const run = scoutDetails.runs?.[0];
+    const status = pr.details.status;
+
+    const scoutIcon =
+      status === "done"
+        ? theme.fg("success", "✓")
+        : status === "error"
+          ? theme.fg("error", "✗")
+          : status === "running"
+            ? theme.fg("warning", "…")
+            : theme.fg("dim", "○");
+
+    const scoutTitle = `${scoutIcon} ${theme.fg("toolTitle", theme.bold(pr.scout))}`;
+    const stats = run
+      ? theme.fg("dim", ` • ${run.turns} turns • ${run.displayItems.filter((i: any) => i.type === "tool").length} tools • ${formatDuration(Date.now() - run.startedAt)}`)
+      : "";
+
+    c.addChild(new Text(scoutTitle + stats, 0, 0));
+
+    // Delegate to the standard scout result renderer for the body
+    const fakeResult = { content: pr.content, details: scoutDetails };
+    const scoutWidget = renderScoutResult(pr.scout, fakeResult, options, theme);
+
+    // The widget is a Container — add its children directly
+    if (scoutWidget instanceof Container) {
+      const children = (scoutWidget as any).children;
+      if (Array.isArray(children)) {
+        // Skip the first child (header) since we rendered our own
+        for (let i = 1; i < children.length; i++) {
+          c.addChild(children[i]);
+        }
       }
     }
   }

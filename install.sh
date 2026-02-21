@@ -30,23 +30,15 @@ for skill in "$REPO_DIR/skills"/*; do
     echo "Linked $skill_name -> $SKILLS_DIR/"
 done
 
-# Install agents (transform from superset format to harness-specific)
-AGENTS_SRC="$REPO_DIR/agents"
-TRANSFORM="$REPO_DIR/scripts/transform-agent.ts"
-OPENCODE_AGENTS_DIR="$HOME/.config/opencode/agents"
+# Clean up retired agent files (replaced by scouts extension)
 PI_AGENTS_DIR="$HOME/.pi/agent/agents"
-
-if [[ -d "$AGENTS_SRC" ]]; then
-    mkdir -p "$OPENCODE_AGENTS_DIR" "$PI_AGENTS_DIR"
-
-    for agent in "$AGENTS_SRC"/*.md; do
-        [[ -f "$agent" ]] || continue
-        name=$(basename "$agent")
-        [[ "$name" == "README.md" ]] && continue
-
-        bun run "$TRANSFORM" "$agent" opencode >"$OPENCODE_AGENTS_DIR/$name"
-        bun run "$TRANSFORM" "$agent" pi >"$PI_AGENTS_DIR/$name"
-        echo "Installed agent: $name"
+RETIRED_AGENTS="code-analyzer.md code-locator.md code-pattern-finder.md web-searcher.md"
+if [[ -d "$PI_AGENTS_DIR" ]]; then
+    for retired in $RETIRED_AGENTS; do
+        if [[ -f "$PI_AGENTS_DIR/$retired" ]]; then
+            rm "$PI_AGENTS_DIR/$retired"
+            echo "Removed retired agent: $retired"
+        fi
     done
 fi
 
@@ -54,11 +46,22 @@ fi
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
 
+# Extensions to skip (retired in favor of scouts)
+SKIP_EXTENSIONS="pi-subagents"
+
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
     mkdir -p "$PI_EXTENSIONS_DIR"
     for ext in "$PI_EXTENSIONS_SRC"/*; do
         [[ -e "$ext" ]] || continue
         ext_name=$(basename "$ext")
+        if echo "$SKIP_EXTENSIONS" | grep -qw "$ext_name"; then
+            # Remove stale symlink if it exists
+            if [[ -L "$PI_EXTENSIONS_DIR/$ext_name" ]]; then
+                rm "$PI_EXTENSIONS_DIR/$ext_name"
+                echo "Removed retired extension: $ext_name"
+            fi
+            continue
+        fi
         ln -sfn "$ext" "$PI_EXTENSIONS_DIR/$ext_name"
         echo "Linked $ext_name -> $PI_EXTENSIONS_DIR/"
     done
