@@ -16,9 +16,11 @@ import {
   type ScoutConfig,
   type ScoutDetails,
   executeScout,
+  renderParallelResult,
   renderScoutCall,
   renderScoutResult,
 } from "./scout-core.ts";
+import { executeParallelScouts } from "./parallel.ts";
 import { buildFinderSystemPrompt, buildFinderUserPrompt } from "./finder-prompts.md.ts";
 import { createGitHubTools } from "./github-tools.ts";
 import { createGrepGitHubTool } from "./grep-app-tool.ts";
@@ -224,6 +226,93 @@ export default function scoutsExtension(pi: ExtensionAPI) {
 
     renderResult(result: any, options: any, theme: any) {
       return renderScoutResult("oracle", result, options, theme);
+    },
+  });
+
+  // Scouts — parallel dispatch
+  const scoutConfigs = new Map<string, ScoutConfig>([
+    ["finder", FINDER_CONFIG],
+    ["librarian", LIBRARIAN_CONFIG],
+    // Oracle config is built dynamically with ctx.cwd, handled in execute below
+  ]);
+
+  const ScoutsParams = Type.Object({
+    tasks: Type.Array(
+      Type.Object({
+        scout: Type.String({
+          description: "Scout name: 'finder', 'librarian', or 'oracle'.",
+        }),
+        query: Type.String({
+          description: "The query/task for this scout.",
+        }),
+        repos: Type.Optional(
+          Type.Array(Type.String(), { description: "Repository hints (librarian only)." }),
+        ),
+        owners: Type.Optional(
+          Type.Array(Type.String(), { description: "Owner hints (librarian only)." }),
+        ),
+        modelTier: ModelTierParam,
+      }),
+      {
+        description: "Array of scout tasks to run in parallel.",
+        minItems: 1,
+      },
+    ),
+  });
+
+  pi.registerTool({
+    name: "scouts",
+    label: "Scouts",
+    description:
+      "Run multiple scouts in parallel. Use when you need to fire off several independent research/analysis tasks simultaneously — e.g. search GitHub for one thing while analyzing local code for another.",
+    parameters: ScoutsParams as any,
+
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
+      const p = params as { tasks: Array<{ scout: string; query: string; repos?: string[]; owners?: string[]; modelTier?: string }> };
+
+      if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
+        return {
+          content: [{ type: "text", text: "Invalid parameters: expected non-empty `tasks` array." }],
+          details: { mode: "parallel", status: "error", results: [] },
+          isError: true,
+        };
+      }
+
+      // Build configs map with oracle (needs ctx.cwd for read-only tools)
+      const configs = new Map(scoutConfigs);
+      configs.set("oracle", {
+        ...ORACLE_CONFIG,
+        getTools: () => [
+          createReadOnlyBashTool(ctx.cwd),
+          createReadTool(ctx.cwd),
+        ],
+      });
+
+      const tasks = p.tasks.map((t) => ({
+        scout: t.scout,
+        params: {
+          query: t.query,
+          repos: t.repos,
+          owners: t.owners,
+          modelTier: t.modelTier,
+        } as Record<string, unknown>,
+      }));
+
+      return executeParallelScouts(configs, tasks, signal, onUpdate, ctx);
+    },
+
+    renderCall(args: any, theme: any) {
+      const p = args as { tasks?: Array<{ scout: string; query: string }> };
+      const count = Array.isArray(p?.tasks) ? p.tasks.length : 0;
+      const scouts = Array.isArray(p?.tasks)
+        ? [...new Set(p.tasks.map((t) => t.scout))].join(", ")
+        : "";
+      const info = `${count} task${count === 1 ? "" : "s"}${scouts ? ` (${scouts})` : ""}`;
+      return renderScoutCall("scouts", args as Record<string, unknown>, theme, info);
+    },
+
+    renderResult(result: any, options: any, theme: any) {
+      return renderParallelResult(result, options, theme);
     },
   });
 }
