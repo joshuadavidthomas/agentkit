@@ -30,36 +30,15 @@ for skill in "$REPO_DIR/skills"/*; do
     echo "Linked $skill_name -> $SKILLS_DIR/"
 done
 
-# Install agents (transform from superset format to harness-specific)
-# NOTE: pi agents (code-analyzer, code-locator, code-pattern-finder, web-searcher)
-# are retired — replaced by the scouts extension (finder, librarian, oracle).
-# Only install for opencode (which still uses them).
-AGENTS_SRC="$REPO_DIR/agents"
-TRANSFORM="$REPO_DIR/scripts/transform-agent.ts"
-OPENCODE_AGENTS_DIR="$HOME/.config/opencode/agents"
+# Clean up retired agent files (replaced by scouts extension)
 PI_AGENTS_DIR="$HOME/.pi/agent/agents"
-
-# Clean up retired pi agent files
-RETIRED_PI_AGENTS="code-analyzer.md code-locator.md code-pattern-finder.md web-searcher.md"
+RETIRED_AGENTS="code-analyzer.md code-locator.md code-pattern-finder.md web-searcher.md"
 if [[ -d "$PI_AGENTS_DIR" ]]; then
-    for retired in $RETIRED_PI_AGENTS; do
+    for retired in $RETIRED_AGENTS; do
         if [[ -f "$PI_AGENTS_DIR/$retired" ]]; then
             rm "$PI_AGENTS_DIR/$retired"
-            echo "Removed retired pi agent: $retired"
+            echo "Removed retired agent: $retired"
         fi
-    done
-fi
-
-if [[ -d "$AGENTS_SRC" ]]; then
-    mkdir -p "$OPENCODE_AGENTS_DIR"
-
-    for agent in "$AGENTS_SRC"/*.md; do
-        [[ -f "$agent" ]] || continue
-        name=$(basename "$agent")
-        [[ "$name" == "README.md" ]] && continue
-
-        bun run "$TRANSFORM" "$agent" opencode >"$OPENCODE_AGENTS_DIR/$name"
-        echo "Installed agent (opencode): $name"
     done
 fi
 

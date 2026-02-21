@@ -1,6 +1,6 @@
 # agentkit
 
-A personal collection of agents, skills, extensions, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic LLM tools.
+A personal collection of skills, extensions, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic LLM tools.
 
 ## Installation
 
@@ -12,31 +12,9 @@ This installs everything:
 
 | What | Where |
 |------|-------|
-| Agents | `~/.config/opencode/agents/`, `~/.pi/agent/agents/` (transformed) |
 | Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
 | Skills | `~/.agents/skills/` (symlinked) |
 | [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
-
-
-## Agents
-
-Agents live in `agents/` using a superset frontmatter format that supports multiple harnesses. The install script transforms them to harness-specific formats. See [agents/README.md](./agents/README.md) for format details.
-
-### [code-analyzer](./agents/code-analyzer.md)
-
-Analyzes codebase implementation details with precise file:line references. Call when you need to understand HOW code works—traces data flow, identifies patterns, explains technical workings.
-
-### [code-locator](./agents/code-locator.md)
-
-Locates files, directories, and components relevant to a feature or task. A "super grep/glob/ls tool"—finds WHERE code lives without analyzing contents.
-
-### [code-pattern-finder](./agents/code-pattern-finder.md)
-
-Finds similar implementations, usage examples, or existing patterns to model after. Like code-locator but includes actual code snippets and details.
-
-### [web-searcher](./agents/web-searcher.md)
-
-Web research specialist for finding modern information not in training data. Searches strategically, fetches content, synthesizes findings with citations.
 
 ## Pi Extensions
 
@@ -123,20 +101,6 @@ Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-pi
 
 Cross-platform audio: `afplay` (macOS), `pw-play`/`paplay`/`ffplay`/`mpv`/`aplay` (Linux), PowerShell MediaPlayer (WSL). Also picks up existing packs from `~/.claude/hooks/peon-ping/` if you have a Claude Code installation. Config and state stored in `~/.config/peon-ping/`.
 
-#### [pi-subagents](./pi-extensions/pi-subagents/)
-
-Vendored from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) with modifications:
-
-- **Skill discovery**: Uses pi's `SettingsManager` for skill discovery (respects user-configured skill paths)
-- **`subagent_status` without args**: Lists recent runs (async AND sync) by scanning artifact metadata files
-- **Richer `subagent_status` description**: Documents all use cases (listing, progress checking, artifact inspection)
-- **Inline failure details**: Failed steps include error message and artifact paths in tool result text (visible to agent, not just TUI)
-- **Recovery guidance**: Failed runs show artifact paths in text content; TUI additionally shows `subagent_status({})` and `ls` hints
-- **Reduced false positives**: Exit code 1 from search tools (grep, rg, find, fd) means "no matches", not failure
-- **Parallel live progress**: Shows real-time progress for parallel tasks (upstream has no live updates for parallel)
-
-Enables delegating tasks to subagents with chains, parallel execution, and TUI clarification.
-
 #### [ralph](./pi-extensions/ralph/)
 
 **Experimental.** In-session iterative agent loop with fresh context per iteration, implementing [Geoffrey Huntley's Ralph Wiggum loop approach](https://ghuntley.com/ralph/).
@@ -151,18 +115,20 @@ When called on a directory, returns an `ls -la` listing with a hint instead of e
 
 #### [scouts](./pi-extensions/scouts/)
 
-Vendored from [default-anton/pi-finder](https://github.com/default-anton/pi-finder) and [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian) with modifications:
+Scout subagent system — spins up focused small-model sessions with purpose-built tool sets, returning structured results with custom TUI rendering. Originally vendored from [pi-finder](https://github.com/default-anton/pi-finder) and [pi-librarian](https://github.com/default-anton/pi-librarian), now significantly expanded.
 
-- **Unified extension**: Consolidated two separate packages into a single extension with shared infrastructure (`scout-core.ts`)
-- **Usage-aware model selection**: Shells out to [vibeusage](https://github.com/joshuadavidthomas/vibeusage) to check provider utilization before selecting a subagent model, deprioritizing providers above 85% and skipping those above 95%
-- **Cheap model candidates**: Uses fast/cheap models (Gemini 3 Flash, Haiku 4.5) instead of expensive ones
-- **Interleaved TUI rendering**: Tool calls and text rendered chronologically (inspired by pi-subagents) instead of dumped separately
-- **Turn budget extension**: Blocks tool use on the final turn to force a summary response
+Features:
+- **Model tier system**: Each scout has a default tier (`fast` or `capable`) overridable per-call via `modelTier` parameter
+- **Usage-aware model selection**: Checks provider utilization via [vibeusage](https://github.com/joshuadavidthomas/vibeusage), deprioritizing providers above 85% and skipping those above 95%
+- **Interleaved TUI rendering**: Tool calls and text rendered chronologically with collapsible markdown output
+- **Turn budget enforcement**: Blocks tool use on the final turn to force a summary response
 
-Registers two tools:
+Registers four tools:
 
-- **finder**: Read-only workspace scout — locates files, directories, and components when exact locations are unknown
-- **librarian**: GitHub research scout — searches and fetches code from GitHub repos to answer questions about external codebases
+- **finder** (fast): Read-only workspace scout — locates files, directories, and components when exact locations are unknown
+- **librarian** (fast, overridable to capable): External research scout — searches GitHub repos and the web, fetches code and documentation
+- **oracle** (capable): Deep code analysis scout — traces data flow, analyzes architecture, finds patterns with precise file:line references. Read-only (restricted bash allowlist)
+- **scouts**: Parallel dispatch — runs multiple scouts concurrently for independent research tasks
 
 #### [skill-requires-path](./pi-extensions/skill-requires-path/)
 
