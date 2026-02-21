@@ -557,9 +557,14 @@ export function renderScoutResult(
   }
 
   // Render interleaved items: tool calls inline, final text as markdown
+  let toolHeaderShown = false;
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item.type === "tool") {
+      if (!toolHeaderShown) {
+        c.addChild(new Text(theme.fg("dim", "Tool calls"), 0, 0));
+        toolHeaderShown = true;
+      }
       const { label, summary } = formatToolCallParts(item.name, item.args);
       const itemIcon = item.isError ? theme.fg("error", "✗") : theme.fg("accent", "▸");
       c.addChild(
