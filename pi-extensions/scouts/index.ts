@@ -264,7 +264,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "scouts",
     label: "Scouts",
     description:
-      "Run multiple scouts in parallel. Use when you need to fire off several independent research/analysis tasks simultaneously — e.g. search GitHub for one thing while analyzing local code for another.",
+      "Run multiple scouts in parallel. Use when you need to fire off several independent research/analysis tasks simultaneously — e.g. search GitHub for one thing while analyzing local code for another. Each task should be independent; avoid running multiple instances of the same scout on the same codebase (use one scout with a broader query instead).",
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
