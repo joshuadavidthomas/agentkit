@@ -1,52 +1,33 @@
 ---
 # agentkit-s0nt
 title: 'Unify scouts: add oracle + web search to librarian, add parallel dispatch, retire pi-subagents'
-status: in-progress
+status: completed
 type: epic
 priority: normal
 created_at: 2026-02-21T05:49:51Z
-updated_at: 2026-02-21T06:24:31Z
+updated_at: 2026-02-21T07:12:52Z
 ---
 
 ## Overview
 
-Consolidate the two parallel subagent systems (scouts extension + vendored pi-subagents) into a single scouts-based system. Add two new scouts (oracle, web searcher via expanded librarian), add parallel dispatch, and retire the pi-subagents extension.
+Consolidated the two parallel subagent systems (scouts extension + vendored pi-subagents) into a single scouts-based system with three scouts, model tier selection, and parallel dispatch.
 
-## Checklist
+## Result
 
-### Model tier system
-- [x] Add `ModelTier` type (`"fast" | "capable"`) to model-selection.ts
-- [x] Add Sonnet-tier candidate lists (OAUTH_CAPABLE_CANDIDATES, API_KEY_CAPABLE_CANDIDATES)
-- [x] Export `getModelForTier(registry, currentModel, tier)` function
-- [x] Add `defaultModelTier` field to ScoutConfig
-- [x] Wire `modelTier` parameter through executeScout
+Four tools registered:
 
-### Oracle scout
-- [x] Create oracle-prompts.md.ts with system/user prompts
-- [x] Create read-only bash tool variant (read-only-bash.ts)
-- [x] Register oracle in index.ts with ScoutConfig (capable tier default, read-only tools)
-- [x] Add `modelTier` optional parameter to oracle tool schema
+| Scout | Purpose | Default Tier | Tools |
+|-------|---------|-------------|-------|
+| **finder** | Find where code lives locally | fast | bash, read |
+| **librarian** | External research — GitHub + web | fast | GitHub tools, grepGitHub, webSearch, webFetch |
+| **oracle** | Deep read-only code analysis | capable | read, read-only bash |
+| **scouts** | Parallel dispatch | — | dispatches to any scout |
 
-### Expand librarian with web tools
-- [x] Create web search tool wrapping brave-search/search.js (web-tools.ts)
-- [x] Create web fetch tool wrapping brave-search/content.js (web-tools.ts)
-- [x] Add web tools to librarian config getTools()
-- [x] Update librarian system prompt to cover web research workflow alongside GitHub research
-- [x] Update librarian parameter schema and tool description
-- [x] Set librarian default tier to fast, overridable to capable
+All scouts accept `modelTier` parameter to override default (fast ↔ capable).
 
-### Parallel dispatch
-- [x] Implement parallel scout execution (parallel.ts)
-- [x] TUI rendering for parallel results (renderParallelResult in scout-core.ts)
-- [x] Register scouts parallel dispatch tool in index.ts
-- [x] Handle abort/cancellation for parallel runs
+## What was removed
 
-### Retire pi-subagents
-- [x] Update install.sh to skip pi-subagents extension
-- [x] Remove agent .md files from ~/.pi/agent/agents/ via install.sh
-- [x] Run install.sh to apply changes
-
-### Remaining (future cleanup)
-- [ ] Remove pi-extensions/pi-subagents/ directory from repo
-- [ ] Remove agents/ directory from repo (keep for opencode for now)
-- [ ] Update README.md
+- `pi-extensions/pi-subagents/` — vendored subagent system (9,500+ lines)
+- `agents/` — 4 agent .md files (code-analyzer, code-locator, code-pattern-finder, web-searcher)
+- `scripts/` — agent transform script
+- Agent installation from install.sh
