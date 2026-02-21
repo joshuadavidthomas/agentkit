@@ -66,8 +66,13 @@ export interface ScoutConfig {
   name: string;
   maxTurns: number;
   getWorkspace?: (ctx: ExtensionContext) => Promise<string>;
-  buildSystemPrompt: (maxTurns: number, workspace: string) => string;
+  buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
+  /**
+   * Override the default tool set (bash + read). If provided, replaces them entirely.
+   * Built-in tools (name matches allTools) go to `tools`, others go to `customTools`.
+   */
+  getTools?: (workspace: string) => any[];
 }
 
 // Turn budget extension — blocks tool use on the final turn
@@ -298,7 +303,7 @@ export async function executeScout(
 
     emitAll(true);
 
-    const systemPrompt = config.buildSystemPrompt(maxTurns, workspace);
+    const systemPrompt = config.buildSystemPrompt(maxTurns);
 
     let toolAborted = false;
     const activeSessions = new Set<{ abort: () => Promise<void> }>();
@@ -359,6 +364,27 @@ export async function executeScout(
       run.error = undefined;
       run.summaryText = undefined;
 
+      // Split tools: built-in names (read, bash, edit, write, grep, find, ls) go to
+      // `tools`, everything else goes to `customTools` as ToolDefinitions.
+      const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+
+      const allTools = config.getTools
+        ? config.getTools(workspace)
+        : [createReadTool(workspace), createBashTool(workspace)];
+
+      const builtinTools = allTools.filter((t: any) => BUILTIN_TOOL_NAMES.has(t.name));
+      const extraTools = allTools.filter((t: any) => !BUILTIN_TOOL_NAMES.has(t.name));
+
+      // Wrap AgentTool execute (4 params) as ToolDefinition execute (5 params, ctx ignored)
+      const customTools = extraTools.map((t: any) => ({
+        name: t.name,
+        label: t.label,
+        description: t.description,
+        parameters: t.parameters,
+        execute: (toolCallId: string, params: any, signal: any, onUpdate: any, _ctx: any) =>
+          t.execute(toolCallId, params, signal, onUpdate),
+      }));
+
       const { session: createdSession } = await createAgentSession({
         cwd: workspace,
         modelRegistry,
@@ -366,7 +392,8 @@ export async function executeScout(
         sessionManager: SessionManager.inMemory(workspace),
         model: subModel,
         thinkingLevel: subagentThinkingLevel,
-        tools: [createReadTool(workspace), createBashTool(workspace)],
+        tools: builtinTools,
+        customTools,
       });
 
       session = createdSession;

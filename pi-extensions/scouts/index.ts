@@ -21,6 +21,8 @@ import {
   renderScoutResult,
 } from "./scout-core.ts";
 import { buildFinderSystemPrompt, buildFinderUserPrompt } from "./finder-prompts.md.ts";
+import { createGitHubTools } from "./github-tools.ts";
+import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
 
 // Finder tool parameters
@@ -86,13 +88,14 @@ const LIBRARIAN_CONFIG: ScoutConfig = {
   async getWorkspace(_ctx: ExtensionContext): Promise<string> {
     const base = "/tmp/pi-librarian";
     await fs.mkdir(base, { recursive: true });
-    const workspace = await fs.mkdtemp(path.join(base, "run-"));
-    await fs.mkdir(path.join(workspace, "repos"), { recursive: true });
-    return workspace;
+    return fs.mkdtemp(path.join(base, "run-"));
   },
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
-
+  getTools: () => [
+    createGrepGitHubTool(),
+    ...createGitHubTools(),
+  ],
 };
 
 export default function scoutsExtension(pi: ExtensionAPI) {
