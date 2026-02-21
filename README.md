@@ -1,6 +1,6 @@
 # agentkit
 
-A personal collection of skills, extensions, and scripts for Claude Code, OpenCode, Codex, Pi, and other agentic LLM tools.
+A personal collection of skills and extensions for Pi and other agentic LLM tools.
 
 ## Installation
 
@@ -14,7 +14,7 @@ This installs everything:
 |------|-------|
 | Pi extensions | `~/.pi/agent/extensions/` (symlinked) |
 | Skills | `~/.agents/skills/` (symlinked) |
-| [dcg (Destructive Command Guard)](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
+| [dcg](https://github.com/Dicklesworthstone/destructive_command_guard) config | `~/.config/dcg/` (symlinked) |
 
 ## Pi Extensions
 
@@ -146,17 +146,17 @@ Web search and content extraction via Brave Search API.
 
 ### [btca](./skills/btca/SKILL.md)
 
-Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code—searches actual source, not outdated docs.
+Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code — searches actual source, not outdated docs.
 
 Wraps the [btca (Better Context App)](https://btca.dev) CLI tool. Covers installation, resource management (git repos and local codebases), model configuration via OpenCode, and includes example configs with common resources like Svelte and Tailwind.
 
-### [jj](./skills/jj/SKILL.md)
-
-[Jujutsu (jj)](https://github.com/jj-vcs/jj) — a Git-compatible version control system with mutable commits, automatic change tracking, and a powerful operation log. Covers the mental model, agent-specific rules, daily workflows, revsets/filesets/templates, bookmarks and sharing, history rewriting, workspaces for parallel agents, and configuration.
-
 ### [researching-codebases](./skills/researching-codebases/SKILL.md)
 
-Methodical approach to researching unfamiliar codebases using specialized subagents.
+Methodical approach to researching unfamiliar codebases using scout subagents.
+
+### [shadcn-svelte-forms](./skills/shadcn-svelte-forms/SKILL.md)
+
+Patterns for building forms with shadcn-svelte and bits-ui. Covers Field.* component patterns, checkbox groups, radio groups, and form validation display.
 
 ### Rust
 
@@ -179,7 +179,7 @@ A suite of skills encoding idiomatic defaults and "think in Rust" principles for
 | [rust-unsafe](./skills/rust-unsafe/SKILL.md) | Soundness, safety invariants, and UB avoidance. Mandatory documentation requirements (// SAFETY:), Miri validation, and FFI boundaries. |
 | [thinking-in-rust](./skills/thinking-in-rust/SKILL.md) | **The paradigm shift skill.** 18 rules for shifting from "compiles" to "thinks in Rust" — newtypes, enums over booleans, exhaustive matching, parse-don't-validate, iterators over indexing, Option over sentinels, ownership restructuring, visibility as design. General-purpose entry point; delegates to specialized skills. |
 
-#### Salsa
+### Salsa
 
 A suite of skills for [Salsa](https://github.com/salsa-rs/salsa), the incremental computation framework for Rust. Salsa powers rust-analyzer, ty, Cairo, and other projects that need sub-second response times on large codebases after small edits. The skills cover everything from getting started to production-grade patterns, with reference material drawn from real-world Salsa projects.
 
@@ -221,10 +221,6 @@ When blocked, the agent is instructed to ask if the server is already running, a
 
 ## Acknowledgements
 
-This repository includes and adapts work from several sources.
-
-code-analyzer, code-locator, code-pattern-finder, and web-searcher agents are inspired by [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (Apache 2.0).
-
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
@@ -232,8 +228,6 @@ Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
 Scouts pi extension from [default-anton/pi-finder](https://github.com/default-anton/pi-finder), [default-anton/pi-librarian](https://github.com/default-anton/pi-librarian), and [default-anton/pi-subagent-model-selection](https://github.com/default-anton/pi-subagent-model-selection) (MIT, Anton Kuzmenko).
-
-Subagents pi extension from [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) (MIT, Nico Bailon).
 
 Salsa skills reference code and patterns from:
 
@@ -270,18 +264,7 @@ Rust skills reference and adapt guidance from several sources, including:
 - [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
-Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT - Do What The Fuck You Want To Public License[](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
-
-Jujutsu (jj) skills reference and adapt guidance from:
-
-- [Jujutsu](https://github.com/jj-vcs/jj) (Apache-2.0)
-- [Steve Klabnik's Jujutsu Tutorial](https://github.com/steveklabnik/jujutsu-tutorial)
-- [jujutsu-skill](https://github.com/danverbraganza/jujutsu-skill) by Dan Verbraganza (MIT)
-- [dot-claude jj-workflow](https://github.com/TrevorS/dot-claude) by TrevorS (ISC)
-- [agent-skills working-with-jj](https://github.com/YPares/agent-skills) by Yves Parès (MIT)
-- [jjtask](https://github.com/Coobaha/jjtask) by Alexander Ryzhikov (MIT)
-- [dotfiles jj-history-investigation](https://github.com/edmundmiller/dotfiles) by Edmund Miller (MIT)
-- [sgai](https://github.com/sandgardenhq/sgai) by Sandgarden (modified MIT)
+Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
 Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
