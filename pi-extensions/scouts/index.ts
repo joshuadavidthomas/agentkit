@@ -25,6 +25,7 @@ import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts.md.ts";
 import { createReadOnlyBashTool } from "./read-only-bash.ts";
+import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 
 // Shared parameter: modelTier override
 const ModelTierParam = Type.Optional(
@@ -54,10 +55,10 @@ const DEFAULT_MAX_SEARCH_RESULTS = 30;
 const LibrarianParams = Type.Object({
   query: Type.String({
     description: [
-      "Describe exactly what to find in GitHub code.",
-      "Include known context in the query when you have it (e.g. symbols/behavior, repo or owner hints, ref/branch hints, path hints, and desired output).",
+      "Describe what to research — code in GitHub repos, web documentation, or both.",
+      "Include known context: repo/owner hints for GitHub, specific URLs or technologies for web research.",
       "Do not guess unknown details; if scope is uncertain, say that explicitly and let Librarian discover it.",
-      "The librarian returns concise path-first findings with line-ranged evidence from downloaded files.",
+      "The librarian returns concise findings with citations and evidence.",
     ].join("\n"),
   }),
   repos: Type.Optional(
@@ -109,13 +110,15 @@ const FINDER_CONFIG: ScoutConfig = {
 
 const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
-  maxTurns: 10,
+  maxTurns: 12,
   defaultModelTier: "fast",
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [
     createGrepGitHubTool(),
     ...createGitHubTools(),
+    createWebSearchTool(),
+    createWebFetchTool(),
   ],
 };
 
@@ -170,7 +173,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "librarian",
     label: "Librarian",
     description:
-      "GitHub research scout for coding and personal-assistant tasks. Use when the answer likely lives in GitHub repos, exact repo/path locations are unknown, or you'd otherwise do exploratory gh search/tree probes plus ls/rg/fd/find/grep/read on fetched files. Librarian performs targeted reconnaissance in an isolated workspace and returns concise, path-first findings with line-ranged evidence.",
+      "External research scout for coding and personal-assistant tasks. Use when the answer lives outside the local workspace — in GitHub repos, web documentation, or both. Librarian can search GitHub code, read repo files, search the web, and fetch page content. Use for API research, finding implementations in other repos, reading docs, or any question requiring external sources.",
     parameters: LibrarianParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
