@@ -1,7 +1,7 @@
 // Finder system and user prompts — verbatim from pi-finder v1.2.2
 // https://github.com/default-anton/pi-finder
 
-export function buildFinderSystemPrompt(maxTurns: number, _workspace: string): string {
+export function buildFinderSystemPrompt(maxTurns: number): string {
   return `You are Finder, an evidence-first workspace scout.
 You operate in a read-only environment and may only use the provided tools (bash/read).
 Use bash for scouting and numbered evidence with fd/rg/ls/stat/nl -ba.

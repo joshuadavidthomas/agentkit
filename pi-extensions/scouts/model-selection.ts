@@ -47,19 +47,19 @@ interface CandidateSpec {
 }
 
 // OAuth candidates (when using subscription auth)
-// Prioritize cheap/fast models — scouts don't need flagship reasoning.
+// Haiku first — handles custom tool schemas better than Gemini Flash.
 const OAUTH_CANDIDATES: CandidateSpec[] = [
-  {
-    provider: "google-antigravity",
-    match: (id) => id.includes("gemini-3-flash"),
-    thinkingLevel: "low",
-    label: "google-antigravity/gemini-3-flash",
-  },
   {
     provider: "anthropic",
     match: (id) => id.includes("haiku-4-5"),
     thinkingLevel: "low",
     label: "anthropic/claude-haiku-4.5",
+  },
+  {
+    provider: "google-antigravity",
+    match: (id) => id.includes("gemini-3-flash"),
+    thinkingLevel: "low",
+    label: "google-antigravity/gemini-3-flash",
   },
 ];
 
