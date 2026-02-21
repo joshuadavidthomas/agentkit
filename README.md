@@ -221,6 +221,8 @@ When blocked, the agent is instructed to ask if the server is already running, a
 
 ## Acknowledgements
 
+Oracle scout and librarian web research expansion inspired by [Amp](https://ampcode.com/)'s agent architecture (oracle advisor, web tool integration).
+
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
