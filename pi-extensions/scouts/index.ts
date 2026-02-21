@@ -7,10 +7,7 @@
 // pi-finder: https://github.com/default-anton/pi-finder
 // pi-librarian: https://github.com/default-anton/pi-librarian
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -85,11 +82,6 @@ const FINDER_CONFIG: ScoutConfig = {
 const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
   maxTurns: 10,
-  async getWorkspace(_ctx: ExtensionContext): Promise<string> {
-    const base = "/tmp/pi-librarian";
-    await fs.mkdir(base, { recursive: true });
-    return fs.mkdtemp(path.join(base, "run-"));
-  },
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [

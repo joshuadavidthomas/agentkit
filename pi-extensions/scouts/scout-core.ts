@@ -47,32 +47,23 @@ export interface ScoutRunDetails {
   endedAt?: number;
 }
 
-export interface SubagentSelectionInfo {
-  authMode: "oauth" | "api-key";
-  authSource: string;
-  reason: string;
-}
-
 export interface ScoutDetails {
   status: ScoutStatus;
-  workspace?: string;
   subagentProvider?: string;
   subagentModelId?: string;
-  subagentSelection?: SubagentSelectionInfo;
   runs: ScoutRunDetails[];
 }
 
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
-  getWorkspace?: (ctx: ExtensionContext) => Promise<string>;
   buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
   /**
-   * Override the default tool set (bash + read). If provided, replaces them entirely.
+   * Override the default tool set. If provided, replaces the defaults entirely.
    * Built-in tools (name matches allTools) go to `tools`, others go to `customTools`.
    */
-  getTools?: (workspace: string) => any[];
+  getTools?: () => any[];
 }
 
 // Turn budget extension — blocks tool use on the final turn
@@ -242,7 +233,6 @@ export async function executeScout(
   let onAbort: (() => void) | undefined;
 
   try {
-    const workspace = config.getWorkspace ? await config.getWorkspace(ctx) : ctx.cwd;
     const maxTurns = config.maxTurns;
 
     const runs: ScoutRunDetails[] = [
@@ -266,18 +256,13 @@ export async function executeScout(
       runs[0].endedAt = Date.now();
       return {
         content: [{ type: "text", text: error }],
-        details: { status: "error", workspace, runs } satisfies ScoutDetails,
+        details: { status: "error", runs } satisfies ScoutDetails,
         isError: true,
       };
     }
 
     const subModel = subModelSelection.model;
     const subagentThinkingLevel = subModelSelection.thinkingLevel;
-    const subagentSelection: SubagentSelectionInfo = {
-      authMode: subModelSelection.authMode,
-      authSource: subModelSelection.authSource,
-      reason: subModelSelection.reason,
-    };
 
     let lastUpdate = 0;
     const emitAll = (force = false) => {
@@ -292,10 +277,8 @@ export async function executeScout(
         content: [{ type: "text", text }],
         details: {
           status,
-          workspace,
           subagentProvider: subModel.provider,
           subagentModelId: subModel.id,
-          subagentSelection,
           runs,
         } satisfies ScoutDetails,
       });
@@ -329,7 +312,7 @@ export async function executeScout(
 
     if (signal?.aborted) {
       await abortAll();
-      return buildFinalResult(runs, workspace, subModel, subagentSelection);
+      return buildFinalResult(runs, subModel);
     }
 
     if (signal) {
@@ -369,8 +352,8 @@ export async function executeScout(
       const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
       const allTools = config.getTools
-        ? config.getTools(workspace)
-        : [createReadTool(workspace), createBashTool(workspace)];
+        ? config.getTools()
+        : [createReadTool(ctx.cwd), createBashTool(ctx.cwd)];
 
       const builtinTools = allTools.filter((t: any) => BUILTIN_TOOL_NAMES.has(t.name));
       const extraTools = allTools.filter((t: any) => !BUILTIN_TOOL_NAMES.has(t.name));
@@ -386,10 +369,10 @@ export async function executeScout(
       }));
 
       const { session: createdSession } = await createAgentSession({
-        cwd: workspace,
+        cwd: ctx.cwd,
         modelRegistry,
         resourceLoader,
-        sessionManager: SessionManager.inMemory(workspace),
+        sessionManager: SessionManager.inMemory(ctx.cwd),
         model: subModel,
         thinkingLevel: subagentThinkingLevel,
         tools: builtinTools,
@@ -464,7 +447,7 @@ export async function executeScout(
       session?.dispose();
     }
 
-    return buildFinalResult(runs, workspace, subModel, subagentSelection);
+    return buildFinalResult(runs, subModel);
   } finally {
     if (signal && abortListenerAdded && onAbort) signal.removeEventListener("abort", onAbort);
     restoreMaxListeners();
@@ -473,9 +456,7 @@ export async function executeScout(
 
 function buildFinalResult(
   runs: ScoutRunDetails[],
-  workspace: string,
   subModel: Model<Api>,
-  subagentSelection: SubagentSelectionInfo,
 ) {
   const status = computeOverallStatus(runs);
   const text = runs[0]?.summaryText ?? "(no output)";
@@ -483,11 +464,9 @@ function buildFinalResult(
     content: [{ type: "text" as const, text }],
     details: {
       status,
-      workspace,
       runs,
       subagentProvider: subModel.provider,
       subagentModelId: subModel.id,
-      subagentSelection,
     } satisfies ScoutDetails,
     isError: status === "error",
   };
@@ -609,17 +588,6 @@ export function renderScoutResult(
         c.addChild(new Text(theme.fg("dim", `${preview}${item.text.length > 120 ? "..." : ""}`), 0, 0));
       }
     }
-  }
-
-  // Footer with metadata — only show workspace for non-cwd locations (e.g., librarian temp dirs)
-  const ws = details.workspace ? shortenPath(details.workspace) : undefined;
-  if (ws && ws !== ".") {
-    c.addChild(new Spacer(1));
-    c.addChild(new Text(theme.fg("dim", `workspace: ${ws}`), 0, 0));
-  }
-  if (expanded && details.subagentSelection) {
-    c.addChild(new Spacer(1));
-    c.addChild(new Text(theme.fg("dim", `selection: ${details.subagentSelection.reason}`), 0, 0));
   }
 
   return c;
