@@ -12,10 +12,17 @@ import { homedir } from "node:os";
 
 const USAGE_FILE = resolve(homedir(), ".pi", "agent", "skill-usage.json");
 
+interface ProjectRecord {
+  count: number;
+  lastUsed: string;
+  firstUsed: string;
+}
+
 interface SkillRecord {
   count: number;
   lastUsed: string;
   firstUsed: string;
+  projects: Record<string, ProjectRecord>;
 }
 
 function loadUsageData(): Record<string, SkillRecord> {
@@ -59,11 +66,21 @@ export default function (pi: ExtensionAPI) {
     if (!skill) return;
 
     const now = new Date().toISOString();
+    const project = basename(ctx.cwd);
     const existing = data[skill];
+    const existingProject = existing?.projects?.[project];
     data[skill] = {
       count: (existing?.count ?? 0) + 1,
       lastUsed: now,
       firstUsed: existing?.firstUsed ?? now,
+      projects: {
+        ...existing?.projects,
+        [project]: {
+          count: (existingProject?.count ?? 0) + 1,
+          lastUsed: now,
+          firstUsed: existingProject?.firstUsed ?? now,
+        },
+      },
     };
     saveUsageData(data);
   });
