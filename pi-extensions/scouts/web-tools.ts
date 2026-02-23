@@ -1,16 +1,23 @@
 // Web search and content extraction tools for the librarian scout.
 //
-// Wraps the brave-search skill scripts (search.js, content.js) as proper
-// typed AgentTools. Requires BRAVE_API_KEY environment variable.
+// webSearch wraps the brave-search skill script (search.js) as a typed
+// AgentTool and requires the BRAVE_API_KEY environment variable.
+//
+// webFetch implements content extraction inline using Readability + Turndown
+// (no external scripts, no API key needed).
 
 import { execFile } from "node:child_process";
 import * as path from "node:path";
+import { Readability } from "@mozilla/readability";
+import { JSDOM } from "jsdom";
+import TurndownService from "turndown";
+// @ts-ignore — turndown-plugin-gfm has no type declarations
+import { gfm } from "turndown-plugin-gfm";
 import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 // Resolve the brave-search skill directory relative to this extension
 function getBraveSearchDir(): string {
-  // Walk up from pi-extensions/scouts/ to repo root, then into skills/brave-search/
   return path.resolve(import.meta.dirname, "../../skills/brave-search");
 }
 
@@ -67,6 +74,87 @@ function toolOk(text: string) {
     content: [{ type: "text" as const, text }],
     details: {},
   };
+}
+
+// Convert HTML to clean markdown using Turndown with GFM support
+function htmlToMarkdown(html: string): string {
+  const turndown = new TurndownService({
+    headingStyle: "atx",
+    codeBlockStyle: "fenced",
+  });
+  turndown.use(gfm);
+  turndown.addRule("removeEmptyLinks", {
+    filter: (node) => node.nodeName === "A" && !node.textContent?.trim(),
+    replacement: () => "",
+  });
+  return turndown
+    .turndown(html)
+    .replace(/\[\\?\[\s*\\?\]\]\([^)]*\)/g, "")
+    .replace(/ +/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+\./g, ".")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// Fetch a URL and extract readable content as markdown
+async function fetchWebContent(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ title?: string; content: string }> {
+  const timeoutSignal = AbortSignal.timeout(15_000);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+    signal: combinedSignal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const html = await response.text();
+
+  // Primary: Readability extraction
+  const dom = new JSDOM(html, { url });
+  const article = new Readability(dom.window.document).parse();
+
+  if (article?.content) {
+    return {
+      title: article.title || undefined,
+      content: htmlToMarkdown(article.content),
+    };
+  }
+
+  // Fallback: strip non-content elements, find main content area
+  const fallbackDom = new JSDOM(html, { url });
+  const doc = fallbackDom.window.document;
+  doc
+    .querySelectorAll("script, style, noscript, nav, header, footer, aside")
+    .forEach((el) => el.remove());
+
+  const title = doc.querySelector("title")?.textContent?.trim();
+  const main =
+    doc.querySelector("main, article, [role='main'], .content, #content") ||
+    doc.body;
+  const mainHtml = main?.innerHTML || "";
+
+  if (mainHtml.trim().length > 100) {
+    return {
+      title: title || undefined,
+      content: htmlToMarkdown(mainHtml),
+    };
+  }
+
+  throw new Error("Could not extract readable content from this page.");
 }
 
 // Web search tool
@@ -160,20 +248,19 @@ export function createWebFetchTool(): AgentTool<typeof webFetchSchema> {
     parameters: webFetchSchema,
 
     async execute(_toolCallId, params, signal) {
-      const scriptPath = path.join(getBraveSearchDir(), "content.js");
-      const result = await execScript(scriptPath, [params.url], signal);
-
-      if (result.exitCode !== 0) {
-        const msg = result.stderr.trim() || result.stdout.trim();
+      try {
+        const { title, content } = await fetchWebContent(params.url, signal);
+        const parts: string[] = [];
+        if (title) {
+          parts.push(`# ${title}\n`);
+        }
+        parts.push(content);
+        const output = parts.join("\n").trim();
+        return output ? toolOk(output) : toolError(`No readable content extracted from ${params.url}`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
         return toolError(`Failed to fetch ${params.url}: ${msg}`);
       }
-
-      const output = result.stdout.trim();
-      if (!output) {
-        return toolError(`No readable content extracted from ${params.url}`);
-      }
-
-      return toolOk(output);
     },
   };
 }

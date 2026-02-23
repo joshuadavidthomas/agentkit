@@ -2,13 +2,19 @@
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.50.0",
     "@mariozechner/pi-coding-agent": "^0.50.0",
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^25.0.10",
+    "@types/turndown": "^5.0.6",
     "typescript": "^5.9.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^28.1.0",
+    "turndown": "^7.2.2",
+    "turndown-plugin-gfm": "^1.0.2",
     "yaml": "^2.8.2"
   }
 }
