@@ -29,10 +29,10 @@ import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts
 import { createReadOnlyBashTool } from "./read-only-bash.ts";
 import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 
-// Shared parameter: modelTier override
-const ModelTierParam = Type.Optional(
-  Type.Union([Type.Literal("fast"), Type.Literal("capable")], {
-    description: "Model tier override. 'fast' uses cheap/quick models (Haiku/Flash), 'capable' uses mid-tier reasoning models (Sonnet/Pro). Each scout has a sensible default.",
+// Shared parameter: model override
+const ModelParam = Type.Optional(
+  Type.String({
+    description: "Model override. Specify a model ID (e.g. 'claude-opus-4-6', 'gpt-5.3-codex', 'gemini-3.1-pro') to use a specific model instead of the scout's default.",
   }),
 );
 
@@ -48,7 +48,7 @@ const FinderParams = Type.Object({
       "- Personal: 'In ~/Documents and ~/Desktop, find my latest trip itinerary PDF and list the top candidate paths with evidence.'",
     ].join("\n"),
   }),
-  modelTier: ModelTierParam,
+  model: ModelParam,
 });
 
 // Librarian tool parameters
@@ -83,7 +83,7 @@ const LibrarianParams = Type.Object({
       default: DEFAULT_MAX_SEARCH_RESULTS,
     }),
   ),
-  modelTier: ModelTierParam,
+  model: ModelParam,
 });
 
 // Oracle tool parameters
@@ -99,13 +99,14 @@ const OracleParams = Type.Object({
       "- 'Find all implementations of the Repository pattern and show how they handle errors.'",
     ].join("\n"),
   }),
-  modelTier: ModelTierParam,
+  model: ModelParam,
 });
 
 // Scout configurations
 const FINDER_CONFIG: ScoutConfig = {
   name: "finder",
   maxTurns: 6,
+  defaultModel: "claude-haiku-4-5",
   buildSystemPrompt: buildFinderSystemPrompt,
   buildUserPrompt: buildFinderUserPrompt,
 };
@@ -113,7 +114,7 @@ const FINDER_CONFIG: ScoutConfig = {
 const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
   maxTurns: 12,
-  defaultModelTier: "fast",
+  defaultModel: "claude-haiku-4-5",
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [
@@ -127,7 +128,7 @@ const LIBRARIAN_CONFIG: ScoutConfig = {
 const ORACLE_CONFIG: ScoutConfig = {
   name: "oracle",
   maxTurns: 12,
-  defaultModelTier: "capable",
+  defaultModel: "claude-opus-4-6",
   buildSystemPrompt: buildOracleSystemPrompt,
   buildUserPrompt: buildOracleUserPrompt,
 };
@@ -251,7 +252,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         owners: Type.Optional(
           Type.Array(Type.String(), { description: "Owner hints (librarian only)." }),
         ),
-        modelTier: ModelTierParam,
+        model: ModelParam,
       }),
       {
         description: "Array of scout tasks to run in parallel.",
@@ -268,7 +269,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const p = params as { tasks: Array<{ scout: string; query: string; repos?: string[]; owners?: string[]; modelTier?: string }> };
+      const p = params as { tasks: Array<{ scout: string; query: string; repos?: string[]; owners?: string[]; model?: string }> };
 
       if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
         return {
@@ -294,7 +295,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
           query: t.query,
           repos: t.repos,
           owners: t.owners,
-          modelTier: t.modelTier,
+          model: t.model,
         } as Record<string, unknown>,
       }));
 

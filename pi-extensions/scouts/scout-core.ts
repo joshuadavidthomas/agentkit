@@ -20,7 +20,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
-import { type ModelTier, getModelForTier } from "./model-selection.ts";
+import { resolveModel } from "./model-selection.ts";
 
 const MAX_DISPLAY_ITEMS = 120;
 
@@ -57,8 +57,8 @@ export interface ScoutDetails {
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
-  /** Model tier: "fast" (Haiku/Flash) or "capable" (Sonnet/Pro). Defaults to "fast". */
-  defaultModelTier?: ModelTier;
+  /** Default model ID (e.g. "claude-haiku-4-5", "claude-opus-4-6"). */
+  defaultModel?: string;
   buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
   /**
@@ -248,10 +248,9 @@ export async function executeScout(
     ];
 
     const modelRegistry = ctx.modelRegistry;
-    // Resolve model tier: param override > config default > "fast"
-    const paramTier = typeof params.modelTier === "string" ? params.modelTier as ModelTier : undefined;
-    const tier: ModelTier = paramTier ?? config.defaultModelTier ?? "fast";
-    const subModelSelection = await getModelForTier(modelRegistry, ctx.model, tier);
+    // Resolve model: explicit model param > config defaultModel
+    const modelId = (typeof params.model === "string" ? params.model : undefined) ?? config.defaultModel;
+    const subModelSelection = resolveModel(modelRegistry, ctx.model, modelId);
 
     if (!subModelSelection) {
       const error = "No models available. Configure credentials (e.g. /login or auth.json) and try again.";
