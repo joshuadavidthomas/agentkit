@@ -230,18 +230,18 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     },
   });
 
-  // Scouts — parallel dispatch
+  // Scouts — parallel dispatch (finder + librarian only; oracle is too
+  // expensive to run in parallel and should be invoked directly)
   const scoutConfigs = new Map<string, ScoutConfig>([
     ["finder", FINDER_CONFIG],
     ["librarian", LIBRARIAN_CONFIG],
-    // Oracle config is built dynamically with ctx.cwd, handled in execute below
   ]);
 
   const ScoutsParams = Type.Object({
     tasks: Type.Array(
       Type.Object({
         scout: Type.String({
-          description: "Scout name: 'finder', 'librarian', or 'oracle'.",
+          description: "Scout name: 'finder' or 'librarian'.",
         }),
         query: Type.String({
           description: "The query/task for this scout.",
@@ -265,7 +265,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "scouts",
     label: "Scouts",
     description:
-      "Run multiple scouts in parallel. Use when you need to fire off several independent research/analysis tasks simultaneously — e.g. search GitHub for one thing while analyzing local code for another. Each task should be independent; avoid running multiple instances of the same scout on the same codebase (use one scout with a broader query instead).",
+      "Run finder and librarian scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
@@ -279,15 +279,26 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      // Build configs map with oracle (needs ctx.cwd for read-only tools)
-      const configs = new Map(scoutConfigs);
-      configs.set("oracle", {
-        ...ORACLE_CONFIG,
-        getTools: () => [
-          createReadOnlyBashTool(ctx.cwd),
-          createReadTool(ctx.cwd),
-        ],
-      });
+      const invalidScouts = [...new Set(
+        p.tasks.map((t) => t.scout).filter((s) => !scoutConfigs.has(s)),
+      )];
+      if (invalidScouts.length > 0) {
+        const hasOracle = invalidScouts.includes("oracle");
+        const others = invalidScouts.filter((s) => s !== "oracle");
+        const parts: string[] = [];
+        if (hasOracle) {
+          parts.push("Oracle is not available in parallel scouts — call it separately. Use scouts to gather context then feed into oracle, or oracle first then scouts to fan out on what it finds.");
+        }
+        if (others.length > 0) {
+          const available = [...scoutConfigs.keys()].join(", ");
+          parts.push(`Unknown scout(s): ${others.join(", ")}. Available: ${available}.`);
+        }
+        return {
+          content: [{ type: "text", text: parts.join(" ") }],
+          details: { mode: "parallel", status: "error", results: [] },
+          isError: true,
+        };
+      }
 
       const tasks = p.tasks.map((t) => ({
         scout: t.scout,
@@ -299,7 +310,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         } as Record<string, unknown>,
       }));
 
-      return executeParallelScouts(configs, tasks, signal, onUpdate, ctx);
+      return executeParallelScouts(scoutConfigs, tasks, signal, onUpdate, ctx);
     },
 
     renderCall(args: any, theme: any) {

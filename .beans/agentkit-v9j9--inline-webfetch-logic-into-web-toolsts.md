@@ -1,10 +1,11 @@
 ---
 # agentkit-v9j9
 title: Inline webFetch logic into web-tools.ts
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-02-23T09:40:26Z
-updated_at: 2026-02-23T09:40:26Z
+updated_at: 2026-02-23T09:42:31Z
 ---
 
 Instead of shelling out to skills/brave-search/content.js, the webFetch tool in pi-extensions/scouts/web-tools.ts should have the fetch+Readability+Turndown logic inline. This eliminates unnecessary child process overhead, enables direct AbortSignal usage, and removes the fragile path dependency on the skills directory.
