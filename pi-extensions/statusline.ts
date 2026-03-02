@@ -125,6 +125,7 @@ function getVibeusageOutput(piProvider: string | undefined): string | null {
       encoding: "utf8",
       timeout: 5000,
       stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, CLICOLOR_FORCE: "1" },
     });
     const output = result.trim();
     vibeusageCache = { output: output || null, provider: vibeProvider, timestamp: Date.now() };
