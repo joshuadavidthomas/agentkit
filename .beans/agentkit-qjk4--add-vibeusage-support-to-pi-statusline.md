@@ -1,10 +1,11 @@
 ---
 # agentkit-qjk4
 title: Add vibeusage support to pi statusline
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-03-02T15:18:17Z
-updated_at: 2026-03-02T15:18:17Z
+updated_at: 2026-03-02T15:21:28Z
 ---
 
 Integrate vibeusage CLI output into the pi statusline extension.
