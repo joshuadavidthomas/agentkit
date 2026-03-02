@@ -2,8 +2,9 @@
  * Starship-style Statusline Extension
  *
  * Custom footer with:
- * - Line 1: Model info, context %, duration, cwd, VCS status (Starship-style)
- * - Line 2: Cost, token stats
+ * - Line 1 left: Model info, context %, sycophancy, cwd, VCS status (Starship-style)
+ * - Line 1 right: Cost, token stats
+ * - Line 2: vibeusage provider usage (via `vibeusage statusline -p <provider>`)
  *
  * Supports both git and jj (Jujutsu) version control systems.
  * In colocated repos (.jj/ + .git/), jj takes priority.
@@ -13,7 +14,7 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { execSync } from "node:child_process";
 
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 // Nerd Font characters — DO NOT EDIT these values. They contain Nerd Font
 // glyphs that may render as blank in agent environments. Only a human with
@@ -31,6 +32,24 @@ const PROVIDER_MAP = {
   "google-antigravity": "google",
   "openai-codex": "openai",
 } as const;
+
+// Maps pi model provider IDs to vibeusage provider IDs
+const VIBEUSAGE_PROVIDER_MAP: Record<string, string> = {
+  "anthropic": "claude",
+  "github-copilot": "copilot",
+  "google": "gemini",
+  "google-antigravity": "antigravity",
+  "google-gemini-cli": "gemini",
+  "google-vertex": "gemini",
+  "kimi-coding": "kimicode",
+  "minimax": "minimax",
+  "minimax-cn": "minimax",
+  "openai": "codex",
+  "openai-codex": "codex",
+  "openrouter": "openrouter",
+  "xai": "amp",
+  "zai": "zai",
+};
 
 // VCS types
 type VcsType = "git" | "jj";
@@ -84,6 +103,37 @@ interface VcsStatus {
 // VCS status cache
 let vcsStatusCache: { status: VcsStatus | null; timestamp: number } | null = null;
 const VCS_CACHE_TTL = 2000; // 2 seconds
+
+// Vibeusage cache
+let vibeusageCache: { output: string | null; provider: string | null; timestamp: number } | null = null;
+const VIBEUSAGE_CACHE_TTL = 30000; // 30 seconds
+
+function getVibeusageOutput(piProvider: string | undefined): string | null {
+  const vibeProvider = piProvider ? VIBEUSAGE_PROVIDER_MAP[piProvider] : null;
+  if (!vibeProvider) return null;
+
+  if (
+    vibeusageCache &&
+    vibeusageCache.provider === vibeProvider &&
+    Date.now() - vibeusageCache.timestamp < VIBEUSAGE_CACHE_TTL
+  ) {
+    return vibeusageCache.output;
+  }
+
+  try {
+    const result = execSync(`vibeusage statusline -p ${vibeProvider}`, {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const output = result.trim();
+    vibeusageCache = { output: output || null, provider: vibeProvider, timestamp: Date.now() };
+    return vibeusageCache.output;
+  } catch {
+    vibeusageCache = { output: null, provider: vibeProvider, timestamp: Date.now() };
+    return null;
+  }
+}
 
 function runCmd(cmd: string, ...args: string[]): string | null {
   try {
@@ -406,9 +456,7 @@ export default function (pi: ExtensionAPI) {
             line1Parts.push(vcsPart);
           }
 
-          const line1 = line1Parts.join(" ");
-
-          // === LINE 2: Cost, tokens ===
+          // === LINE 1 RIGHT: Cost, tokens ===
           let totalInput = 0;
           let totalOutput = 0;
           let totalCost = 0;
@@ -424,18 +472,33 @@ export default function (pi: ExtensionAPI) {
 
           const usingSubscription = model ? ctx.modelRegistry.isUsingOAuth(model) : false;
 
-          const line2Parts: string[] = [];
+          const line1RightParts: string[] = [];
 
           const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-          line2Parts.push(theme.fg("dim", costStr));
+          line1RightParts.push(theme.fg("dim", costStr));
 
           if (totalInput || totalOutput) {
-            line2Parts.push(theme.fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
+            line1RightParts.push(theme.fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
           }
 
-          const line2 = line2Parts.join(" ");
+          const line1Left = line1Parts.join(" ");
+          const line1Right = line1RightParts.join(" ");
 
-          const lines = [truncateToWidth(line1, width), truncateToWidth(line2, width)];
+          const leftWidth = visibleWidth(line1Left);
+          const rightWidth = visibleWidth(line1Right);
+          const gap = width - leftWidth - rightWidth;
+          const line1 = gap > 0
+            ? line1Left + " ".repeat(gap) + line1Right
+            : truncateToWidth(line1Left + "  " + line1Right, width);
+
+          // === LINE 2: Vibeusage ===
+          const vibeusageOutput = getVibeusageOutput(model?.provider);
+          const line2 = vibeusageOutput ? truncateToWidth(vibeusageOutput, width) : "";
+
+          const lines = [truncateToWidth(line1, width)];
+          if (line2) {
+            lines.push(line2);
+          }
 
           const extensionStatuses = footerData.getExtensionStatuses();
           if (extensionStatuses.size > 0) {
@@ -452,8 +515,9 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
-  // Invalidate VCS cache on turn end (files may have changed)
+  // Invalidate caches on turn end (files may have changed, usage updated)
   pi.on("turn_end", async () => {
     vcsStatusCache = null;
+    vibeusageCache = null;
   });
 }
