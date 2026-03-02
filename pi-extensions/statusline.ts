@@ -104,36 +104,48 @@ interface VcsStatus {
 let vcsStatusCache: { status: VcsStatus | null; timestamp: number } | null = null;
 const VCS_CACHE_TTL = 2000; // 2 seconds
 
-// Vibeusage cache
+// Vibeusage cache (async, non-blocking)
 let vibeusageCache: { output: string | null; provider: string | null; timestamp: number } | null = null;
+let vibeusageFetching = false;
 const VIBEUSAGE_CACHE_TTL = 30000; // 30 seconds
+let vibeusageRequestRender: (() => void) | null = null;
+
+function refreshVibeusage(vibeProvider: string): void {
+  if (vibeusageFetching) return;
+  vibeusageFetching = true;
+
+  const { execFile } = require("node:child_process") as typeof import("node:child_process");
+  execFile(
+    "vibeusage",
+    ["statusline", "-p", vibeProvider],
+    { encoding: "utf8", timeout: 5000, env: { ...process.env, CLICOLOR_FORCE: "1" } },
+    (err, stdout) => {
+      vibeusageFetching = false;
+      if (err) {
+        vibeusageCache = { output: null, provider: vibeProvider, timestamp: Date.now() };
+      } else {
+        const output = stdout.trim();
+        vibeusageCache = { output: output || null, provider: vibeProvider, timestamp: Date.now() };
+      }
+      vibeusageRequestRender?.();
+    },
+  );
+}
 
 function getVibeusageOutput(piProvider: string | undefined): string | null {
   const vibeProvider = piProvider ? VIBEUSAGE_PROVIDER_MAP[piProvider] : null;
   if (!vibeProvider) return null;
 
-  if (
+  const isFresh =
     vibeusageCache &&
     vibeusageCache.provider === vibeProvider &&
-    Date.now() - vibeusageCache.timestamp < VIBEUSAGE_CACHE_TTL
-  ) {
-    return vibeusageCache.output;
+    Date.now() - vibeusageCache.timestamp < VIBEUSAGE_CACHE_TTL;
+
+  if (!isFresh) {
+    refreshVibeusage(vibeProvider);
   }
 
-  try {
-    const result = execSync(`vibeusage statusline -p ${vibeProvider}`, {
-      encoding: "utf8",
-      timeout: 5000,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CLICOLOR_FORCE: "1" },
-    });
-    const output = result.trim();
-    vibeusageCache = { output: output || null, provider: vibeProvider, timestamp: Date.now() };
-    return vibeusageCache.output;
-  } catch {
-    vibeusageCache = { output: null, provider: vibeProvider, timestamp: Date.now() };
-    return null;
-  }
+  return vibeusageCache?.provider === vibeProvider ? vibeusageCache.output : null;
 }
 
 function runCmd(cmd: string, ...args: string[]): string | null {
@@ -366,13 +378,17 @@ function countSycophancy(sessionManager: { getBranch(): Array<{ type: string; me
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     ctx.ui.setFooter((tui, theme, footerData) => {
+      vibeusageRequestRender = () => tui.requestRender();
       const unsub = footerData.onBranchChange(() => {
         vcsStatusCache = null;
         tui.requestRender();
       });
 
       return {
-        dispose: unsub,
+        dispose() {
+          unsub();
+          vibeusageRequestRender = null;
+        },
         invalidate() {
           vcsStatusCache = null;
         },
