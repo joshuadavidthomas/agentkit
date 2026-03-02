@@ -47,14 +47,17 @@ type DcgBlockDetails = {
   fullReason: string;
 };
 
+type DcgAllowType = "once" | "session" | "always" | "always-project" | "always-global";
+
 type DcgAllowedDetails = {
   dcgAllowed: true;
-  allowType: "once" | "always" | "always-project" | "always-global";
+  allowType: DcgAllowType;
 };
 
 type DcgDecision =
   | "deny"
   | "allowOnce"
+  | "allowSession"
   | "allowAlways"
   | "allowAlwaysProject"
   | "allowAlwaysGlobal";
@@ -330,6 +333,11 @@ class DcgDecisionComponent implements Component {
 
     if (this.data.ruleId) {
       items.push({
+        value: "allowSession",
+        label: "Allow for this session",
+        description: "Allow this rule until pi exits",
+      });
+      items.push({
         value: "allowAlways",
         label: "Allow always…",
         description: "Choose project or global scope",
@@ -394,7 +402,7 @@ type FollowUpParams = {
   runBash: () => Promise<unknown>;
   buildBlockResult: BuildBlockResult;
   fallbackReason: string;
-  allowType: "once" | "always" | "always-project" | "always-global";
+  allowType: DcgAllowType;
 };
 
 type ApplyAllowOnceParams = {
@@ -482,6 +490,14 @@ const runHookDecision = async ({
   };
 };
 
+const runBashWithAllowType = async (runBash: () => Promise<unknown>, allowType: DcgAllowType) => {
+  const bashResult = await runBash() as { content: Array<TextContent | ImageContent>; details?: Record<string, unknown> };
+  return {
+    ...bashResult,
+    details: { ...bashResult.details, dcgAllowed: true, allowType },
+  };
+};
+
 const followUpOrRun = async ({
   command,
   cwd,
@@ -504,11 +520,7 @@ const followUpOrRun = async ({
   if (followUp.action === "deny") {
     return buildBlockResult(followUp.reason, fallbackReason, followUp.decisionReason);
   }
-  const bashResult = await runBash() as { content: Array<TextContent | ImageContent>; details?: Record<string, unknown> };
-  return {
-    ...bashResult,
-    details: { ...bashResult.details, dcgAllowed: true, allowType },
-  };
+  return runBashWithAllowType(runBash, allowType);
 };
 
 const applyAllowOnce = async ({
@@ -629,6 +641,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   const baseBash = createBashTool(process.cwd());
+  const sessionAllowedRuleIds = new Set<string>();
 
   pi.registerTool({
     ...baseBash,
@@ -645,11 +658,20 @@ export default function (pi: ExtensionAPI) {
       const allowDetails = result.details as DcgAllowedDetails | undefined;
       const dcgPrefix = theme.fg("accent", "[dcg]");
 
-      // Handle allowed (once) case
+      // Handle allowed case
       if (allowDetails?.dcgAllowed) {
-        const state = allowDetails.allowType === "once"
-          ? theme.fg("warning", "allowed (once)")
-          : theme.fg("success", "allowed");
+        const stateLabelByType: Record<DcgAllowType, string> = {
+          once: "allowed (once)",
+          session: "allowed (session)",
+          always: "allowed",
+          "always-project": "allowed",
+          "always-global": "allowed",
+        };
+        const allowState = stateLabelByType[allowDetails.allowType] ?? "allowed";
+        const color = allowDetails.allowType === "once" || allowDetails.allowType === "session"
+          ? "warning"
+          : "success";
+        const state = theme.fg(color, allowState);
         const label = theme.bold(`${dcgPrefix} ${state}`);
         const output = getBashOutputText(result.content);
         const container = new Container();
@@ -706,6 +728,11 @@ export default function (pi: ExtensionAPI) {
 
         const { reason, decisionReason, hookOutput } = initialDecision;
         const blockResult = buildResult(reason, reason, decisionReason);
+        const ruleId = hookOutput?.ruleId;
+
+        if (ruleId && sessionAllowedRuleIds.has(ruleId)) {
+          return runBashWithAllowType(runBash, "session");
+        }
 
         if (!ctx.hasUI) {
           return buildResult(reason, reason, decisionReason, decisionReason);
@@ -718,7 +745,7 @@ export default function (pi: ExtensionAPI) {
               reason: decisionReason,
               details: reason,
               allowOnceCode: hookOutput?.allowOnceCode,
-              ruleId: hookOutput?.ruleId,
+              ruleId,
               severity: hookOutput?.severity,
             },
             tui,
@@ -765,7 +792,14 @@ export default function (pi: ExtensionAPI) {
           });
         }
 
-        const ruleId = hookOutput?.ruleId;
+        if (result === "allowSession") {
+          if (!ruleId) {
+            return blockResult;
+          }
+          sessionAllowedRuleIds.add(ruleId);
+          return runBashWithAllowType(runBash, "session");
+        }
+
         if (!ruleId) {
           return blockResult;
         }
