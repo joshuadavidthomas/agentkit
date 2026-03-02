@@ -535,6 +535,9 @@ export default function (pi: ExtensionAPI) {
   // Invalidate caches on turn end (files may have changed, usage updated)
   pi.on("turn_end", async () => {
     vcsStatusCache = null;
-    vibeusageCache = null;
+    // Expire vibeusage cache but keep stale data visible while refreshing
+    if (vibeusageCache) {
+      vibeusageCache.timestamp = 0;
+    }
   });
 }
