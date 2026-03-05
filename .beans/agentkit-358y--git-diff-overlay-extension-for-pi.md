@@ -1,11 +1,11 @@
 ---
 # agentkit-358y
 title: Git diff overlay extension for pi
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-03-05T21:41:21Z
-updated_at: 2026-03-05T21:41:55Z
+updated_at: 2026-03-05T22:29:46Z
 ---
 
 A pi extension that shows git diff output in a scrollable overlay.
