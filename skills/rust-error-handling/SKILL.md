@@ -5,7 +5,9 @@ description: Use when designing error types, choosing thiserror vs anyhow, propa
 
 # Error Strategy and Design
 
-Errors are **domain facts**, not formatting exercises. An error type tells callers what went wrong, whether they can recover, and what information is available. Design them with the same care as your success types.
+Errors are **domain facts**, not formatting exercises. An error type tells callers what went wrong, whether they can recover, and what information is available.
+
+The governing principle: **be empathetic to your caller.** Imagine yourself having to handle the error. Could you write robust recovery code given the error type? Could you translate it into a message the end user can understand? Most error design problems stem from making errors easy for the *author* at the expense of the *caller* — a crate-wide enum, a wrapped dependency type, a bare `String`. Every rule below is an application of this principle.
 
 The central axis: **library or application?** Everything flows from that.
 
@@ -64,9 +66,9 @@ pub enum QueryError {
 }
 ```
 
-**Why:** Scoped errors let callers know exactly which failures a function can produce. A crate-wide enum forces callers to handle variants that can't actually occur. It also leaks internal structure — adding a dependency's error type to your public enum exposes that dependency.
+**Why:** A crate-wide enum is *dishonest* — it claims a function can produce errors it never actually does. If `query()` can't produce `ConnectError`, but the crate-wide `Error` includes it, callers must write dead match arms for impossible cases. The compiler can't catch it when someone later modifies the function to throw a new error — the dead arm silently becomes load-bearing. Scoped errors let callers know exactly which failures a function can produce and handle only what's real.
 
-**Authority:** Jewson, "Modular Errors in Rust." Effective Rust Item 4.
+**Authority:** Jewson, "Modular Errors in Rust." Effective Rust Item 4. Parsons, "The Trouble with Typed Errors."
 
 ### Rule 2: Variants carry structured data, not strings
 
@@ -103,6 +105,8 @@ Database {
 ```
 
 `#[from]` implies `#[source]` and generates a `From` impl. Use `#[from]` when the conversion is unambiguous (one variant per source type). Use `#[source]` when you need additional context fields alongside the cause.
+
+**When to break the chain:** Preserving `#[source]` is the default, but it has a cost — it exposes the dependency type in your public API. If your variant contains `sqlx::Error` via `#[source]`, callers now transitively depend on `sqlx`. When the dependency is an implementation detail (you might swap it later), extract the relevant information into your own fields and let the source error drop. See Rule 7b below.
 
 **Authority:** `std::error::Error::source` + thiserror docs (source chaining).
 
@@ -161,11 +165,80 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 For full thiserror attribute reference (all derive attributes, `#[error(transparent)]`, backtrace support), see [references/thiserror-patterns.md](references/thiserror-patterns.md).
 
+### Rule 7: Define errors in terms of the problem, not the solution
+
+Error variants should describe **what failed** in domain terms, not **how** you tried to solve it. Wrapping dependency error types directly tells callers your implementation details instead of giving them actionable information.
+
+```rust
+// WRONG — tells callers HOW you solve it
+#[derive(Debug, thiserror::Error)]
+pub enum FetchTxError {
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+    #[error("http error")]
+    Http(#[from] http2::Error),
+    #[error("serde error")]
+    Serde(#[from] serde_cbor::Error),
+    #[error("openssl error")]
+    Openssl(#[from] openssl::ssl::Error),
+}
+
+// RIGHT — tells callers WHAT failed, in domain vocabulary
+#[derive(Debug, thiserror::Error)]
+pub enum FetchTxError {
+    #[error("could not connect to {url}")]
+    ConnectionFailed { url: String, reason: String },
+    #[error("transaction {0} not found")]
+    TxNotFound(Txid),
+    #[error("response data is not valid CBOR")]
+    InvalidEncoding { error_message: String },
+    #[error("public key is malformed")]
+    MalformedPublicKey { key_bytes: Vec<u8>, reason: String },
+    #[error("signature verification failed for tx {txid}")]
+    SignatureVerificationFailed { txid: Txid, pk: Pubkey, sig: Signature },
+}
+```
+
+**Why wrapping dependency types hurts callers:**
+- They must read the *dependency's* docs to understand your error cases (what does `openssl::ssl::Error` even mean here?)
+- They must add your transitive dependencies to their `Cargo.toml` to handle your errors
+- Swapping a dependency (openssl → rustls, serde_cbor → ciborium) becomes a breaking change
+- Low-level errors travel up the stack with no context ("IO error: No such file or directory" — *which file?*)
+
+**Embed, don't wrap:** When multiple dependencies can produce similar failures, flatten them into shared domain variants. A `MalformedPublicKey` variant works whether the underlying crypto library is `ecdsa`, `bls12_381_sign`, or something else. Extract the relevant information (key bytes, reason string) and let the dependency-specific error drop.
+
+**When wrapping is acceptable:**
+- `std::io::Error` with sufficient context (operation + paths) — it's universally familiar and carries OS error codes
+- Converting a lower-level error to a string and attaching it to a descriptive variant — but check for sensitive data leaks
+
+For extended examples and academic grounding, see [references/designing-error-types.md](references/designing-error-types.md).
+
+### Rule 8: Shrink error types with parse-don't-validate
+
+If a function validates inputs *and* does work, its error type carries both validation failures and operational failures. Extract validation into a dedicated type and the validation variants disappear from the error enum entirely.
+
+```rust
+// BEFORE — send_mail validates AND sends, error type is bloated
+pub enum SendMailError {
+    MalformedAddress { address: String, reason: String },  // validation
+    FailedToConnect { source: std::io::Error },            // operational
+}
+
+// AFTER — EmailAddress is valid by construction
+pub struct EmailAddress(String);  // see rust-type-design
+
+pub enum SendMailError {
+    FailedToConnect { source: std::io::Error },  // only operational errors remain
+}
+```
+
+Every newtype that enforces an invariant is one fewer variant in every error enum that would otherwise need to validate that invariant. See **rust-type-design** for the full parse-don't-validate pattern.
+
 ## Application Errors: anyhow
 
 Application code doesn't export error types — it **handles** them. Use `anyhow` for ergonomic propagation with context.
 
-### Rule 7: Use `anyhow::Result` as your return type
+### Rule 9: Use `anyhow::Result` as your return type
 
 ```rust
 use anyhow::{Context, Result};
@@ -182,7 +255,7 @@ fn load_config(path: &Path) -> Result<Config> {
 
 Every `?` propagates with the full error chain intact. `context()` and `with_context()` add layers of "what was happening when this failed."
 
-### Rule 8: Add context at every abstraction boundary
+### Rule 10: Add context at every abstraction boundary
 
 Bare `?` propagates the error but loses *what you were trying to do*. Add context so the error chain reads like a stack trace of intent.
 
@@ -214,7 +287,7 @@ failed to connect to database: connection refused: Connection refused (os error 
 
 Use `.context("static string")` for fixed messages. Use `.with_context(|| format!(...))` when you need runtime values — the closure is only evaluated on error.
 
-### Rule 9: Use `bail!` and `ensure!` for early returns
+### Rule 11: Use `bail!` and `ensure!` for early returns
 
 ```rust
 use anyhow::{bail, ensure, Result};
@@ -394,7 +467,7 @@ impl ApiError {
 - **Bare `?` without context in application code** → The error chain says *what* failed but not *what you were doing*. Add `.context()`.
 - **Logging errors at every layer** → Log once at the outermost handler. Inner layers propagate.
 - **`unwrap()` on user input or I/O** → These are expected failure modes. Use `?` or combinators.
-- **`Box<dyn Error>` as the public error type** → Callers can't match without downcasting. Use a concrete enum.
+- **`Box<dyn Error>` as the public error type** → Callers can't match without downcasting, which requires they depend on the exact same semver version of the inner error type. Boxed errors also can't be cloned or serialized (problematic when errors cross process boundaries). If callers need programmatic access to error data, embed the relevant bits as fields on your enum variants — don't force them to downcast.
 
 ## Cross-References
 
@@ -406,13 +479,15 @@ impl ApiError {
 
 ## Review Checklist
 
-1. **Library or application?** Libraries use `thiserror` enums. Applications use `anyhow`. At the boundary, use both.
-2. **Is the error type scoped to its operation?** One crate-wide `Error` enum is a code smell. Each public function (or related group) should have its own error type.
-3. **Does every variant carry structured data?** No `Error(String)`. Callers must be able to extract fields, not parse messages.
-4. **Is the error chain preserved?** Every variant wrapping a cause uses `#[source]` or `#[from]`. Calling `.source()` walks the full chain.
-5. **Is `#[from]` used only where unambiguous?** Multiple variants from the same source type? Use manual construction with context fields instead.
-6. **Does application code add context at every `?`?** Bare propagation loses intent. Add `.context()` or `.with_context()`.
-7. **Are panics reserved for bugs?** User input, I/O, and network errors use `Result`. `panic!` is for invariant violations and unreachable code.
-8. **Are errors logged once, at the edge?** Inner layers propagate. The outermost handler logs with `{:#}` for the full chain.
-9. **Are error types translated at layer boundaries?** Database errors don't leak through the domain API. Each layer speaks its own vocabulary.
-10. **Is there a `Result` type alias?** `pub type Result<T> = std::result::Result<T, Error>;` reduces boilerplate within each module.
+1. **Empathy check:** Could *you* write robust recovery code given this error type? Could you translate it into a user-facing message?
+2. **Library or application?** Libraries use `thiserror` enums. Applications use `anyhow`. At the boundary, use both.
+3. **Is the error type scoped to its operation?** One crate-wide `Error` enum is dishonest — it claims impossible failures. Each public function (or related group) should have its own error type.
+4. **Does every variant carry structured data?** No `Error(String)`. Callers must be able to extract fields, not parse messages.
+5. **Does the error describe the problem, not the solution?** Variants named after dependency types (`IoError`, `HttpError`) leak implementation details. Name them after *what failed* (`ConnectionFailed`, `InvalidEncoding`).
+6. **Is the error chain preserved *appropriately*?** Use `#[source]` when the cause is useful to callers. Break the chain when it would expose an implementation-detail dependency — extract relevant data into your own fields instead.
+7. **Is `#[from]` used only where unambiguous?** Multiple variants from the same source type? Use manual construction with context fields instead.
+8. **Does application code add context at every `?`?** Bare propagation loses intent. Add `.context()` or `.with_context()`.
+9. **Are panics reserved for bugs?** User input, I/O, and network errors use `Result`. `panic!` is for invariant violations and unreachable code.
+10. **Are errors logged once, at the edge?** Inner layers propagate. The outermost handler logs with `{:#}` for the full chain.
+11. **Could a newtype eliminate a variant?** If a function validates inputs, consider parse-don't-validate to remove validation errors from the enum entirely.
+12. **Is there a `Result` type alias?** `pub type Result<T> = std::result::Result<T, Error>;` reduces boilerplate within each module.
