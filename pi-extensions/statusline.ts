@@ -110,6 +110,40 @@ let vibeusageFetching = false;
 const VIBEUSAGE_CACHE_TTL = 30000; // 30 seconds
 let vibeusageRequestRender: (() => void) | null = null;
 
+let footerRequestRender: (() => void) | null = null;
+let footerRenderTimeout: NodeJS.Timeout | null = null;
+let lastFooterRenderAt = 0;
+const FOOTER_RENDER_THROTTLE_MS = 125;
+
+function requestFooterRender(): void {
+  if (!footerRequestRender) return;
+
+  const now = Date.now();
+  const delay = FOOTER_RENDER_THROTTLE_MS - (now - lastFooterRenderAt);
+
+  if (delay <= 0) {
+    lastFooterRenderAt = now;
+    footerRequestRender();
+    return;
+  }
+
+  if (footerRenderTimeout) return;
+
+  footerRenderTimeout = setTimeout(() => {
+    footerRenderTimeout = null;
+    lastFooterRenderAt = Date.now();
+    footerRequestRender?.();
+  }, delay);
+}
+
+function clearFooterRender(): void {
+  footerRequestRender = null;
+  if (footerRenderTimeout) {
+    clearTimeout(footerRenderTimeout);
+    footerRenderTimeout = null;
+  }
+}
+
 function refreshVibeusage(vibeProvider: string): void {
   if (vibeusageFetching) return;
   vibeusageFetching = true;
@@ -378,16 +412,18 @@ function countSycophancy(sessionManager: { getBranch(): Array<{ type: string; me
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     ctx.ui.setFooter((tui, theme, footerData) => {
-      vibeusageRequestRender = () => tui.requestRender();
+      footerRequestRender = () => tui.requestRender();
+      vibeusageRequestRender = requestFooterRender;
       const unsub = footerData.onBranchChange(() => {
         vcsStatusCache = null;
-        tui.requestRender();
+        requestFooterRender();
       });
 
       return {
         dispose() {
           unsub();
           vibeusageRequestRender = null;
+          clearFooterRender();
         },
         invalidate() {
           vcsStatusCache = null;
@@ -410,30 +446,14 @@ export default function (pi: ExtensionAPI) {
           }
 
           // Context percentage with color coding
-          const branch = state.getBranch();
-          const lastAssistant = branch
-            .slice()
-            .reverse()
-            .find(
-              (e) =>
-                e.type === "message" &&
-                e.message.role === "assistant" &&
-                (e.message as AssistantMessage).stopReason !== "aborted"
-            );
-
-          if (lastAssistant && lastAssistant.type === "message") {
-            const msg = lastAssistant.message as AssistantMessage;
-            const contextTokens =
-              msg.usage.input + msg.usage.output + msg.usage.cacheRead + msg.usage.cacheWrite;
-            const contextWindow = model?.contextWindow || 0;
-            const contextPercent = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
-
+          const contextUsage = ctx.getContextUsage();
+          if (contextUsage && contextUsage.contextWindow > 0) {
             let contextColor: "success" | "warning" | "error" = "success";
-            if (contextPercent >= 65) contextColor = "error";
-            else if (contextPercent >= 40) contextColor = "warning";
+            if (contextUsage.percent >= 65) contextColor = "error";
+            else if (contextUsage.percent >= 40) contextColor = "warning";
 
-            const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${contextPercent.toFixed(0)}%`;
-            const contextDetail = `(${formatTokens(contextTokens)}/${formatTokens(contextWindow)})`;
+            const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${contextUsage.percent.toFixed(0)}%`;
+            const contextDetail = `(${formatTokens(contextUsage.tokens)}/${formatTokens(contextUsage.contextWindow)})`;
 
             line1Parts.push(
               theme.fg("dim", "at ") +
@@ -532,6 +552,26 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  pi.on("turn_start", async () => {
+    requestFooterRender();
+  });
+
+  (pi as any).on("message_end", async () => {
+    requestFooterRender();
+  });
+
+  (pi as any).on("message_update", async () => {
+    requestFooterRender();
+  });
+
+  (pi as any).on("tool_execution_end", async () => {
+    requestFooterRender();
+  });
+
+  pi.on("model_select", async () => {
+    requestFooterRender();
+  });
+
   // Invalidate caches on turn end (files may have changed, usage updated)
   pi.on("turn_end", async () => {
     vcsStatusCache = null;
@@ -539,5 +579,6 @@ export default function (pi: ExtensionAPI) {
     if (vibeusageCache) {
       vibeusageCache.timestamp = 0;
     }
+    requestFooterRender();
   });
 }
