@@ -9,7 +9,7 @@
 import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import TurndownService from "turndown";
 // @ts-ignore — turndown-plugin-gfm has no type declarations
 import { gfm } from "turndown-plugin-gfm";
@@ -76,6 +76,19 @@ function toolOk(text: string) {
   };
 }
 
+// JSDOM's CSS parser can't handle modern CSS and spams "Could not parse CSS
+// stylesheet" to the console.  We only need the DOM for Readability extraction,
+// so silence those warnings with a virtual console that swallows errors.
+function quietConsole(): VirtualConsole {
+  const vc = new VirtualConsole();
+  // Forward everything *except* jsdom's internal css-parse errors
+  vc.on("error", () => {});
+  vc.on("warn", () => {});
+  vc.on("info", () => {});
+  vc.on("dir", () => {});
+  return vc;
+}
+
 // Convert HTML to clean markdown using Turndown with GFM support
 function htmlToMarkdown(html: string): string {
   const turndown = new TurndownService({
@@ -124,7 +137,8 @@ async function fetchWebContent(
   const html = await response.text();
 
   // Primary: Readability extraction
-  const dom = new JSDOM(html, { url });
+  const virtualConsole = quietConsole();
+  const dom = new JSDOM(html, { url, virtualConsole });
   const article = new Readability(dom.window.document).parse();
 
   if (article?.content) {
@@ -135,7 +149,7 @@ async function fetchWebContent(
   }
 
   // Fallback: strip non-content elements, find main content area
-  const fallbackDom = new JSDOM(html, { url });
+  const fallbackDom = new JSDOM(html, { url, virtualConsole });
   const doc = fallbackDom.window.document;
   doc
     .querySelectorAll("script, style, noscript, nav, header, footer, aside")
