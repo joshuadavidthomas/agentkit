@@ -140,6 +140,10 @@ Starship-style custom footer with model context, git status, costs, and token st
 
 ## Skills
 
+### [ai-writing-tropes](./skills/ai-writing-tropes/SKILL.md)
+
+Detect and eliminate common AI writing tropes from prose. Comprehensive catalog of patterns (word choice, sentence structure, paragraph layout, tone, formatting, composition) that mark AI-generated writing, with a self-check workflow. Source: [tropes.fyi](https://tropes.fyi).
+
 ### [brave-search](./skills/brave-search/SKILL.md)
 
 Web search and content extraction via Brave Search API.
@@ -265,6 +269,8 @@ Rust skills reference and adapt guidance from several sources, including:
 - [The Rust Reference](https://github.com/rust-lang/reference) (MIT OR Apache-2.0)
 - [The Rustonomicon](https://github.com/rust-lang/nomicon) (MIT OR Apache-2.0)
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
+
+AI writing tropes skill from [Xe/site](https://github.com/Xe/site) (zlib, Christine Dodrill). Content sourced from [tropes.fyi](https://tropes.fyi).
 
 Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
