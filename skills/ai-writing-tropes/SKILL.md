@@ -1,9 +1,13 @@
 ---
 name: ai-writing-tropes
-description: Detect and eliminate common AI writing tropes from prose. Use when drafting, editing, or reviewing text to avoid the predictable patterns that mark AI-generated writing.
+description:
+  Detect and eliminate common AI writing tropes from prose. Use when drafting,
+  editing, or reviewing text to avoid the predictable patterns that mark
+  AI-generated writing. Source: tropes.fyi
 metadata:
   trigger:
-    Writing prose, editing drafts, reviewing content for AI tells, or when user mentions "tropes", "AI patterns", "slop", or "tropes.fyi"
+    Writing prose, editing drafts, reviewing content for AI tells, or when user
+    mentions "tropes", "AI patterns", "slop", or "tropes.fyi"
   author: tropes.fyi
 ---
 
