@@ -115,6 +115,13 @@ let footerRenderTimeout: NodeJS.Timeout | null = null;
 let lastFooterRenderAt = 0;
 const FOOTER_RENDER_THROTTLE_MS = 125;
 
+let lastContextUsageCache: {
+  modelKey: string;
+  tokens: number;
+  percent: number;
+  contextWindow: number;
+} | null = null;
+
 function requestFooterRender(): void {
   if (!footerRequestRender) return;
 
@@ -411,6 +418,8 @@ function countSycophancy(sessionManager: { getBranch(): Array<{ type: string; me
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
+    lastContextUsageCache = null;
+
     ctx.ui.setFooter((tui, theme, footerData) => {
       footerRequestRender = () => tui.requestRender();
       vibeusageRequestRender = requestFooterRender;
@@ -447,13 +456,46 @@ export default function (pi: ExtensionAPI) {
 
           // Context percentage with color coding
           const contextUsage = ctx.getContextUsage();
-          if (contextUsage && contextUsage.contextWindow > 0) {
-            let contextColor: "success" | "warning" | "error" = "success";
-            if (contextUsage.percent >= 65) contextColor = "error";
-            else if (contextUsage.percent >= 40) contextColor = "warning";
+          const modelKey = model
+            ? `${model.provider}:${model.id}:${model.contextWindow || 0}`
+            : null;
 
-            const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${contextUsage.percent.toFixed(0)}%`;
-            const contextDetail = `(${formatTokens(contextUsage.tokens)}/${formatTokens(contextUsage.contextWindow)})`;
+          let displayContextUsage: {
+            tokens: number;
+            percent: number;
+            contextWindow: number;
+          } | null = null;
+
+          if (
+            contextUsage &&
+            contextUsage.contextWindow > 0 &&
+            contextUsage.tokens !== null &&
+            contextUsage.percent !== null
+          ) {
+            displayContextUsage = {
+              tokens: contextUsage.tokens,
+              percent: contextUsage.percent,
+              contextWindow: contextUsage.contextWindow,
+            };
+
+            if (modelKey) {
+              lastContextUsageCache = { modelKey, ...displayContextUsage };
+            }
+          } else if (modelKey && lastContextUsageCache?.modelKey === modelKey) {
+            displayContextUsage = {
+              tokens: lastContextUsageCache.tokens,
+              percent: lastContextUsageCache.percent,
+              contextWindow: lastContextUsageCache.contextWindow,
+            };
+          }
+
+          if (displayContextUsage) {
+            let contextColor: "success" | "warning" | "error" = "success";
+            if (displayContextUsage.percent >= 65) contextColor = "error";
+            else if (displayContextUsage.percent >= 40) contextColor = "warning";
+
+            const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${displayContextUsage.percent.toFixed(0)}%`;
+            const contextDetail = `(${formatTokens(displayContextUsage.tokens)}/${formatTokens(displayContextUsage.contextWindow)})`;
 
             line1Parts.push(
               theme.fg("dim", "at ") +
@@ -550,6 +592,11 @@ export default function (pi: ExtensionAPI) {
         },
       };
     });
+  });
+
+  pi.on("session_switch", async () => {
+    lastContextUsageCache = null;
+    requestFooterRender();
   });
 
   pi.on("turn_start", async () => {
