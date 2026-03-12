@@ -3,9 +3,16 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 
 import type { ExtractedQuestion } from "./extract.ts";
 import { QnAComponent } from "./qna-component.ts";
+
+interface AskUserDetails {
+  question: string;
+  options?: string[];
+  answer: string;
+}
 
 export function registerAskUserTool(pi: ExtensionAPI) {
   pi.registerTool({
@@ -52,11 +59,37 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return { content: [{ type: "text" as const, text: "User cancelled." }] };
       }
 
-      // Extract just the answer from the Q&A format
       const answerMatch = result.match(/^A:\s*(.*)$/m);
       const answer = answerMatch ? answerMatch[1].trim() : result;
 
-      return { content: [{ type: "text" as const, text: answer }] };
+      return {
+        content: [{ type: "text" as const, text: answer }],
+        details: { question, options, answer } as AskUserDetails,
+      };
+    },
+
+    renderCall(args: any, theme: any) {
+      const { question, options } = args as { question?: string; options?: string[] };
+      let text = theme.fg("accent", "Q: ") + (question ?? "");
+      if (options && options.length > 0) {
+        text += "\n" + theme.fg("dim", `   Options: ${options.join(", ")}`);
+      }
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result: any, _options: any, theme: any) {
+      const details = result.details as AskUserDetails | undefined;
+      if (!details) {
+        const text = result.content?.[0];
+        return new Text(text?.text ?? "(no output)", 0, 0);
+      }
+
+      let text = theme.fg("dim", "Q: ") + details.question;
+      if (details.options && details.options.length > 0) {
+        text += "\n" + theme.fg("dim", `   Options: ${details.options.join(", ")}`);
+      }
+      text += "\n" + theme.fg("accent", "A: ") + details.answer;
+      return new Text(text, 0, 0);
     },
   });
 }
