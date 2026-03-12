@@ -1,7 +1,11 @@
 // ask_user_question tool — model-callable tool for asking the user a question mid-turn.
+// Uses the same QnAComponent as the /answer command.
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+
+import type { ExtractedQuestion } from "./extract.ts";
+import { QnAComponent } from "./qna-component.ts";
 
 export function registerAskUserTool(pi: ExtensionAPI) {
   pi.registerTool({
@@ -34,25 +38,23 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return { content: [{ type: "text" as const, text: "User cancelled." }] };
       }
 
-      let answer: string | undefined;
+      const q: ExtractedQuestion = {
+        question,
+        options: options && options.length > 0 ? options : undefined,
+        allowCustom,
+      };
 
-      if (!options || options.length === 0) {
-        answer = await ctx.ui.input(question);
-      } else if (allowCustom) {
-        const OTHER = "Other";
-        const choice = await ctx.ui.select(question, [...options, OTHER]);
-        if (choice === OTHER) {
-          answer = await ctx.ui.input("Your answer:");
-        } else {
-          answer = choice;
-        }
-      } else {
-        answer = await ctx.ui.select(question, options);
-      }
+      const result = await ctx.ui.custom<string | null>((tui, _theme, _kb, done) => {
+        return new QnAComponent([q], tui, done);
+      });
 
-      if (answer === undefined) {
+      if (result === null) {
         return { content: [{ type: "text" as const, text: "User cancelled." }] };
       }
+
+      // Extract just the answer from the Q&A format
+      const answerMatch = result.match(/^A:\s*(.*)$/m);
+      const answer = answerMatch ? answerMatch[1].trim() : result;
 
       return { content: [{ type: "text" as const, text: answer }] };
     },
