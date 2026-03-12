@@ -81,7 +81,7 @@ export function registerAskUserTool(pi: ExtensionAPI) {
       for (let i = 0; i < qBlocks.length; i++) {
         const block = qBlocks[i];
         const qMatch = block.match(/^Q:\s*(.+)$/m);
-        const aMatch = block.match(/^A:\s*(.+)$/m);
+        const aMatch = block.match(/^A:\s*([\s\S]+)/m);
         if (qMatch && aMatch) {
           qaPairs.push({
             question: qMatch[1].trim(),
@@ -108,13 +108,11 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return new Text(text?.text ?? "(no output)", 0, 0);
       }
 
-      const qaTheme = {
+      return renderQAPairs(details.qaPairs, {
         dim: (s: string) => theme.fg("dim", s),
         accent: (s: string) => theme.fg("accent", s),
         italic: (s: string) => `\x1b[3m${s}\x1b[23m`,
-      };
-      const lines = renderQAPairs(details.qaPairs, qaTheme);
-      return new Text(lines.join("\n"), 0, 0);
+      });
     },
   });
 }
