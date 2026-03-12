@@ -3,6 +3,7 @@
 
 export interface QAPairData {
   question: string;
+  options?: string[];
   answer: string;
 }
 
@@ -16,6 +17,9 @@ export function renderQAPairs(pairs: QAPairData[], theme: QATheme): string[] {
   for (let i = 0; i < pairs.length; i++) {
     if (i > 0) lines.push("");
     lines.push(theme.dim("Q: ") + pairs[i].question);
+    if (pairs[i].options && pairs[i].options!.length > 0) {
+      lines.push(theme.dim("   Options: " + pairs[i].options!.join(", ")));
+    }
     lines.push(theme.accent("A: ") + pairs[i].answer);
   }
   return lines;
