@@ -1,4 +1,4 @@
-// Scouts extension — registers finder, librarian, and oracle tools.
+// Scouts extension — registers finder, librarian, oracle, and specialist tools.
 //
 // Finder and librarian originally vendored from pi-finder v1.2.2 and
 // pi-librarian v1.1.2, consolidated into a single extension with shared
@@ -9,7 +9,7 @@
 // pi-librarian: https://github.com/default-anton/pi-librarian
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createReadTool } from "@mariozechner/pi-coding-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -26,7 +26,9 @@ import { createGitHubTools } from "./github-tools.ts";
 import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts.md.ts";
+import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
 import { createReadOnlyBashTool } from "./read-only-bash.ts";
+import { resolveSkill, listAvailableSkills } from "./skill-resolver.ts";
 import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 
 // Shared parameter: model override
@@ -230,22 +232,160 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     },
   });
 
-  // Scouts — parallel dispatch (finder + librarian only; oracle is too
-  // expensive to run in parallel and should be invoked directly)
+  // Specialist — skill-powered domain expert
+  const SpecialistParams = Type.Object({
+    skill: Type.String({
+      description: [
+        "Name of the skill to load as domain expertise.",
+        "The specialist becomes an expert in this skill and applies it to the task.",
+        "Use listAvailableSkills to discover what's installed.",
+      ].join("\n"),
+    }),
+    task: Type.String({
+      description: [
+        "The task for the specialist to execute using the loaded skill.",
+        "Be specific about what you want analyzed, reviewed, created, or investigated.",
+      ].join("\n"),
+    }),
+    model: ModelParam,
+  });
+
+  pi.registerTool({
+    name: "specialist",
+    label: "Specialist",
+    description:
+      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task with full tool access (read, write, edit, bash). Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/.",
+    parameters: SpecialistParams as any,
+
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
+      const p = params as { skill: string; task: string; model?: string };
+      const skillName = (p.skill ?? "").trim();
+      const task = (p.task ?? "").trim();
+
+      if (!skillName) {
+        return {
+          content: [{ type: "text", text: "Missing required parameter: skill" }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      if (!task) {
+        return {
+          content: [{ type: "text", text: "Missing required parameter: task" }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      const resolved = resolveSkill(skillName, ctx.cwd);
+      if (!resolved) {
+        const available = listAvailableSkills(ctx.cwd);
+        const suggestion = available.length > 0
+          ? `\n\nAvailable skills: ${available.join(", ")}`
+          : "\n\nNo skills found. Install skills to ~/.agents/skills/ or ~/.pi/agent/skills/.";
+        return {
+          content: [{ type: "text", text: `Skill not found: ${skillName}${suggestion}` }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      const specialistConfig: ScoutConfig = {
+        name: "specialist",
+        maxTurns: 16,
+        defaultModel: "claude-sonnet-4-5",
+        buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(resolved.content, maxTurns),
+        buildUserPrompt: buildSpecialistUserPrompt,
+        getTools: () => [
+          createReadTool(ctx.cwd),
+          createBashTool(ctx.cwd),
+          createWriteTool(ctx.cwd),
+          createEditTool(ctx.cwd),
+        ],
+      };
+
+      return executeScout(
+        specialistConfig,
+        { ...p, task, query: task },
+        signal,
+        onUpdate,
+        ctx,
+      );
+    },
+
+    renderCall(args: any, theme: any) {
+      const p = args as { skill?: string; task?: string };
+      const skill = p?.skill ?? "unknown";
+      const task = (p?.task ?? "").trim();
+      const preview = task.length > 60 ? task.slice(0, 57) + "..." : task;
+      return renderScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`);
+    },
+
+    renderResult(result: any, options: any, theme: any) {
+      return renderScoutResult("specialist", result, options, theme);
+    },
+  });
+
+  // Scouts — parallel dispatch (finder, librarian, and specialist)
   const scoutConfigs = new Map<string, ScoutConfig>([
     ["finder", FINDER_CONFIG],
     ["librarian", LIBRARIAN_CONFIG],
   ]);
 
+  // Resolve a scout config for a parallel task. Static scouts use the
+  // config map; specialist builds a dynamic config from the skill name.
+  function resolveParallelConfig(
+    task: { scout: string; skill?: string; query: string },
+    cwd: string,
+  ): ScoutConfig | { error: string } {
+    if (task.scout !== "specialist") {
+      const config = scoutConfigs.get(task.scout);
+      if (!config) return { error: `Unknown scout: ${task.scout}` };
+      return config;
+    }
+
+    const skillName = (task.skill ?? "").trim();
+    if (!skillName) return { error: "Specialist task requires a skill name." };
+
+    const resolved = resolveSkill(skillName, cwd);
+    if (!resolved) {
+      const available = listAvailableSkills(cwd);
+      const suggestion = available.length > 0
+        ? ` Available: ${available.join(", ")}`
+        : "";
+      return { error: `Skill not found: ${skillName}.${suggestion}` };
+    }
+
+    return {
+      name: `specialist:${skillName}`,
+      maxTurns: 16,
+      defaultModel: "claude-sonnet-4-5",
+      buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(resolved.content, maxTurns),
+      buildUserPrompt: buildSpecialistUserPrompt,
+      getTools: () => [
+        createReadTool(cwd),
+        createBashTool(cwd),
+        createWriteTool(cwd),
+        createEditTool(cwd),
+      ],
+    };
+  }
+
+  const VALID_SCOUTS = ["finder", "librarian", "specialist"];
+
   const ScoutsParams = Type.Object({
     tasks: Type.Array(
       Type.Object({
         scout: Type.String({
-          description: "Scout name: 'finder' or 'librarian'.",
+          description: "Scout name: 'finder', 'librarian', or 'specialist'.",
         }),
         query: Type.String({
           description: "The query/task for this scout.",
         }),
+        skill: Type.Optional(
+          Type.String({ description: "Skill name (specialist only). The specialist loads this as domain expertise." }),
+        ),
         repos: Type.Optional(
           Type.Array(Type.String(), { description: "Repository hints (librarian only)." }),
         ),
@@ -265,11 +405,11 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "scouts",
     label: "Scouts",
     description:
-      "Run finder and librarian scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
+      "Run finder, librarian, and specialist scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const p = params as { tasks: Array<{ scout: string; query: string; repos?: string[]; owners?: string[]; model?: string }> };
+      const p = params as { tasks: Array<{ scout: string; query: string; skill?: string; repos?: string[]; owners?: string[]; model?: string }> };
 
       if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
         return {
@@ -280,18 +420,17 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       }
 
       const invalidScouts = [...new Set(
-        p.tasks.map((t) => t.scout).filter((s) => !scoutConfigs.has(s)),
+        p.tasks.map((t) => t.scout).filter((s) => !VALID_SCOUTS.includes(s)),
       )];
       if (invalidScouts.length > 0) {
         const hasOracle = invalidScouts.includes("oracle");
         const others = invalidScouts.filter((s) => s !== "oracle");
         const parts: string[] = [];
         if (hasOracle) {
-          parts.push("Oracle is not available in parallel scouts — call it separately. Use scouts to gather context then feed into oracle, or oracle first then scouts to fan out on what it finds.");
+          parts.push("Oracle is not available in parallel scouts — call it separately.");
         }
         if (others.length > 0) {
-          const available = [...scoutConfigs.keys()].join(", ");
-          parts.push(`Unknown scout(s): ${others.join(", ")}. Available: ${available}.`);
+          parts.push(`Unknown scout(s): ${others.join(", ")}. Available: ${VALID_SCOUTS.join(", ")}.`);
         }
         return {
           content: [{ type: "text", text: parts.join(" ") }],
@@ -300,24 +439,46 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const tasks = p.tasks.map((t) => ({
-        scout: t.scout,
-        params: {
-          query: t.query,
-          repos: t.repos,
-          owners: t.owners,
-          model: t.model,
-        } as Record<string, unknown>,
-      }));
+      // Resolve configs for all tasks (specialist configs are dynamic)
+      const resolvedConfigs = new Map<string, ScoutConfig>();
+      const resolvedTasks: Array<{ scout: string; params: Record<string, unknown> }> = [];
 
-      return executeParallelScouts(scoutConfigs, tasks, signal, onUpdate, ctx);
+      for (const t of p.tasks) {
+        const configOrError = resolveParallelConfig(t, ctx.cwd);
+        if ("error" in configOrError) {
+          return {
+            content: [{ type: "text", text: configOrError.error }],
+            details: { mode: "parallel", status: "error", results: [] },
+            isError: true,
+          };
+        }
+
+        const configKey = configOrError.name;
+        resolvedConfigs.set(configKey, configOrError);
+
+        const taskParams: Record<string, unknown> = {
+          query: t.query,
+          model: t.model,
+        };
+
+        if (t.scout === "specialist") {
+          taskParams.task = t.query;
+        } else {
+          taskParams.repos = t.repos;
+          taskParams.owners = t.owners;
+        }
+
+        resolvedTasks.push({ scout: configKey, params: taskParams });
+      }
+
+      return executeParallelScouts(resolvedConfigs, resolvedTasks, signal, onUpdate, ctx);
     },
 
     renderCall(args: any, theme: any) {
-      const p = args as { tasks?: Array<{ scout: string; query: string }> };
+      const p = args as { tasks?: Array<{ scout: string; query: string; skill?: string }> };
       const count = Array.isArray(p?.tasks) ? p.tasks.length : 0;
       const scouts = Array.isArray(p?.tasks)
-        ? [...new Set(p.tasks.map((t) => t.scout))].join(", ")
+        ? [...new Set(p.tasks.map((t) => t.scout === "specialist" ? `specialist:${t.skill ?? "?"}` : t.scout))].join(", ")
         : "";
       const info = `${count} task${count === 1 ? "" : "s"}${scouts ? ` (${scouts})` : ""}`;
       return renderScoutCall("scouts", args as Record<string, unknown>, theme, info);
