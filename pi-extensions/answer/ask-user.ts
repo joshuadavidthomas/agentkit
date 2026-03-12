@@ -109,7 +109,9 @@ export function registerAskUserTool(pi: ExtensionAPI) {
       }
 
       const lines: string[] = [];
-      for (const qa of details.qaPairs) {
+      for (let i = 0; i < details.qaPairs.length; i++) {
+        if (i > 0) lines.push("");
+        const qa = details.qaPairs[i];
         lines.push(theme.fg("dim", "Q: ") + qa.question);
         if (qa.options && qa.options.length > 0) {
           lines.push(theme.fg("dim", `   Options: ${qa.options.join(", ")}`));
