@@ -112,6 +112,7 @@ export function registerAskUserTool(pi: ExtensionAPI) {
       const qaTheme = {
         dim: (s: string) => theme.fg("dim", s),
         accent: (s: string) => theme.fg("accent", s),
+        italic: (s: string) => `\x1b[3m${s}\x1b[23m`,
       };
       const lines = renderQAPairs(details.qaPairs, qaTheme);
       return new Text(lines.join("\n"), 0, 0);
