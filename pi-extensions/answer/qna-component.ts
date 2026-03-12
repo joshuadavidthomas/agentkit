@@ -8,7 +8,6 @@ import {
   type EditorTheme,
   Key,
   matchesKey,
-  SelectList,
   type SelectListTheme,
   truncateToWidth,
   type TUI,
@@ -16,18 +15,18 @@ import {
   wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
 
-type InputMode = "editor" | "select";
-
 export class QnAComponent implements Component {
   private questions: ExtractedQuestion[];
   private answers: string[];
   private currentIndex: number = 0;
   private editor: Editor;
-  private selectLists: (SelectList | null)[];
-  private customInput: boolean[];
   private tui: TUI;
   private onDone: (result: string | null) => void;
   private showingConfirmation: boolean = false;
+
+  // Per-question option selection state
+  private selectedOptionIndex: number[];
+  private customInput: boolean[];
 
   // Cache
   private cachedWidth?: number;
@@ -48,6 +47,7 @@ export class QnAComponent implements Component {
   ) {
     this.questions = questions;
     this.answers = questions.map(() => "");
+    this.selectedOptionIndex = questions.map(() => 0);
     this.customInput = questions.map(() => false);
     this.tui = tui;
     this.onDone = onDone;
@@ -71,43 +71,35 @@ export class QnAComponent implements Component {
       this.invalidate();
       this.tui.requestRender();
     };
-
-    // Build a SelectList for each question that has options
-    this.selectLists = questions.map((q) => {
-      if (!q.options || q.options.length === 0) return null;
-      const items = q.options.map((o) => ({ value: o, label: o }));
-      if (q.allowCustom !== false) {
-        items.push({ value: "__other__", label: "Other" });
-      }
-      const list = new SelectList(items, 10, selectTheme);
-      list.onSelect = (item) => {
-        if (item.value === "__other__") {
-          this.customInput[this.currentIndex] = true;
-          this.editor.setText("");
-          this.invalidate();
-          this.tui.requestRender();
-        } else {
-          this.answers[this.currentIndex] = item.value;
-          this.advance();
-        }
-      };
-      list.onCancel = () => this.cancel();
-      return list;
-    });
   }
 
-  private inputMode(): InputMode {
+  private hasOptions(): boolean {
     const q = this.questions[this.currentIndex];
-    if (!q.options || q.options.length === 0) return "editor";
-    if (this.customInput[this.currentIndex]) return "editor";
-    return "select";
+    return !!(q.options && q.options.length > 0);
+  }
+
+  private isEditingCustom(): boolean {
+    return this.hasOptions() && this.customInput[this.currentIndex];
+  }
+
+  private optionsForCurrent(): string[] {
+    const q = this.questions[this.currentIndex];
+    if (!q.options || q.options.length === 0) return [];
+    const opts = [...q.options];
+    if (q.allowCustom !== false) opts.push("Other");
+    return opts;
+  }
+
+  private isOnOtherOption(): boolean {
+    const opts = this.optionsForCurrent();
+    return this.selectedOptionIndex[this.currentIndex] === opts.length - 1
+      && opts[opts.length - 1] === "Other";
   }
 
   private saveCurrentAnswer(): void {
-    if (this.inputMode() === "editor") {
+    if (this.isEditingCustom() || !this.hasOptions()) {
       this.answers[this.currentIndex] = this.editor.getText();
     }
-    // Select mode answers are saved on selection via onSelect callback
   }
 
   private advance(): void {
@@ -124,7 +116,7 @@ export class QnAComponent implements Component {
     if (index < 0 || index >= this.questions.length) return;
     this.saveCurrentAnswer();
     this.currentIndex = index;
-    if (this.inputMode() === "editor") {
+    if (!this.hasOptions() || this.customInput[index]) {
       this.editor.setText(this.answers[index] || "");
     }
     this.invalidate();
@@ -193,47 +185,144 @@ export class QnAComponent implements Component {
       return;
     }
 
-    if (this.inputMode() === "select") {
-      const list = this.selectLists[this.currentIndex];
-      if (list) {
-        list.handleInput(data);
-        this.invalidate();
-        this.tui.requestRender();
-      }
+    if (this.isEditingCustom()) {
+      this.handleCustomInput(data);
+    } else if (this.hasOptions()) {
+      this.handleSelectInput(data);
     } else {
-      // Editor mode
-      if (matchesKey(data, Key.up) && this.editor.getText() === "") {
-        // If we came from "Other", go back to select
-        if (this.customInput[this.currentIndex]) {
-          this.customInput[this.currentIndex] = false;
-          this.invalidate();
-          this.tui.requestRender();
-          return;
-        }
-        if (this.currentIndex > 0) {
-          this.navigateTo(this.currentIndex - 1);
-          this.tui.requestRender();
-          return;
-        }
-      }
-      if (matchesKey(data, Key.down) && this.editor.getText() === "") {
-        if (this.currentIndex < this.questions.length - 1) {
-          this.navigateTo(this.currentIndex + 1);
-          this.tui.requestRender();
-          return;
-        }
-      }
+      this.handleEditorInput(data);
+    }
+  }
 
-      if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
-        this.saveCurrentAnswer();
-        this.advance();
-        return;
-      }
+  private handleSelectInput(data: string): void {
+    const opts = this.optionsForCurrent();
+    const idx = this.selectedOptionIndex[this.currentIndex];
 
-      this.editor.handleInput(data);
+    if (matchesKey(data, Key.up)) {
+      this.selectedOptionIndex[this.currentIndex] = idx > 0 ? idx - 1 : opts.length - 1;
       this.invalidate();
       this.tui.requestRender();
+      return;
     }
+    if (matchesKey(data, Key.down)) {
+      this.selectedOptionIndex[this.currentIndex] = idx < opts.length - 1 ? idx + 1 : 0;
+      this.invalidate();
+      this.tui.requestRender();
+      return;
+    }
+
+    if (matchesKey(data, Key.enter)) {
+      const selected = opts[this.selectedOptionIndex[this.currentIndex]];
+      if (selected === "Other") {
+        this.customInput[this.currentIndex] = true;
+        this.editor.setText("");
+        this.invalidate();
+        this.tui.requestRender();
+      } else {
+        this.answers[this.currentIndex] = selected;
+        this.advance();
+      }
+      return;
+    }
+  }
+
+  private handleCustomInput(data: string): void {
+    // Escape from custom input back to option selection
+    if (matchesKey(data, Key.up) && this.editor.getText() === "") {
+      this.customInput[this.currentIndex] = false;
+      this.invalidate();
+      this.tui.requestRender();
+      return;
+    }
+
+    if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
+      this.saveCurrentAnswer();
+      this.advance();
+      return;
+    }
+
+    this.editor.handleInput(data);
+    this.invalidate();
+    this.tui.requestRender();
+  }
+
+  private handleEditorInput(data: string): void {
+    if (matchesKey(data, Key.up) && this.editor.getText() === "") {
+      if (this.currentIndex > 0) {
+        this.navigateTo(this.currentIndex - 1);
+        this.tui.requestRender();
+        return;
+      }
+    }
+    if (matchesKey(data, Key.down) && this.editor.getText() === "") {
+      if (this.currentIndex < this.questions.length - 1) {
+        this.navigateTo(this.currentIndex + 1);
+        this.tui.requestRender();
+        return;
+      }
+    }
+
+    if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
+      this.saveCurrentAnswer();
+      this.advance();
+      return;
+    }
+
+    this.editor.handleInput(data);
+    this.invalidate();
+    this.tui.requestRender();
+  }
+
+  private renderAnswerArea(
+    contentWidth: number,
+    boxLine: (c: string, p?: number) => string,
+    padToWidth: (l: string) => string,
+  ): string[] {
+    const lines: string[] = [];
+
+    if (this.hasOptions()) {
+      const opts = this.optionsForCurrent();
+      const idx = this.selectedOptionIndex[this.currentIndex];
+
+      for (let i = 0; i < opts.length; i++) {
+        const isSelected = i === idx;
+        const isOther = opts[i] === "Other";
+        const isEditingThis = isOther && this.customInput[this.currentIndex];
+
+        if (isEditingThis) {
+          // Replace "Other" row with inline editor
+          const prefix = this.cyan("→ ");
+          const label = this.cyan("Other: ");
+          const editorWidth = contentWidth - 12;
+          const editorLines = this.editor.render(editorWidth);
+          for (let j = 1; j < editorLines.length - 1; j++) {
+            if (j === 1) {
+              lines.push(padToWidth(boxLine(`${prefix}${label}${editorLines[j]}`)));
+            } else {
+              lines.push(padToWidth(boxLine(`    ${" ".repeat(visibleWidth("Other: "))}${editorLines[j]}`)));
+            }
+          }
+        } else {
+          const prefix = isSelected ? this.cyan("→ ") : "  ";
+          const text = isSelected ? this.cyan(opts[i]) : opts[i];
+          lines.push(padToWidth(boxLine(`${prefix}${text}`)));
+        }
+      }
+    } else {
+      // Pure free-text
+      const answerPrefix = this.bold("A: ");
+      const editorWidth = contentWidth - 4 - 3;
+      const editorLines = this.editor.render(editorWidth);
+      for (let i = 1; i < editorLines.length - 1; i++) {
+        if (i === 1) {
+          lines.push(padToWidth(boxLine(answerPrefix + editorLines[i])));
+        } else {
+          lines.push(padToWidth(boxLine("   " + editorLines[i])));
+        }
+      }
+    }
+
+    return lines;
   }
 
   render(width: number): string[] {
@@ -305,27 +394,8 @@ export class QnAComponent implements Component {
 
     lines.push(padToWidth(emptyBoxLine()));
 
-    // Answer area — select list or editor
-    if (this.inputMode() === "select") {
-      const list = this.selectLists[this.currentIndex];
-      if (list) {
-        const selectLines = list.render(contentWidth - 4);
-        for (const sl of selectLines) {
-          lines.push(padToWidth(boxLine(sl)));
-        }
-      }
-    } else {
-      const answerPrefix = this.bold("A: ");
-      const editorWidth = contentWidth - 4 - 3;
-      const editorLines = this.editor.render(editorWidth);
-      for (let i = 1; i < editorLines.length - 1; i++) {
-        if (i === 1) {
-          lines.push(padToWidth(boxLine(answerPrefix + editorLines[i])));
-        } else {
-          lines.push(padToWidth(boxLine("   " + editorLines[i])));
-        }
-      }
-    }
+    // Answer area
+    lines.push(...this.renderAnswerArea(contentWidth, boxLine, padToWidth));
 
     lines.push(padToWidth(emptyBoxLine()));
 
@@ -336,9 +406,14 @@ export class QnAComponent implements Component {
       lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
     } else {
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-      const controls = this.inputMode() === "select"
-        ? `${this.dim("↑↓")} select · ${this.dim("Enter")} confirm · ${this.dim("Tab")} next · ${this.dim("Esc")} cancel`
-        : `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+      let controls: string;
+      if (this.isEditingCustom()) {
+        controls = `${this.dim("↑")} back to options · ${this.dim("Enter")} confirm · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+      } else if (this.hasOptions()) {
+        controls = `${this.dim("↑↓")} select · ${this.dim("Enter")} confirm · ${this.dim("Tab")} next · ${this.dim("Esc")} cancel`;
+      } else {
+        controls = `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+      }
       lines.push(padToWidth(boxLine(truncateToWidth(controls, contentWidth))));
     }
     lines.push(padToWidth(this.dim("╰" + horizontalLine(boxWidth - 2) + "╯")));
