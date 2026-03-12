@@ -3,9 +3,10 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+import { Box, Text } from "@mariozechner/pi-tui";
 
 import { type ExtractionResult, extractQuestions, selectExtractionModel } from "./extract.ts";
-import { QnAComponent } from "./components.ts";
+import { QnAComponent, renderQAPairs } from "./components.ts";
 import { registerAskUserTool } from "./ask-user.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -89,12 +90,24 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // Send the answers directly as a message and trigger a turn
+    // Parse Q&A pairs from the component output
+    const qaPairs: Array<{ question: string; answer: string }> = [];
+    const qBlocks = answersResult.split(/(?=^Q: )/m).filter((b) => b.trim());
+    for (const block of qBlocks) {
+      const qMatch = block.match(/^Q:\s*(.+)$/m);
+      const aMatch = block.match(/^A:\s*([\s\S]+)/m);
+      if (qMatch && aMatch) {
+        qaPairs.push({ question: qMatch[1].trim(), answer: aMatch[1].trim() });
+      }
+    }
+
+    // Send the answers as a message and trigger a turn
     pi.sendMessage(
       {
         customType: "answers",
         content: "I answered your questions in the following way:\n\n" + answersResult,
         display: true,
+        details: { qaPairs },
       },
       { triggerTurn: true },
     );
@@ -108,6 +121,20 @@ export default function (pi: ExtensionAPI) {
   pi.registerShortcut("ctrl+.", {
     description: "Extract and answer questions",
     handler: answerHandler,
+  });
+
+  pi.registerMessageRenderer("answers", (message, _options, theme) => {
+    const details = message.details as { qaPairs: Array<{ question: string; answer: string }> } | undefined;
+    if (!details?.qaPairs?.length) return undefined;
+
+    const box = new Box(1, 1, (t: string) => theme.bg("toolSuccessBg", t));
+    box.addChild(new Text(theme.fg("toolTitle", theme.bold("answer")), 0, 0));
+    box.addChild(renderQAPairs(details.qaPairs, {
+      dim: (s: string) => theme.fg("dim", s),
+      accent: (s: string) => theme.fg("accent", s),
+      italic: (s: string) => `\x1b[3m${s}\x1b[23m`,
+    }));
+    return box;
   });
 
   registerAskUserTool(pi);
