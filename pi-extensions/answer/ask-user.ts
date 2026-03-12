@@ -3,11 +3,10 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { Text } from "@mariozechner/pi-tui";
+import { Box, Container, Spacer, Text } from "@mariozechner/pi-tui";
 
 import type { ExtractedQuestion } from "./extract.ts";
 import { QnAComponent } from "./qna-component.ts";
-import { renderQAPairs } from "./render-qa.ts";
 
 interface QAPair {
   question: string;
@@ -109,13 +108,19 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return new Text(text?.text ?? "(no output)", 0, 0);
       }
 
-      const qaTheme = {
-        dim: (s: string) => theme.fg("dim", s),
-        accent: (s: string) => theme.fg("accent", s),
-        italic: (s: string) => `\x1b[3m${s}\x1b[23m`,
-      };
-      const lines = renderQAPairs(details.qaPairs, qaTheme);
-      return new Text(lines.join("\n"), 0, 0);
+      const container = new Container();
+      for (let i = 0; i < details.qaPairs.length; i++) {
+        if (i > 0) container.addChild(new Spacer(1));
+        const qa = details.qaPairs[i];
+        const q = new Box(1, 0);
+        q.addChild(new Text(theme.fg("dim", "Q: ") + qa.question));
+        if (qa.options && qa.options.length > 0) {
+          q.addChild(new Text(theme.fg("dim", `\x1b[3m${qa.options.join(", ")}\x1b[23m`)));
+        }
+        q.addChild(new Text(theme.fg("accent", "A: ") + qa.answer));
+        container.addChild(q);
+      }
+      return container;
     },
   });
 }
