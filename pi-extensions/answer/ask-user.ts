@@ -8,10 +8,14 @@ import { Text } from "@mariozechner/pi-tui";
 import type { ExtractedQuestion } from "./extract.ts";
 import { QnAComponent } from "./qna-component.ts";
 
-interface AskUserDetails {
+interface QAPair {
   question: string;
   options?: string[];
   answer: string;
+}
+
+interface AskUserDetails {
+  qaPairs: QAPair[];
 }
 
 export function registerAskUserTool(pi: ExtensionAPI) {
@@ -64,18 +68,18 @@ export function registerAskUserTool(pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text" as const, text: answer }],
-        details: { question, options, answer } as AskUserDetails,
+        details: {
+          qaPairs: [{
+            question,
+            options: options && options.length > 0 ? options : undefined,
+            answer,
+          }],
+        } as AskUserDetails,
       };
     },
 
-    renderCall(args: any, theme: any) {
-      const { question, options } = args as { question?: string; options?: string[] };
-      const title = theme.fg("toolTitle", theme.bold("ask_user_question"));
-      let text = title + "\n" + (question ?? "");
-      if (options && options.length > 0) {
-        text += "\n" + theme.fg("dim", `Options: ${options.join(", ")}`);
-      }
-      return new Text(text, 0, 0);
+    renderCall(_args: any, theme: any) {
+      return new Text(theme.fg("toolTitle", theme.bold("ask_user_question")), 0, 0);
     },
 
     renderResult(result: any, _options: any, theme: any) {
@@ -85,8 +89,15 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return new Text(text?.text ?? "(no output)", 0, 0);
       }
 
-      const text = theme.fg("accent", "A: ") + details.answer;
-      return new Text(text, 0, 0);
+      const lines: string[] = [];
+      for (const qa of details.qaPairs) {
+        lines.push(theme.fg("dim", "Q: ") + qa.question);
+        if (qa.options && qa.options.length > 0) {
+          lines.push(theme.fg("dim", `   Options: ${qa.options.join(", ")}`));
+        }
+        lines.push(theme.fg("accent", "A: ") + qa.answer);
+      }
+      return new Text(lines.join("\n"), 0, 0);
     },
   });
 }
