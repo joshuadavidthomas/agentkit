@@ -278,11 +278,28 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const resolved = resolveSkill(skillName, ctx.cwd);
-      if (!resolved) {
-        const available = listAvailableSkills(ctx.cwd);
-        const suggestion = available.length > 0
-          ? `\n\nAvailable skills: ${available.join(", ")}`
+      const result = resolveSkill(skillName, ctx.cwd);
+
+      if (result.status === "invalid-name") {
+        return {
+          content: [{ type: "text", text: `Invalid skill name: ${result.reason}` }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      if (result.status === "read-error") {
+        return {
+          content: [{ type: "text", text: `Failed to read ${result.path}: ${result.error.message}` }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      if (result.status === "not-found") {
+        const { skills } = listAvailableSkills(ctx.cwd);
+        const suggestion = skills.length > 0
+          ? `\n\nAvailable skills: ${skills.join(", ")}`
           : "\n\nNo skills found. Install skills to ~/.agents/skills/ or ~/.pi/agent/skills/.";
         return {
           content: [{ type: "text", text: `Skill not found: ${skillName}${suggestion}` }],
@@ -295,7 +312,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         name: "specialist",
         maxTurns: 16,
         defaultModel: "claude-sonnet-4-5",
-        buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(resolved.content, maxTurns),
+        buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
         buildUserPrompt: buildSpecialistUserPrompt,
         getTools: () => [
           createReadTool(ctx.cwd),
@@ -348,12 +365,13 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     const skillName = (task.skill ?? "").trim();
     if (!skillName) return { error: "Specialist task requires a skill name." };
 
-    const resolved = resolveSkill(skillName, cwd);
-    if (!resolved) {
-      const available = listAvailableSkills(cwd);
-      const suggestion = available.length > 0
-        ? ` Available: ${available.join(", ")}`
-        : "";
+    const result = resolveSkill(skillName, cwd);
+
+    if (result.status === "invalid-name") return { error: `Invalid skill name: ${result.reason}` };
+    if (result.status === "read-error") return { error: `Failed to read ${result.path}: ${result.error.message}` };
+    if (result.status === "not-found") {
+      const { skills } = listAvailableSkills(cwd);
+      const suggestion = skills.length > 0 ? ` Available: ${skills.join(", ")}` : "";
       return { error: `Skill not found: ${skillName}.${suggestion}` };
     }
 
@@ -361,7 +379,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       name: `specialist:${skillName}`,
       maxTurns: 16,
       defaultModel: "claude-sonnet-4-5",
-      buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(resolved.content, maxTurns),
+      buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
       buildUserPrompt: buildSpecialistUserPrompt,
       getTools: () => [
         createReadTool(cwd),
