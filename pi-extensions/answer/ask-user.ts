@@ -6,8 +6,7 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 
 import type { ExtractedQuestion } from "./extract.ts";
-import { QnAComponent } from "./qna-component.ts";
-import { renderQAPairs } from "./render-qa.ts";
+import { QnAComponent, renderQAPairs } from "./components.ts";
 
 interface QAPair {
   question: string;
