@@ -31,12 +31,14 @@ Instead of using their converter, we're building native Pi support by:
 
 ## 3. ask_user_question tool ✅
 
-- [x] `pi.registerTool("ask_user_question")` in `pi-extensions/answer.ts`
-- [x] Parameters: `question` (string), `options` (string[], optional), `allowCustom` (boolean, optional, default true)
-- [x] No options → `ctx.ui.input(question)`
-- [x] Options + allowCustom → `ctx.ui.select(question, [...options, "Other"])`, "Other" → `ctx.ui.input`
-- [x] Options, no custom → `ctx.ui.select(question, options)`
+- [x] `pi.registerTool("ask_user_question")` in `pi-extensions/answer/ask-user.ts`
+- [x] Multi-question support: `questions: [{ question, context?, options?, allowCustom? }, ...]`
+- [x] Uses same `QnAComponent` as `/answer` command — free-text editor, selectable options, inline "Other" editor
+- [x] Confirmation screen shows full Q&A summary before submitting
+- [x] Shared `renderQAPairs` in `components.ts` used by both confirmation and `renderResult`
+- [x] `renderCall` shows tool name, `renderResult` shows Q&A pairs with italic options
 - [x] User cancels or no UI → returns `"User cancelled."`
+- [x] Extension split into directory: `index.ts`, `extract.ts`, `components.ts`, `ask-user.ts`
 
 **Used by:** `ce:brainstorm` (5 uses), `ce:plan` (4), `setup` (3), skill creation workflows, `test-browser`, `test-xcode`, `report-bug`, `deepen-plan`
 
