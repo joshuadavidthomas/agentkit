@@ -7,6 +7,7 @@ import { Text } from "@mariozechner/pi-tui";
 
 import type { ExtractedQuestion } from "./extract.ts";
 import { QnAComponent } from "./qna-component.ts";
+import { renderQAPairs } from "./render-qa.ts";
 
 interface QAPair {
   question: string;
@@ -108,16 +109,11 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return new Text(text?.text ?? "(no output)", 0, 0);
       }
 
-      const lines: string[] = [];
-      for (let i = 0; i < details.qaPairs.length; i++) {
-        if (i > 0) lines.push("");
-        const qa = details.qaPairs[i];
-        lines.push(theme.fg("dim", "Q: ") + qa.question);
-        if (qa.options && qa.options.length > 0) {
-          lines.push(theme.fg("dim", `   Options: ${qa.options.join(", ")}`));
-        }
-        lines.push(theme.fg("accent", "A: ") + qa.answer);
-      }
+      const qaTheme = {
+        dim: (s: string) => theme.fg("dim", s),
+        accent: (s: string) => theme.fg("accent", s),
+      };
+      const lines = renderQAPairs(details.qaPairs, qaTheme);
       return new Text(lines.join("\n"), 0, 0);
     },
   });
