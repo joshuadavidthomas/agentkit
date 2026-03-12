@@ -84,11 +84,7 @@ export function registerAskUserTool(pi: ExtensionAPI) {
         return new Text(text?.text ?? "(no output)", 0, 0);
       }
 
-      let text = theme.fg("dim", "Q: ") + details.question;
-      if (details.options && details.options.length > 0) {
-        text += "\n" + theme.fg("dim", `   Options: ${details.options.join(", ")}`);
-      }
-      text += "\n" + theme.fg("accent", "A: ") + details.answer;
+      const text = theme.fg("accent", "A: ") + details.answer;
       return new Text(text, 0, 0);
     },
   });
