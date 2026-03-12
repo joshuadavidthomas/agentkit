@@ -106,11 +106,65 @@ The conversion script should be re-runnable:
 
 ### 5. Integration into install.sh
 
-Add compound engineering to `install.sh` so it runs as part of the normal agentkit install flow. Needs the compound engineering plugin repo path — either cloned as a submodule, a configurable path, or fetched on demand.
+Add compound engineering to `install.sh` so it runs as part of the normal agentkit install flow.
+
+**Source repo:** Clone or fetch `EveryInc/compound-engineering-plugin` to `$XDG_CACHE_HOME/agentkit/compound-engineering-plugin` (typically `~/.cache/agentkit/compound-engineering-plugin`). On subsequent runs, `git pull` to update.
+
+**Flow:**
+1. `install.sh` checks if the repo exists in the cache dir
+2. If not, `git clone https://github.com/EveryInc/compound-engineering-plugin.git`
+3. If yes, `git -C <path> pull`
+4. Run the conversion script pointing at the cached repo
+
+### 6. Agent model mapping
+
+Some compound engineering agents specify `model: haiku` or `model: inherit` in their frontmatter. The specialist scout already supports a `model` parameter, and the scouts parallel tool passes it through.
+
+**Approach:**
+- The conversion script reads each agent's `model` frontmatter field
+- Maps Claude Code model names to Pi model IDs (e.g., `haiku` → `claude-haiku-4-5`, `inherit` → omit/use default)
+- Embeds the model hint in the converted prompt text so the main agent passes it through when calling the specialist
+
+### 7. Teammate/swarm mode
+
+`Teammate` is Claude Code's built-in multi-agent swarm primitive. It provides:
+- `spawnTeam` — create a named team
+- Spawn teammates as background agents with names, inboxes, and colors
+- `write` / `broadcast` — message one or all teammates
+- `requestShutdown` / `approveShutdown` — graceful teardown
+- `approvePlan` — leader approves teammate work
+- `cleanup` — tear down the team
+
+Used in `ce:work` swarm mode and the `orchestrating-swarms` skill (1600+ lines).
+
+**Approach:** Map to ralph. Ralph is our in-session iterative loop engine. The mapping isn't 1:1 — ralph doesn't have team messaging or named agents — but the core pattern (spawn background work, coordinate, shut down) overlaps. This is a separate project. For now:
+- The conversion script strips `Teammate(...)` calls with a note: `(Swarm mode: see ralph extension for Pi equivalent)`
+- The `orchestrating-swarms` skill gets a Pi-specific preamble noting the differences
+- Revisit after the basic workflow (`brainstorm → plan → work → review → compound`) is working
+
+### 8. Orchestration commands as prompt templates
+
+Commands with `disable-model-invocation: true` (like `/lfg`, `/slfg`) are step-by-step orchestration sequences, not interactive prompts. They tell the model to run a series of other commands in order.
+
+**Approach:** Convert these to Pi prompt templates that list the steps. The model reads the template and executes each step sequentially. Example for `/lfg`:
+
+```markdown
+<!-- ~/.pi/agent/prompts/lfg.md -->
+---
+description: Full autonomous engineering workflow
+argument-hint: "[feature description]"
+---
+1. Run /ce-plan {{args}}
+2. Run /deepen-plan on the plan file
+3. Run /ce-work on the plan file
+4. Run /ce-review
+5. Run /resolve-todo-parallel
+...
+```
+
+The model already knows how to follow numbered steps. No special machinery needed.
 
 ## Open questions
 
-- Should the conversion script live in agentkit or as a fork/PR to the compound engineering repo?
-- What model should the specialist default to for compound engineering agents? Sonnet 4.5 works but some agents (like learnings-researcher) specify `model: haiku` in their frontmatter — should we respect that?
-- The `ce:work` swarm mode uses `Teammate` extensively — is that something to tackle later with ralph, or just mark as unsupported?
-- Some commands have `disable-model-invocation: true` (like `/lfg`, `/slfg`) — these are orchestration sequences, not prompts. How to handle in Pi? Could become prompt templates that just list the steps.
+- Should we pin to a specific tag/release of the compound engineering repo, or always pull latest?
+- Ralph ↔ Teammate mapping: worth a dedicated exploration session to see what's feasible vs what needs new ralph features?
