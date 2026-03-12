@@ -2,6 +2,7 @@
 // Supports free-text editor input and selectable options per question.
 
 import type { ExtractedQuestion } from "./extract.ts";
+import { renderQAPairs } from "./render-qa.ts";
 import {
   type Component,
   Editor,
@@ -361,15 +362,19 @@ export class QnAComponent implements Component {
       lines.push(padToWidth(boxLine(title)));
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
 
-      for (let i = 0; i < this.questions.length; i++) {
-        if (i > 0) lines.push(padToWidth(emptyBoxLine()));
-        const q = this.questions[i];
-        const a = this.answers[i]?.trim() || "(no answer)";
-        lines.push(padToWidth(boxLine(this.dim("Q: ") + q.question)));
-        if (q.options && q.options.length > 0) {
-          lines.push(padToWidth(boxLine(this.dim(`   \x1b[3m${q.options.join(", ")}\x1b[23m`))));
+      const pairs = this.questions.map((q, i) => ({
+        question: q.question,
+        options: q.options,
+        answer: this.answers[i]?.trim() || "(no answer)",
+      }));
+      const italic = (s: string) => `\x1b[3m${s}\x1b[23m`;
+      const qaLines = renderQAPairs(pairs, { dim: this.dim, accent: this.green, italic });
+      for (const line of qaLines) {
+        if (line === "") {
+          lines.push(padToWidth(emptyBoxLine()));
+        } else {
+          lines.push(padToWidth(boxLine(line)));
         }
-        lines.push(padToWidth(boxLine(this.green("A: ") + a)));
       }
 
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
