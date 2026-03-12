@@ -1,8 +1,7 @@
-// Interactive Q&A TUI component for navigating and answering extracted questions.
-// Supports free-text editor input and selectable options per question.
+// Q&A UI components — QnAComponent for interactive questioning, and shared
+// renderQAPairs for confirmation screen and tool result rendering.
 
 import type { ExtractedQuestion } from "./extract.ts";
-import { renderQAPairs } from "./render-qa.ts";
 import {
   type Component,
   Editor,
@@ -15,6 +14,35 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
+
+// Shared Q&A pair rendering
+
+export interface QAPairData {
+  question: string;
+  options?: string[];
+  answer: string;
+}
+
+export interface QATheme {
+  dim: (s: string) => string;
+  accent: (s: string) => string;
+  italic: (s: string) => string;
+}
+
+export function renderQAPairs(pairs: QAPairData[], theme: QATheme): string[] {
+  const lines: string[] = [];
+  for (let i = 0; i < pairs.length; i++) {
+    if (i > 0) lines.push("");
+    lines.push(theme.dim("Q: ") + pairs[i].question);
+    if (pairs[i].options && pairs[i].options!.length > 0) {
+      lines.push(theme.dim("   " + theme.italic(pairs[i].options!.join(", "))));
+    }
+    lines.push(theme.accent("A: ") + pairs[i].answer);
+  }
+  return lines;
+}
+
+// Interactive Q&A component
 
 export class QnAComponent implements Component {
   private questions: ExtractedQuestion[];
@@ -89,12 +117,6 @@ export class QnAComponent implements Component {
     const opts = [...q.options];
     if (q.allowCustom !== false) opts.push("Other");
     return opts;
-  }
-
-  private isOnOtherOption(): boolean {
-    const opts = this.optionsForCurrent();
-    return this.selectedOptionIndex[this.currentIndex] === opts.length - 1
-      && opts[opts.length - 1] === "Other";
   }
 
   private saveCurrentAnswer(): void {
@@ -228,7 +250,6 @@ export class QnAComponent implements Component {
   }
 
   private handleCustomInput(data: string): void {
-    // Escape from custom input back to option selection
     if (matchesKey(data, Key.up) && this.editor.getText() === "") {
       this.customInput[this.currentIndex] = false;
       this.invalidate();
@@ -291,7 +312,6 @@ export class QnAComponent implements Component {
         const isEditingThis = isOther && this.customInput[this.currentIndex];
 
         if (isEditingThis) {
-          // Replace "Other" row with inline editor
           const prefix = this.cyan("→ ");
           const label = this.cyan("Other: ");
           const editorWidth = contentWidth - 12;
@@ -310,7 +330,6 @@ export class QnAComponent implements Component {
         }
       }
     } else {
-      // Pure free-text
       const answerPrefix = this.bold("A: ");
       const editorWidth = contentWidth - 4 - 3;
       const editorLines = this.editor.render(editorWidth);
@@ -357,7 +376,6 @@ export class QnAComponent implements Component {
     lines.push(padToWidth(this.dim("╭" + horizontalLine(boxWidth - 2) + "╮")));
 
     if (this.showingConfirmation) {
-      // Confirmation screen: summary of all Q&A pairs
       const title = this.bold(this.yellow("Review Answers"));
       lines.push(padToWidth(boxLine(title)));
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
@@ -381,7 +399,6 @@ export class QnAComponent implements Component {
       const confirmMsg = `${this.yellow("Submit?")} ${this.dim("(Enter/y to confirm, Esc/n to go back)")}`;
       lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
     } else {
-      // Normal question screen
       const title = `${this.bold(this.cyan("Questions"))} ${this.dim(`(${this.currentIndex + 1}/${this.questions.length})`)}`;
       lines.push(padToWidth(boxLine(title)));
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
