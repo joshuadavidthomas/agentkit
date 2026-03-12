@@ -5,6 +5,8 @@ import { complete, type Model, type Api, type UserMessage } from "@mariozechner/
 export interface ExtractedQuestion {
   question: string;
   context?: string;
+  options?: string[];
+  allowCustom?: boolean;
 }
 
 export interface ExtractionResult {
