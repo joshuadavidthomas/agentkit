@@ -367,7 +367,8 @@ export class QnAComponent implements Component {
         options: q.options,
         answer: this.answers[i]?.trim() || "(no answer)",
       }));
-      const qaLines = renderQAPairs(pairs, { dim: this.dim, accent: this.green });
+      const italic = (s: string) => `\x1b[3m${s}\x1b[23m`;
+      const qaLines = renderQAPairs(pairs, { dim: this.dim, accent: this.green, italic });
       for (const line of qaLines) {
         if (line === "") {
           lines.push(padToWidth(emptyBoxLine()));

@@ -10,6 +10,7 @@ export interface QAPairData {
 export interface QATheme {
   dim: (s: string) => string;
   accent: (s: string) => string;
+  italic: (s: string) => string;
 }
 
 export function renderQAPairs(pairs: QAPairData[], theme: QATheme): string[] {
@@ -18,7 +19,7 @@ export function renderQAPairs(pairs: QAPairData[], theme: QATheme): string[] {
     if (i > 0) lines.push("");
     lines.push(theme.dim("Q: ") + pairs[i].question);
     if (pairs[i].options && pairs[i].options!.length > 0) {
-      lines.push(theme.dim("   Options: " + pairs[i].options!.join(", ")));
+      lines.push(theme.dim("   " + theme.italic(pairs[i].options!.join(", "))));
     }
     lines.push(theme.accent("A: ") + pairs[i].answer);
   }
