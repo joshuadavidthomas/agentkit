@@ -364,6 +364,7 @@ export class QnAComponent implements Component {
 
       const pairs = this.questions.map((q, i) => ({
         question: q.question,
+        options: q.options,
         answer: this.answers[i]?.trim() || "(no answer)",
       }));
       const qaLines = renderQAPairs(pairs, { dim: this.dim, accent: this.green });
