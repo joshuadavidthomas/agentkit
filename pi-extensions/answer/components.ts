@@ -4,16 +4,107 @@
 import type { ExtractedQuestion } from "./extract.ts";
 import {
   type Component,
+  Container,
   Editor,
   type EditorTheme,
   Key,
   matchesKey,
   type SelectListTheme,
-  truncateToWidth,
+  Spacer,
+  Text,
   type TUI,
   visibleWidth,
-  wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
+
+// Bordered box — wraps child components with box-drawing borders
+
+class BorderedBox implements Component {
+  private children: Component[] = [];
+  private maxWidth: number;
+  private padding: number;
+  private styleBorder: (s: string) => string;
+
+  constructor(maxWidth: number = 120, padding: number = 2, styleBorder: (s: string) => string = (s) => s) {
+    this.maxWidth = maxWidth;
+    this.padding = padding;
+    this.styleBorder = styleBorder;
+  }
+
+  addChild(component: Component): void {
+    this.children.push(component);
+  }
+
+  addSeparator(): void {
+    this.children.push({ render: (_w) => ["__SEPARATOR__"], invalidate() {} });
+  }
+
+  invalidate(): void {
+    for (const child of this.children) {
+      child.invalidate();
+    }
+  }
+
+  render(width: number): string[] {
+    const boxWidth = Math.min(width - 4, this.maxWidth);
+    const contentWidth = boxWidth - 2 - this.padding * 2;
+    const hr = "─".repeat(boxWidth - 2);
+    const lines: string[] = [];
+
+    lines.push(this.pad(this.styleBorder(`╭${hr}╮`), width));
+
+    for (const child of this.children) {
+      const childLines = child.render(contentWidth);
+      for (const line of childLines) {
+        if (line === "__SEPARATOR__") {
+          lines.push(this.pad(this.styleBorder(`├${hr}┤`), width));
+        } else {
+          lines.push(this.pad(this.wrapLine(line, boxWidth), width));
+        }
+      }
+    }
+
+    lines.push(this.pad(this.styleBorder(`╰${hr}╯`), width));
+    return lines;
+  }
+
+  private wrapLine(content: string, boxWidth: number): string {
+    const padded = " ".repeat(this.padding) + content;
+    const contentLen = visibleWidth(padded);
+    const rightPad = Math.max(0, boxWidth - contentLen - 2);
+    return this.styleBorder("│") + padded + "\x1b[0m" + " ".repeat(rightPad) + this.styleBorder("│");
+  }
+
+  private pad(line: string, width: number): string {
+    const len = visibleWidth(line);
+    return line + " ".repeat(Math.max(0, width - len));
+  }
+}
+
+// Editor without border lines, with optional prefix on first line
+
+class PrefixedEditor implements Component {
+  private prefix: string;
+  private prefixWidth: number;
+  constructor(private editor: Editor, prefix: string = "") {
+    this.prefix = prefix;
+    this.prefixWidth = visibleWidth(prefix);
+  }
+  invalidate(): void { this.editor.invalidate(); }
+  render(width: number): string[] {
+    const editorWidth = this.prefix ? width - this.prefixWidth : width;
+    const lines = this.editor.render(editorWidth);
+    // Strip top/bottom border lines the Editor always renders
+    const content = lines.slice(1, -1);
+    if (this.prefix && content.length > 0) {
+      content[0] = this.prefix + content[0];
+      const indent = " ".repeat(this.prefixWidth);
+      for (let i = 1; i < content.length; i++) {
+        content[i] = indent + content[i];
+      }
+    }
+    return content;
+  }
+}
 
 // Shared Q&A pair rendering
 
@@ -29,17 +120,17 @@ export interface QATheme {
   italic: (s: string) => string;
 }
 
-export function renderQAPairs(pairs: QAPairData[], theme: QATheme): string[] {
-  const lines: string[] = [];
+export function renderQAPairs(pairs: QAPairData[], theme: QATheme): Container {
+  const container = new Container();
   for (let i = 0; i < pairs.length; i++) {
-    if (i > 0) lines.push("");
-    lines.push(theme.dim("Q: ") + pairs[i].question);
+    if (i > 0) container.addChild(new Spacer(1));
+    container.addChild(new Text(theme.dim("Q: ") + pairs[i].question, 0, 0));
     if (pairs[i].options && pairs[i].options!.length > 0) {
-      lines.push(theme.dim("   " + theme.italic(pairs[i].options!.join(", "))));
+      container.addChild(new Text(theme.dim(theme.italic(pairs[i].options!.join(", "))), 3, 0));
     }
-    lines.push(theme.accent("A: ") + pairs[i].answer);
+    container.addChild(new Text(theme.accent("A: ") + pairs[i].answer, 0, 0));
   }
-  return lines;
+  return container;
 }
 
 // Interactive Q&A component
@@ -56,10 +147,7 @@ export class QnAComponent implements Component {
   // Per-question option selection state
   private selectedOptionIndex: number[];
   private customInput: boolean[];
-
-  // Cache
-  private cachedWidth?: number;
-  private cachedLines?: string[];
+  private editorInPaste: boolean = false;
 
   // Colors
   private dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -169,8 +257,9 @@ export class QnAComponent implements Component {
   }
 
   invalidate(): void {
-    this.cachedWidth = undefined;
-    this.cachedLines = undefined;
+    for (const child of [this.editor]) {
+      child.invalidate?.();
+    }
   }
 
   handleInput(data: string): void {
@@ -205,6 +294,15 @@ export class QnAComponent implements Component {
         this.navigateTo(this.currentIndex - 1);
         this.tui.requestRender();
       }
+      return;
+    }
+
+    // Pass bracketed paste sequences directly to the editor
+    if (data.includes("\x1b[200~") || this.editorInPaste) {
+      this.editor.handleInput(data);
+      this.editorInPaste = !data.includes("\x1b[201~");
+      this.invalidate();
+      this.tui.requestRender();
       return;
     }
 
@@ -295,12 +393,86 @@ export class QnAComponent implements Component {
     this.tui.requestRender();
   }
 
-  private renderAnswerArea(
-    contentWidth: number,
-    boxLine: (c: string, p?: number) => string,
-    padToWidth: (l: string) => string,
-  ): string[] {
-    const lines: string[] = [];
+  private buildConfirmationView(): Component {
+    const box = new BorderedBox(120, 2, this.dim);
+
+    box.addChild(new Text(this.bold(this.yellow("Review Answers")), 0, 0));
+    box.addSeparator();
+
+    const pairs = this.questions.map((q, i) => ({
+      question: q.question,
+      options: q.options,
+      answer: this.answers[i]?.trim() || "(no answer)",
+    }));
+    const italic = (s: string) => `\x1b[3m${s}\x1b[23m`;
+    box.addChild(renderQAPairs(pairs, { dim: this.dim, accent: this.green, italic }));
+
+    box.addSeparator();
+    box.addChild(new Text(
+      `${this.yellow("Submit?")} ${this.dim("(Enter/y to confirm, Esc/n to go back)")}`,
+      0, 0,
+    ));
+
+    return box;
+  }
+
+  private buildQuestionView(): Component {
+    const box = new BorderedBox(120, 2, this.dim);
+
+    // Title
+    const title = `${this.bold(this.cyan("Questions"))} ${this.dim(`(${this.currentIndex + 1}/${this.questions.length})`)}`;
+    box.addChild(new Text(title, 0, 0));
+    box.addSeparator();
+
+    // Progress dots
+    const progressParts: string[] = [];
+    for (let i = 0; i < this.questions.length; i++) {
+      const answered = (this.answers[i]?.trim() || "").length > 0;
+      const current = i === this.currentIndex;
+      if (current) {
+        progressParts.push(this.cyan("●"));
+      } else if (answered) {
+        progressParts.push(this.green("●"));
+      } else {
+        progressParts.push(this.dim("○"));
+      }
+    }
+    box.addChild(new Text(progressParts.join(" "), 0, 0));
+    box.addChild(new Spacer(1));
+
+    // Current question
+    const q = this.questions[this.currentIndex];
+    box.addChild(new Text(`${this.bold("Q:")} ${q.question}`, 0, 0));
+
+    // Context
+    if (q.context) {
+      box.addChild(new Text(this.gray(`> ${q.context}`), 0, 0));
+    }
+
+    box.addChild(new Spacer(1));
+
+    // Answer area
+    box.addChild(this.buildAnswerArea());
+
+    box.addChild(new Spacer(1));
+
+    // Controls
+    box.addSeparator();
+    let controls: string;
+    if (this.isEditingCustom()) {
+      controls = `${this.dim("↑")} back to options · ${this.dim("Enter")} confirm · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+    } else if (this.hasOptions()) {
+      controls = `${this.dim("↑↓")} select · ${this.dim("Enter")} confirm · ${this.dim("Tab")} next · ${this.dim("Esc")} cancel`;
+    } else {
+      controls = `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+    }
+    box.addChild(new Text(controls, 0, 0));
+
+    return box;
+  }
+
+  private buildAnswerArea(): Component {
+    const container = new Container();
 
     if (this.hasOptions()) {
       const opts = this.optionsForCurrent();
@@ -312,155 +484,24 @@ export class QnAComponent implements Component {
         const isEditingThis = isOther && this.customInput[this.currentIndex];
 
         if (isEditingThis) {
-          const prefix = this.cyan("→ ");
-          const label = this.cyan("Other: ");
-          const editorWidth = contentWidth - 12;
-          const editorLines = this.editor.render(editorWidth);
-          for (let j = 1; j < editorLines.length - 1; j++) {
-            if (j === 1) {
-              lines.push(padToWidth(boxLine(`${prefix}${label}${editorLines[j]}`)));
-            } else {
-              lines.push(padToWidth(boxLine(`    ${" ".repeat(visibleWidth("Other: "))}${editorLines[j]}`)));
-            }
-          }
+          container.addChild(new PrefixedEditor(this.editor, this.cyan("→ ") + this.cyan("Other: ")));
         } else {
           const prefix = isSelected ? this.cyan("→ ") : "  ";
           const text = isSelected ? this.cyan(opts[i]) : opts[i];
-          lines.push(padToWidth(boxLine(`${prefix}${text}`)));
+          container.addChild(new Text(`${prefix}${text}`, 0, 0));
         }
       }
     } else {
-      const answerPrefix = this.bold("A: ");
-      const editorWidth = contentWidth - 4 - 3;
-      const editorLines = this.editor.render(editorWidth);
-      for (let i = 1; i < editorLines.length - 1; i++) {
-        if (i === 1) {
-          lines.push(padToWidth(boxLine(answerPrefix + editorLines[i])));
-        } else {
-          lines.push(padToWidth(boxLine("   " + editorLines[i])));
-        }
-      }
+      container.addChild(new PrefixedEditor(this.editor, this.bold("A: ")));
     }
 
-    return lines;
+    return container;
   }
 
   render(width: number): string[] {
-    if (this.cachedLines && this.cachedWidth === width) {
-      return this.cachedLines;
-    }
-
-    const lines: string[] = [];
-    const boxWidth = Math.min(width - 4, 120);
-    const contentWidth = boxWidth - 4;
-
-    const horizontalLine = (count: number) => "─".repeat(count);
-
-    const boxLine = (content: string, leftPad: number = 2): string => {
-      const paddedContent = " ".repeat(leftPad) + content;
-      const contentLen = visibleWidth(paddedContent);
-      const rightPad = Math.max(0, boxWidth - contentLen - 2);
-      return this.dim("│") + paddedContent + " ".repeat(rightPad) + this.dim("│");
-    };
-
-    const emptyBoxLine = (): string => {
-      return this.dim("│") + " ".repeat(boxWidth - 2) + this.dim("│");
-    };
-
-    const padToWidth = (line: string): string => {
-      const len = visibleWidth(line);
-      return line + " ".repeat(Math.max(0, width - len));
-    };
-
-    // Title
-    lines.push(padToWidth(this.dim("╭" + horizontalLine(boxWidth - 2) + "╮")));
-
-    if (this.showingConfirmation) {
-      const title = this.bold(this.yellow("Review Answers"));
-      lines.push(padToWidth(boxLine(title)));
-      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-
-      const pairs = this.questions.map((q, i) => ({
-        question: q.question,
-        options: q.options,
-        answer: this.answers[i]?.trim() || "(no answer)",
-      }));
-      const italic = (s: string) => `\x1b[3m${s}\x1b[23m`;
-      const qaLines = renderQAPairs(pairs, { dim: this.dim, accent: this.green, italic });
-      for (const line of qaLines) {
-        if (line === "") {
-          lines.push(padToWidth(emptyBoxLine()));
-        } else {
-          lines.push(padToWidth(boxLine(line)));
-        }
-      }
-
-      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-      const confirmMsg = `${this.yellow("Submit?")} ${this.dim("(Enter/y to confirm, Esc/n to go back)")}`;
-      lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
-    } else {
-      const title = `${this.bold(this.cyan("Questions"))} ${this.dim(`(${this.currentIndex + 1}/${this.questions.length})`)}`;
-      lines.push(padToWidth(boxLine(title)));
-      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-
-      // Progress indicator
-      const progressParts: string[] = [];
-      for (let i = 0; i < this.questions.length; i++) {
-        const answered = (this.answers[i]?.trim() || "").length > 0;
-        const current = i === this.currentIndex;
-        if (current) {
-          progressParts.push(this.cyan("●"));
-        } else if (answered) {
-          progressParts.push(this.green("●"));
-        } else {
-          progressParts.push(this.dim("○"));
-        }
-      }
-      lines.push(padToWidth(boxLine(progressParts.join(" "))));
-      lines.push(padToWidth(emptyBoxLine()));
-
-      // Current question
-      const q = this.questions[this.currentIndex];
-      const questionText = `${this.bold("Q:")} ${q.question}`;
-      const wrappedQuestion = wrapTextWithAnsi(questionText, contentWidth);
-      for (const line of wrappedQuestion) {
-        lines.push(padToWidth(boxLine(line)));
-      }
-
-      // Context if present
-      if (q.context) {
-        lines.push(padToWidth(emptyBoxLine()));
-        const contextText = this.gray(`> ${q.context}`);
-        const wrappedContext = wrapTextWithAnsi(contextText, contentWidth - 2);
-        for (const line of wrappedContext) {
-          lines.push(padToWidth(boxLine(line)));
-        }
-      }
-
-      lines.push(padToWidth(emptyBoxLine()));
-
-      // Answer area
-      lines.push(...this.renderAnswerArea(contentWidth, boxLine, padToWidth));
-
-      lines.push(padToWidth(emptyBoxLine()));
-
-      // Footer controls
-      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-      let controls: string;
-      if (this.isEditingCustom()) {
-        controls = `${this.dim("↑")} back to options · ${this.dim("Enter")} confirm · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
-      } else if (this.hasOptions()) {
-        controls = `${this.dim("↑↓")} select · ${this.dim("Enter")} confirm · ${this.dim("Tab")} next · ${this.dim("Esc")} cancel`;
-      } else {
-        controls = `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
-      }
-      lines.push(padToWidth(boxLine(truncateToWidth(controls, contentWidth))));
-    }
-
-    lines.push(padToWidth(this.dim("╰" + horizontalLine(boxWidth - 2) + "╯")));
-
-    this.cachedWidth = width;
-    this.cachedLines = lines;
-    return lines;
+    const view = this.showingConfirmation
+      ? this.buildConfirmationView()
+      : this.buildQuestionView();
+    return view.render(width);
   }
 }
