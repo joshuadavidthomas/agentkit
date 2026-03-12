@@ -164,7 +164,40 @@ argument-hint: "[feature description]"
 
 The model already knows how to follow numbered steps. No special machinery needed.
 
-## Open questions
+## Ralph ↔ Teammate Analysis
 
-- Should we pin to a specific tag/release of the compound engineering repo, or always pull latest?
-- Ralph ↔ Teammate mapping: worth a dedicated exploration session to see what's feasible vs what needs new ralph features?
+Ralph and Teammate solve fundamentally different problems. Ralph is a **single-agent iterative loop** (one LoopEngine, one session, re-prompt with fresh context each iteration). Teammate is a **multi-agent coordination system** (N parallel workers, inbox messaging, shared task queues with dependency DAGs, leader/worker lifecycle).
+
+**Overlap:** Both create AgentSession instances in-process. Both track work state on the filesystem. Both have fresh context per cycle.
+
+**Divergence:** Everything about coordination. Ralph has zero multi-agent primitives.
+
+| Aspect | Ralph | Teammate |
+|--------|-------|----------|
+| Agents | 1 | N parallel |
+| Communication | steer/follow-up to self | inbox messages between agents |
+| Task management | single task.md | shared queue with dependency DAG |
+| Control | stop/kill | per-agent requestShutdown/approveShutdown |
+
+### What ralph would need
+
+Ralph's `LoopEngine` is already a good **worker** primitive. What's missing is an **orchestration layer above it**:
+
+1. **Multi-session management** — `SessionPool` or `AgentRegistry` for N concurrent sessions with identities
+2. **Messaging layer** — in-memory inbox/outbox with `write(target, msg)` and `broadcast(msg)`, structured message types (text, shutdown_request, idle_notification)
+3. **Shared task queue** — `TaskStore` with create/claim/update/list, dependency tracking, auto-unblocking
+4. **Leader/worker lifecycle** — leader loop that spawns workers, monitors inboxes, approves/rejects, coordinates shutdown
+5. **Concurrent execution** — `LoopEngine.start()` already returns `Promise<void>`, so multiple engines can run via `Promise.all`
+
+### Incremental path
+
+1. `InboxManager` (in-memory message queues) + expose write/read as tools
+2. `TaskStore` with dependency DAG + expose as tools
+3. `RalphSwarm` wrapping multiple `LoopEngine` instances with a leader loop
+4. Worker auto-claim (poll TaskStore for unblocked/unclaimed tasks) + shutdown coordination
+
+Ralph's existing `nudge()` could deliver inbox messages to running workers — when a message arrives, steer the worker with it.
+
+### For now
+
+This is a separate project. The conversion script strips Teammate calls with a note. Revisit after the basic workflow works.
