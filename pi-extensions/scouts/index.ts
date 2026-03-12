@@ -246,6 +246,12 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         "Be specific about what you want analyzed, reviewed, created, or investigated.",
       ].join("\n"),
     }),
+    tools: Type.Optional(
+      Type.Array(
+        Type.String({ enum: ["read", "bash", "write", "edit"] }),
+        { description: "Tools the specialist can use. Defaults to [\"read\", \"bash\"]. Add \"write\" and \"edit\" for tasks that need to modify files." },
+      ),
+    ),
     model: ModelParam,
   });
 
@@ -253,11 +259,11 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "specialist",
     label: "Specialist",
     description:
-      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task with full tool access (read, write, edit, bash). Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/.",
+      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task. Defaults to read-only tools (read, bash). Pass tools: [\"read\", \"bash\", \"write\", \"edit\"] for tasks that need to modify files. Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/.",
     parameters: SpecialistParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const p = params as { skill: string; task: string; model?: string };
+      const p = params as { skill: string; task: string; tools?: string[]; model?: string };
       const skillName = (p.skill ?? "").trim();
       const task = (p.task ?? "").trim();
 
@@ -277,7 +283,10 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const configOrError = buildSpecialistConfig(skillName, ctx.cwd, { configName: "specialist" });
+      const configOrError = buildSpecialistConfig(skillName, ctx.cwd, {
+        configName: "specialist",
+        tools: p.tools as any,
+      });
 
       if ("error" in configOrError) {
         return {
@@ -318,7 +327,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
   // Resolve a scout config for a parallel task. Static scouts use the
   // config map; specialist builds a dynamic config from the skill name.
   function resolveParallelConfig(
-    task: { scout: string; skill?: string; query: string },
+    task: { scout: string; skill?: string; tools?: string[]; query: string },
     cwd: string,
   ): ScoutConfig | { error: string } {
     if (task.scout !== "specialist") {
@@ -330,7 +339,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     const skillName = (task.skill ?? "").trim();
     if (!skillName) return { error: "Specialist task requires a skill name." };
 
-    return buildSpecialistConfig(skillName, cwd);
+    return buildSpecialistConfig(skillName, cwd, { tools: task.tools as any });
   }
 
   const VALID_SCOUTS = ["finder", "librarian", "specialist"];
@@ -346,6 +355,12 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         }),
         skill: Type.Optional(
           Type.String({ description: "Skill name (specialist only). The specialist loads this as domain expertise." }),
+        ),
+        tools: Type.Optional(
+          Type.Array(
+            Type.String({ enum: ["read", "bash", "write", "edit"] }),
+            { description: "Tools for the specialist (specialist only). Defaults to [\"read\", \"bash\"]." },
+          ),
         ),
         repos: Type.Optional(
           Type.Array(Type.String(), { description: "Repository hints (librarian only)." }),
@@ -370,7 +385,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const p = params as { tasks: Array<{ scout: string; query: string; skill?: string; repos?: string[]; owners?: string[]; model?: string }> };
+      const p = params as { tasks: Array<{ scout: string; query: string; skill?: string; tools?: string[]; repos?: string[]; owners?: string[]; model?: string }> };
 
       if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
         return {
