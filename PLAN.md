@@ -125,7 +125,7 @@ Some compound engineering agents specify `model: haiku` or `model: inherit` in t
 - Maps Claude Code model names to Pi model IDs (e.g., `haiku` → `claude-haiku-4-5`, `inherit` → omit/use default)
 - Embeds the model hint in the converted prompt text so the main agent passes it through when calling the specialist
 
-### 7. Teammate/swarm mode
+### 7. Teammate/swarm mode (DEFERRED)
 
 `Teammate` is Claude Code's built-in multi-agent swarm primitive. It provides:
 - `spawnTeam` — create a named team
@@ -164,7 +164,7 @@ argument-hint: "[feature description]"
 
 The model already knows how to follow numbered steps. No special machinery needed.
 
-## Ralph ↔ Teammate Analysis
+## Ralph ↔ Teammate Analysis (DEFERRED)
 
 Ralph and Teammate solve fundamentally different problems. Ralph is a **single-agent iterative loop** (one LoopEngine, one session, re-prompt with fresh context each iteration). Teammate is a **multi-agent coordination system** (N parallel workers, inbox messaging, shared task queues with dependency DAGs, leader/worker lifecycle).
 
