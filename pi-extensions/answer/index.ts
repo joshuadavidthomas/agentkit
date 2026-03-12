@@ -5,7 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 
 import { type ExtractionResult, extractQuestions, selectExtractionModel } from "./extract.ts";
-import { QnAComponent } from "./qna-component.ts";
+import { QnAComponent } from "./components.ts";
 import { registerAskUserTool } from "./ask-user.ts";
 
 export default function (pi: ExtensionAPI) {
