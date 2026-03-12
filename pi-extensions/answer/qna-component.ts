@@ -1,4 +1,5 @@
 // Interactive Q&A TUI component for navigating and answering extracted questions.
+// Supports free-text editor input and selectable options per question.
 
 import type { ExtractedQuestion } from "./extract.ts";
 import {
@@ -7,17 +8,23 @@ import {
   type EditorTheme,
   Key,
   matchesKey,
+  SelectList,
+  type SelectListTheme,
   truncateToWidth,
   type TUI,
   visibleWidth,
   wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
 
+type InputMode = "editor" | "select";
+
 export class QnAComponent implements Component {
   private questions: ExtractedQuestion[];
   private answers: string[];
   private currentIndex: number = 0;
   private editor: Editor;
+  private selectLists: (SelectList | null)[];
+  private customInput: boolean[];
   private tui: TUI;
   private onDone: (result: string | null) => void;
   private showingConfirmation: boolean = false;
@@ -41,18 +48,21 @@ export class QnAComponent implements Component {
   ) {
     this.questions = questions;
     this.answers = questions.map(() => "");
+    this.customInput = questions.map(() => false);
     this.tui = tui;
     this.onDone = onDone;
 
+    const selectTheme: SelectListTheme = {
+      selectedPrefix: (s: string) => `\x1b[44m${s}\x1b[0m`,
+      selectedText: this.cyan,
+      description: this.gray,
+      scrollInfo: this.dim,
+      noMatch: this.gray,
+    };
+
     const editorTheme: EditorTheme = {
       borderColor: this.dim,
-      selectList: {
-        selectedPrefix: (s: string) => `\x1b[44m${s}\x1b[0m`,
-        selectedText: this.cyan,
-        description: this.gray,
-        scrollInfo: this.dim,
-        noMatch: this.gray,
-      },
+      selectList: selectTheme,
     };
 
     this.editor = new Editor(tui, editorTheme);
@@ -61,22 +71,62 @@ export class QnAComponent implements Component {
       this.invalidate();
       this.tui.requestRender();
     };
+
+    // Build a SelectList for each question that has options
+    this.selectLists = questions.map((q) => {
+      if (!q.options || q.options.length === 0) return null;
+      const items = q.options.map((o) => ({ value: o, label: o }));
+      if (q.allowCustom !== false) {
+        items.push({ value: "__other__", label: "Other" });
+      }
+      const list = new SelectList(items, 10, selectTheme);
+      list.onSelect = (item) => {
+        if (item.value === "__other__") {
+          this.customInput[this.currentIndex] = true;
+          this.editor.setText("");
+          this.invalidate();
+          this.tui.requestRender();
+        } else {
+          this.answers[this.currentIndex] = item.value;
+          this.advance();
+        }
+      };
+      list.onCancel = () => this.cancel();
+      return list;
+    });
   }
 
-  private allQuestionsAnswered(): boolean {
-    this.saveCurrentAnswer();
-    return this.answers.every((a) => (a?.trim() || "").length > 0);
+  private inputMode(): InputMode {
+    const q = this.questions[this.currentIndex];
+    if (!q.options || q.options.length === 0) return "editor";
+    if (this.customInput[this.currentIndex]) return "editor";
+    return "select";
   }
 
   private saveCurrentAnswer(): void {
-    this.answers[this.currentIndex] = this.editor.getText();
+    if (this.inputMode() === "editor") {
+      this.answers[this.currentIndex] = this.editor.getText();
+    }
+    // Select mode answers are saved on selection via onSelect callback
+  }
+
+  private advance(): void {
+    if (this.currentIndex < this.questions.length - 1) {
+      this.navigateTo(this.currentIndex + 1);
+    } else {
+      this.showingConfirmation = true;
+    }
+    this.invalidate();
+    this.tui.requestRender();
   }
 
   private navigateTo(index: number): void {
     if (index < 0 || index >= this.questions.length) return;
     this.saveCurrentAnswer();
     this.currentIndex = index;
-    this.editor.setText(this.answers[index] || "");
+    if (this.inputMode() === "editor") {
+      this.editor.setText(this.answers[index] || "");
+    }
     this.invalidate();
   }
 
@@ -143,36 +193,47 @@ export class QnAComponent implements Component {
       return;
     }
 
-    if (matchesKey(data, Key.up) && this.editor.getText() === "") {
-      if (this.currentIndex > 0) {
-        this.navigateTo(this.currentIndex - 1);
+    if (this.inputMode() === "select") {
+      const list = this.selectLists[this.currentIndex];
+      if (list) {
+        list.handleInput(data);
+        this.invalidate();
         this.tui.requestRender();
-        return;
       }
-    }
-    if (matchesKey(data, Key.down) && this.editor.getText() === "") {
-      if (this.currentIndex < this.questions.length - 1) {
-        this.navigateTo(this.currentIndex + 1);
-        this.tui.requestRender();
-        return;
+    } else {
+      // Editor mode
+      if (matchesKey(data, Key.up) && this.editor.getText() === "") {
+        // If we came from "Other", go back to select
+        if (this.customInput[this.currentIndex]) {
+          this.customInput[this.currentIndex] = false;
+          this.invalidate();
+          this.tui.requestRender();
+          return;
+        }
+        if (this.currentIndex > 0) {
+          this.navigateTo(this.currentIndex - 1);
+          this.tui.requestRender();
+          return;
+        }
       }
-    }
+      if (matchesKey(data, Key.down) && this.editor.getText() === "") {
+        if (this.currentIndex < this.questions.length - 1) {
+          this.navigateTo(this.currentIndex + 1);
+          this.tui.requestRender();
+          return;
+        }
+      }
 
-    if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
-      this.saveCurrentAnswer();
-      if (this.currentIndex < this.questions.length - 1) {
-        this.navigateTo(this.currentIndex + 1);
-      } else {
-        this.showingConfirmation = true;
+      if (matchesKey(data, Key.enter) && !matchesKey(data, Key.shift("enter"))) {
+        this.saveCurrentAnswer();
+        this.advance();
+        return;
       }
+
+      this.editor.handleInput(data);
       this.invalidate();
       this.tui.requestRender();
-      return;
     }
-
-    this.editor.handleInput(data);
-    this.invalidate();
-    this.tui.requestRender();
   }
 
   render(width: number): string[] {
@@ -244,15 +305,25 @@ export class QnAComponent implements Component {
 
     lines.push(padToWidth(emptyBoxLine()));
 
-    // Editor (multi-line input)
-    const answerPrefix = this.bold("A: ");
-    const editorWidth = contentWidth - 4 - 3;
-    const editorLines = this.editor.render(editorWidth);
-    for (let i = 1; i < editorLines.length - 1; i++) {
-      if (i === 1) {
-        lines.push(padToWidth(boxLine(answerPrefix + editorLines[i])));
-      } else {
-        lines.push(padToWidth(boxLine("   " + editorLines[i])));
+    // Answer area — select list or editor
+    if (this.inputMode() === "select") {
+      const list = this.selectLists[this.currentIndex];
+      if (list) {
+        const selectLines = list.render(contentWidth - 4);
+        for (const sl of selectLines) {
+          lines.push(padToWidth(boxLine(sl)));
+        }
+      }
+    } else {
+      const answerPrefix = this.bold("A: ");
+      const editorWidth = contentWidth - 4 - 3;
+      const editorLines = this.editor.render(editorWidth);
+      for (let i = 1; i < editorLines.length - 1; i++) {
+        if (i === 1) {
+          lines.push(padToWidth(boxLine(answerPrefix + editorLines[i])));
+        } else {
+          lines.push(padToWidth(boxLine("   " + editorLines[i])));
+        }
       }
     }
 
@@ -265,7 +336,9 @@ export class QnAComponent implements Component {
       lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
     } else {
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-      const controls = `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+      const controls = this.inputMode() === "select"
+        ? `${this.dim("↑↓")} select · ${this.dim("Enter")} confirm · ${this.dim("Tab")} next · ${this.dim("Esc")} cancel`
+        : `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
       lines.push(padToWidth(boxLine(truncateToWidth(controls, contentWidth))));
     }
     lines.push(padToWidth(this.dim("╰" + horizontalLine(boxWidth - 2) + "╯")));
