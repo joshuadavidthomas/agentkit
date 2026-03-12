@@ -23,7 +23,7 @@ export function registerAskUserTool(pi: ExtensionAPI) {
       ),
     }),
 
-    async execute(_toolCallId, params, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const { question, options, allowCustom = true } = params as {
         question: string;
         options?: string[];
