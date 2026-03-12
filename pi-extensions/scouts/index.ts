@@ -26,9 +26,8 @@ import { createGitHubTools } from "./github-tools.ts";
 import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts.md.ts";
-import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
 import { createReadOnlyBashTool } from "./read-only-bash.ts";
-import { resolveSkill, listAvailableSkills } from "./skill-resolver.ts";
+import { buildSpecialistConfig } from "./specialist-config.ts";
 import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 
 // Shared parameter: model override
@@ -278,52 +277,18 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const result = resolveSkill(skillName, ctx.cwd);
+      const configOrError = buildSpecialistConfig(skillName, ctx.cwd, { configName: "specialist" });
 
-      if (result.status === "invalid-name") {
+      if ("error" in configOrError) {
         return {
-          content: [{ type: "text", text: `Invalid skill name: ${result.reason}` }],
+          content: [{ type: "text", text: configOrError.error }],
           details: { status: "error", runs: [] } satisfies ScoutDetails,
           isError: true,
         };
       }
-
-      if (result.status === "read-error") {
-        return {
-          content: [{ type: "text", text: `Failed to read ${result.path}: ${result.error.message}` }],
-          details: { status: "error", runs: [] } satisfies ScoutDetails,
-          isError: true,
-        };
-      }
-
-      if (result.status === "not-found") {
-        const { skills } = listAvailableSkills(ctx.cwd);
-        const suggestion = skills.length > 0
-          ? `\n\nAvailable skills: ${skills.join(", ")}`
-          : "\n\nNo skills found. Install skills to ~/.agents/skills/ or ~/.pi/agent/skills/.";
-        return {
-          content: [{ type: "text", text: `Skill not found: ${skillName}${suggestion}` }],
-          details: { status: "error", runs: [] } satisfies ScoutDetails,
-          isError: true,
-        };
-      }
-
-      const specialistConfig: ScoutConfig = {
-        name: "specialist",
-        maxTurns: 16,
-        defaultModel: "claude-sonnet-4-5",
-        buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
-        buildUserPrompt: buildSpecialistUserPrompt,
-        getTools: () => [
-          createReadTool(ctx.cwd),
-          createBashTool(ctx.cwd),
-          createWriteTool(ctx.cwd),
-          createEditTool(ctx.cwd),
-        ],
-      };
 
       return executeScout(
-        specialistConfig,
+        configOrError,
         { ...p, task, query: task },
         signal,
         onUpdate,
@@ -365,29 +330,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     const skillName = (task.skill ?? "").trim();
     if (!skillName) return { error: "Specialist task requires a skill name." };
 
-    const result = resolveSkill(skillName, cwd);
-
-    if (result.status === "invalid-name") return { error: `Invalid skill name: ${result.reason}` };
-    if (result.status === "read-error") return { error: `Failed to read ${result.path}: ${result.error.message}` };
-    if (result.status === "not-found") {
-      const { skills } = listAvailableSkills(cwd);
-      const suggestion = skills.length > 0 ? ` Available: ${skills.join(", ")}` : "";
-      return { error: `Skill not found: ${skillName}.${suggestion}` };
-    }
-
-    return {
-      name: `specialist:${skillName}`,
-      maxTurns: 16,
-      defaultModel: "claude-sonnet-4-5",
-      buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
-      buildUserPrompt: buildSpecialistUserPrompt,
-      getTools: () => [
-        createReadTool(cwd),
-        createBashTool(cwd),
-        createWriteTool(cwd),
-        createEditTool(cwd),
-      ],
-    };
+    return buildSpecialistConfig(skillName, cwd);
   }
 
   const VALID_SCOUTS = ["finder", "librarian", "specialist"];
