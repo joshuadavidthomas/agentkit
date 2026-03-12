@@ -354,57 +354,83 @@ export class QnAComponent implements Component {
 
     // Title
     lines.push(padToWidth(this.dim("╭" + horizontalLine(boxWidth - 2) + "╮")));
-    const title = `${this.bold(this.cyan("Questions"))} ${this.dim(`(${this.currentIndex + 1}/${this.questions.length})`)}`;
-    lines.push(padToWidth(boxLine(title)));
-    lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
 
-    // Progress indicator
-    const progressParts: string[] = [];
-    for (let i = 0; i < this.questions.length; i++) {
-      const answered = (this.answers[i]?.trim() || "").length > 0;
-      const current = i === this.currentIndex;
-      if (current) {
-        progressParts.push(this.cyan("●"));
-      } else if (answered) {
-        progressParts.push(this.green("●"));
-      } else {
-        progressParts.push(this.dim("○"));
-      }
-    }
-    lines.push(padToWidth(boxLine(progressParts.join(" "))));
-    lines.push(padToWidth(emptyBoxLine()));
-
-    // Current question
-    const q = this.questions[this.currentIndex];
-    const questionText = `${this.bold("Q:")} ${q.question}`;
-    const wrappedQuestion = wrapTextWithAnsi(questionText, contentWidth);
-    for (const line of wrappedQuestion) {
-      lines.push(padToWidth(boxLine(line)));
-    }
-
-    // Context if present
-    if (q.context) {
-      lines.push(padToWidth(emptyBoxLine()));
-      const contextText = this.gray(`> ${q.context}`);
-      const wrappedContext = wrapTextWithAnsi(contextText, contentWidth - 2);
-      for (const line of wrappedContext) {
-        lines.push(padToWidth(boxLine(line)));
-      }
-    }
-
-    lines.push(padToWidth(emptyBoxLine()));
-
-    // Answer area
-    lines.push(...this.renderAnswerArea(contentWidth, boxLine, padToWidth));
-
-    lines.push(padToWidth(emptyBoxLine()));
-
-    // Footer
     if (this.showingConfirmation) {
+      // Confirmation screen: summary of all Q&A pairs
+      const title = this.bold(this.yellow("Review Answers"));
+      lines.push(padToWidth(boxLine(title)));
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-      const confirmMsg = `${this.yellow("Submit all answers?")} ${this.dim("(Enter/y to confirm, Esc/n to cancel)")}`;
+
+      for (let i = 0; i < this.questions.length; i++) {
+        if (i > 0) lines.push(padToWidth(emptyBoxLine()));
+        const q = this.questions[i];
+        const a = this.answers[i]?.trim() || "(no answer)";
+
+        const questionText = `${this.dim("Q:")} ${q.question}`;
+        const wrappedQ = wrapTextWithAnsi(questionText, contentWidth);
+        for (const line of wrappedQ) {
+          lines.push(padToWidth(boxLine(line)));
+        }
+
+        const answerText = `${this.green("A:")} ${a}`;
+        const wrappedA = wrapTextWithAnsi(answerText, contentWidth);
+        for (const line of wrappedA) {
+          lines.push(padToWidth(boxLine(line)));
+        }
+      }
+
+      lines.push(padToWidth(emptyBoxLine()));
+      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
+      const confirmMsg = `${this.yellow("Submit?")} ${this.dim("(Enter/y to confirm, Esc/n to go back)")}`;
       lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
     } else {
+      // Normal question screen
+      const title = `${this.bold(this.cyan("Questions"))} ${this.dim(`(${this.currentIndex + 1}/${this.questions.length})`)}`;
+      lines.push(padToWidth(boxLine(title)));
+      lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
+
+      // Progress indicator
+      const progressParts: string[] = [];
+      for (let i = 0; i < this.questions.length; i++) {
+        const answered = (this.answers[i]?.trim() || "").length > 0;
+        const current = i === this.currentIndex;
+        if (current) {
+          progressParts.push(this.cyan("●"));
+        } else if (answered) {
+          progressParts.push(this.green("●"));
+        } else {
+          progressParts.push(this.dim("○"));
+        }
+      }
+      lines.push(padToWidth(boxLine(progressParts.join(" "))));
+      lines.push(padToWidth(emptyBoxLine()));
+
+      // Current question
+      const q = this.questions[this.currentIndex];
+      const questionText = `${this.bold("Q:")} ${q.question}`;
+      const wrappedQuestion = wrapTextWithAnsi(questionText, contentWidth);
+      for (const line of wrappedQuestion) {
+        lines.push(padToWidth(boxLine(line)));
+      }
+
+      // Context if present
+      if (q.context) {
+        lines.push(padToWidth(emptyBoxLine()));
+        const contextText = this.gray(`> ${q.context}`);
+        const wrappedContext = wrapTextWithAnsi(contextText, contentWidth - 2);
+        for (const line of wrappedContext) {
+          lines.push(padToWidth(boxLine(line)));
+        }
+      }
+
+      lines.push(padToWidth(emptyBoxLine()));
+
+      // Answer area
+      lines.push(...this.renderAnswerArea(contentWidth, boxLine, padToWidth));
+
+      lines.push(padToWidth(emptyBoxLine()));
+
+      // Footer controls
       lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
       let controls: string;
       if (this.isEditingCustom()) {
@@ -416,6 +442,7 @@ export class QnAComponent implements Component {
       }
       lines.push(padToWidth(boxLine(truncateToWidth(controls, contentWidth))));
     }
+
     lines.push(padToWidth(this.dim("╰" + horizontalLine(boxWidth - 2) + "╯")));
 
     this.cachedWidth = width;
