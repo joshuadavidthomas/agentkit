@@ -128,7 +128,12 @@ export function renderQAPairs(pairs: QAPairData[], theme: QATheme): Container {
     if (pairs[i].options && pairs[i].options!.length > 0) {
       container.addChild(new Text(theme.dim(theme.italic(pairs[i].options!.join(", "))), 3, 0));
     }
-    container.addChild(new Text(theme.accent("A: ") + pairs[i].answer, 0, 0));
+    const prefix = "A: ";
+    const indent = " ".repeat(prefix.length);
+    const answerLines = pairs[i].answer.split("\n");
+    const answerText = theme.accent(prefix) + answerLines[0] +
+      (answerLines.length > 1 ? "\n" + answerLines.slice(1).map(l => indent + l).join("\n") : "");
+    container.addChild(new Text(answerText, 0, 0));
   }
   return container;
 }
