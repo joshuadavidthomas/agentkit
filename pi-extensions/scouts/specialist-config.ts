@@ -9,10 +9,16 @@ import type { ScoutConfig } from "./scout-core.ts";
 import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
 import { resolveSkill, listAvailableSkills } from "./skill-resolver.ts";
 
+export type SpecialistTool = "read" | "bash" | "write" | "edit";
+
+const DEFAULT_TOOLS: SpecialistTool[] = ["read", "bash"];
+
 export interface SpecialistConfigOptions {
   // Optional config name override. Defaults to "specialist" for single-use,
   // or "specialist:<skillName>" for parallel execution (to distinguish multiple specialists).
   configName?: string;
+  // Which tools to give the specialist. Defaults to ["read", "bash"].
+  tools?: SpecialistTool[];
 }
 
 export function buildSpecialistConfig(
@@ -45,6 +51,14 @@ export function buildSpecialistConfig(
   }
 
   const configName = options?.configName ?? `specialist:${trimmed}`;
+  const tools = options?.tools ?? DEFAULT_TOOLS;
+
+  const toolBuilders: Record<SpecialistTool, () => any> = {
+    read: () => createReadTool(cwd),
+    bash: () => createBashTool(cwd),
+    write: () => createWriteTool(cwd),
+    edit: () => createEditTool(cwd),
+  };
 
   return {
     name: configName,
@@ -52,11 +66,6 @@ export function buildSpecialistConfig(
     defaultModel: "claude-sonnet-4-5",
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
     buildUserPrompt: buildSpecialistUserPrompt,
-    getTools: () => [
-      createReadTool(cwd),
-      createBashTool(cwd),
-      createWriteTool(cwd),
-      createEditTool(cwd),
-    ],
+    getTools: () => tools.map((t) => toolBuilders[t]()),
   };
 }
