@@ -12,9 +12,8 @@ Instead of using their converter, we're building native Pi support by:
 - Writing an MCPorter skill (replacing their `mcporter_list`/`mcporter_call` tools)
 - Writing a conversion script that rewrites plugin content for our infrastructure
 
-## Done
+## 1. Specialist scout ✅
 
-### Specialist scout
 - [x] `specialist-prompts.md.ts` — preamble + skill content as system prompt, turn budget guidance
 - [x] `skill-resolver.ts` — resolves skill names from `~/.agents/skills/`, `~/.pi/agent/skills/`, `.pi/skills/` (walking up). Discriminated union returns, input validation, no silent failures
 - [x] `specialist-config.ts` — shared config builder used by standalone tool and parallel dispatch
@@ -22,53 +21,41 @@ Instead of using their converter, we're building native Pi support by:
 - [x] Parallel dispatch — specialist added to `scouts` tool, dynamic config per skill
 - [x] Declarative tool access — defaults to `["read", "bash"]`, caller passes `tools` array to opt in to `write`/`edit`
 
-## Remaining
+## 2. MCPorter skill ✅
 
-### 1. ask_user_question tool
+- [x] `skills/mcporter/SKILL.md` — workflow-agnostic CLI reference for MCPorter
+- [x] Covers config (project `./config/mcporter.json`, system `~/.mcporter/mcporter.json`, editor auto-imports)
+- [x] Discover (`list`, `--schema`, `--json`), call (`key=value`, `--args`, function-call syntax, ad-hoc servers), manage (`config add/remove/import/doctor`), auth
+- [x] Troubleshooting section (`--log-level debug`, `config doctor`, common failure modes)
+- [x] Reviewed against writing-cli-skills checklist
 
-Extend `pi-extensions/answer.ts` to register an `ask_user_question` tool the model can call mid-turn. The existing `/answer` command is user-initiated (extracts questions from the last assistant message). The new tool is model-initiated (the model calls it to ask the user a question with optional selectable choices).
+## 3. ask_user_question tool ✅
 
-**Parameters:**
-- `question` (string) — the question to show the user
-- `options` (string[], optional) — selectable choices
-- `allowCustom` (boolean, optional, default true) — whether to allow free-text when options are provided
-
-**Behavior:**
-- No options: show `ctx.ui.input(question)`, return the answer
-- With options + allowCustom: show `ctx.ui.select(question, [...options, "Other"])`, if "Other" selected show `ctx.ui.input("Your answer")`
-- With options, no custom: show `ctx.ui.select(question, options)`
-- User cancels: return "User cancelled."
+- [x] `pi.registerTool("ask_user_question")` in `pi-extensions/answer.ts`
+- [x] Parameters: `question` (string), `options` (string[], optional), `allowCustom` (boolean, optional, default true)
+- [x] No options → `ctx.ui.input(question)`
+- [x] Options + allowCustom → `ctx.ui.select(question, [...options, "Other"])`, "Other" → `ctx.ui.input`
+- [x] Options, no custom → `ctx.ui.select(question, options)`
+- [x] User cancels or no UI → returns `"User cancelled."`
 
 **Used by:** `ce:brainstorm` (5 uses), `ce:plan` (4), `setup` (3), skill creation workflows, `test-browser`, `test-xcode`, `report-bug`, `deepen-plan`
 
-### 2. MCPorter skill
-
-Write a skill at `skills/mcporter/SKILL.md` that teaches the agent how to use MCPorter via bash for MCP server access. Not an extension, not a tool — just instructions.
-
-**Content should cover:**
-- `mcporter list <server> --json` to discover available tools
-- `mcporter call <server>.<tool> --args '{}' --output json` to invoke tools
-- Config path resolution: `.pi/compound-engineering/mcporter.json` (project), `~/.pi/agent/compound-engineering/mcporter.json` (global)
-- The Context7 server that ships with compound engineering
-
-**Used by:** `deepen-plan`, `create-agent-skills` workflows (resolve-library-id, get-library-docs)
-
-### 3. Conversion script
+## 4. Conversion script
 
 Write `scripts/convert-compound-engineering.sh` (or `.ts`) that takes the compound engineering plugin source and installs it into `~/.pi/agent/` using our infrastructure.
 
 **What it does:**
 
-#### Skills (direct copy)
+### Skills (direct copy)
 - Copy all `plugins/compound-engineering/skills/*/` to `~/.pi/agent/skills/`
 - These are already SKILL.md files, Pi uses them natively
 
-#### Agents → Skills
+### Agents → Skills
 - Convert each `plugins/compound-engineering/agents/*/*.md` into a skill at `~/.pi/agent/skills/<name>/SKILL.md`
 - Parse the agent frontmatter (name, description, model, capabilities)
 - Generate SKILL.md with frontmatter and agent body as content
 
-#### Commands → Prompts
+### Commands → Prompts
 - Convert each non-`disable-model-invocation` command to a prompt at `~/.pi/agent/prompts/<name>.md`
 - Rewrite content:
   - `Task agent-name(args)` → prose referencing specialist tool: `Use the specialist tool with skill="agent-name" and task="args"`
@@ -77,14 +64,14 @@ Write `scripts/convert-compound-engineering.sh` (or `.ts`) that takes the compou
   - `TodoWrite`/`TodoRead` → `file-based todos (todos/ directory)`
   - Slash commands `/ce:X` → `/ce-X` (Pi prompt name normalization, colons to hyphens)
   - `Teammate(...)` → add a note: `(Swarm mode not available in Pi — skip this step)`
-  - MCP tool references like `mcp__context7__*` → add MCPorter note
+  - MCP tool references like `mcp__context7__*` → replace with librarian scout (for library doc lookup, prefer going to repo source over MCP)
 
-#### MCPorter config
+### MCPorter config
 - Convert `.mcp.json` to `~/.pi/agent/compound-engineering/mcporter.json`
 - Map `type: "http"` servers to `{ baseUrl: ... }` format
 - Map `type: "stdio"` servers to `{ command: ..., args: ... }` format
 
-#### AGENTS.md block
+### AGENTS.md block
 - Append (or upsert) a managed block in `~/.pi/agent/AGENTS.md` explaining the compound engineering setup:
   - How `Task agent(args)` maps to the specialist tool
   - How parallel dispatch uses the scouts tool
@@ -92,19 +79,19 @@ Write `scripts/convert-compound-engineering.sh` (or `.ts`) that takes the compou
   - How MCPorter provides MCP access
   - List of installed skills, prompts, and their categories
 
-#### What it does NOT do
+### What it does NOT do
 - Install the compat extension (`compound-engineering-compat.ts`)
 - Create any new extension files
 - Modify existing extensions
 
-### 4. Uninstall/update support
+## 5. Uninstall/update support
 
 The conversion script should be re-runnable:
 - Skills and prompts are overwritten on re-run
 - AGENTS.md block is upserted (replace between markers)
 - A `--clean` flag removes everything it installed
 
-### 5. Integration into install.sh
+## 6. Integration into install.sh
 
 Add compound engineering to `install.sh` so it runs as part of the normal agentkit install flow.
 
@@ -116,7 +103,7 @@ Add compound engineering to `install.sh` so it runs as part of the normal agentk
 3. If yes, `git -C <path> pull`
 4. Run the conversion script pointing at the cached repo
 
-### 6. Agent model mapping
+## 7. Agent model mapping
 
 Some compound engineering agents specify `model: haiku` or `model: inherit` in their frontmatter. The specialist scout already supports a `model` parameter, and the scouts parallel tool passes it through.
 
@@ -125,24 +112,7 @@ Some compound engineering agents specify `model: haiku` or `model: inherit` in t
 - Maps Claude Code model names to Pi model IDs (e.g., `haiku` → `claude-haiku-4-5`, `inherit` → omit/use default)
 - Embeds the model hint in the converted prompt text so the main agent passes it through when calling the specialist
 
-### 7. Teammate/swarm mode (DEFERRED)
-
-`Teammate` is Claude Code's built-in multi-agent swarm primitive. It provides:
-- `spawnTeam` — create a named team
-- Spawn teammates as background agents with names, inboxes, and colors
-- `write` / `broadcast` — message one or all teammates
-- `requestShutdown` / `approveShutdown` — graceful teardown
-- `approvePlan` — leader approves teammate work
-- `cleanup` — tear down the team
-
-Used in `ce:work` swarm mode and the `orchestrating-swarms` skill (1600+ lines).
-
-**Approach:** Map to ralph. Ralph is our in-session iterative loop engine. The mapping isn't 1:1 — ralph doesn't have team messaging or named agents — but the core pattern (spawn background work, coordinate, shut down) overlaps. This is a separate project. For now:
-- The conversion script strips `Teammate(...)` calls with a note: `(Swarm mode: see ralph extension for Pi equivalent)`
-- The `orchestrating-swarms` skill gets a Pi-specific preamble noting the differences
-- Revisit after the basic workflow (`brainstorm → plan → work → review → compound`) is working
-
-### 8. Orchestration commands as prompt templates
+## 8. Orchestration commands as prompt templates
 
 Commands with `disable-model-invocation: true` (like `/lfg`, `/slfg`) are step-by-step orchestration sequences, not interactive prompts. They tell the model to run a series of other commands in order.
 
@@ -163,6 +133,23 @@ argument-hint: "[feature description]"
 ```
 
 The model already knows how to follow numbered steps. No special machinery needed.
+
+## 9. Teammate/swarm mode (DEFERRED)
+
+`Teammate` is Claude Code's built-in multi-agent swarm primitive. It provides:
+- `spawnTeam` — create a named team
+- Spawn teammates as background agents with names, inboxes, and colors
+- `write` / `broadcast` — message one or all teammates
+- `requestShutdown` / `approveShutdown` — graceful teardown
+- `approvePlan` — leader approves teammate work
+- `cleanup` — tear down the team
+
+Used in `ce:work` swarm mode and the `orchestrating-swarms` skill (1600+ lines).
+
+**Approach:** Map to ralph. Ralph is our in-session iterative loop engine. The mapping isn't 1:1 — ralph doesn't have team messaging or named agents — but the core pattern (spawn background work, coordinate, shut down) overlaps. This is a separate project. For now:
+- The conversion script strips `Teammate(...)` calls with a note: `(Swarm mode: see ralph extension for Pi equivalent)`
+- The `orchestrating-swarms` skill gets a Pi-specific preamble noting the differences
+- Revisit after the basic workflow (`brainstorm → plan → work → review → compound`) is working
 
 ## Ralph ↔ Teammate Analysis (DEFERRED)
 
