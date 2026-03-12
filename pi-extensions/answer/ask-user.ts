@@ -70,9 +70,10 @@ export function registerAskUserTool(pi: ExtensionAPI) {
 
     renderCall(args: any, theme: any) {
       const { question, options } = args as { question?: string; options?: string[] };
-      let text = theme.fg("accent", "Q: ") + (question ?? "");
+      const title = theme.fg("toolTitle", theme.bold("ask_user_question"));
+      let text = title + "\n" + (question ?? "");
       if (options && options.length > 0) {
-        text += "\n" + theme.fg("dim", `   Options: ${options.join(", ")}`);
+        text += "\n" + theme.fg("dim", `Options: ${options.join(", ")}`);
       }
       return new Text(text, 0, 0);
     },
