@@ -4,15 +4,16 @@
  * Sends a native desktop notification when the agent finishes and is waiting for input.
  * Uses a quick model call to summarize what happened in the last turn.
  *
- * Uses OSC 777 escape sequence - no external dependencies.
- *
- * Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode
- * Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty
+ * On Linux: uses notify-send directly (avoids focus-stealing from
+ * niri + swaync ON_DEMAND layer-shell keyboard interactivity).
+ * Elsewhere: falls back to OSC 777 escape sequence (Ghostty, iTerm2, WezTerm, rxvt-unicode).
  */
 
 import { complete, getModel } from "@mariozechner/pi-ai";
 import type { TextContent, ToolCall } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { spawn } from "node:child_process";
+import { platform } from "node:os";
 
 // Cheap models for summarization - try in order (cheapest first)
 const SUMMARY_MODELS = [
@@ -21,11 +22,22 @@ const SUMMARY_MODELS = [
 ] as const;
 
 /**
- * Send a desktop notification via OSC 777 escape sequence.
+ * Send a desktop notification.
+ * Linux: notify-send with low urgency to avoid focus stealing.
+ * Other: OSC 777 escape sequence via the terminal.
  */
 function notify(title: string, body: string): void {
-	// OSC 777 format: ESC ] 777 ; notify ; title ; body BEL
-	process.stdout.write(`\x1b]777;notify;${title};${body}\x07`);
+	if (platform() === "linux") {
+		const child = spawn("notify-send", [
+			"--urgency=low",
+			"--app-name=pi",
+			title,
+			body,
+		], { stdio: "ignore", detached: true });
+		child.unref();
+	} else {
+		process.stdout.write(`\x1b]777;notify;${title};${body}\x07`);
+	}
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
