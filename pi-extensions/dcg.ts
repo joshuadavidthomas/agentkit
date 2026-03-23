@@ -150,7 +150,7 @@ const buildBashOutputComponent = (
           if (cachedSkipped && cachedSkipped > 0) {
             const hint =
               theme.fg("muted", `... (${cachedSkipped} earlier lines,`) +
-              ` ${keyHint("expandTools", "to expand")})`;
+              ` ${keyHint("app.tools.expand", "to expand")})`;
             return ["", truncateToWidth(hint, width, "..."), ...(cachedLines ?? [])];
           }
           return ["", ...(cachedLines ?? [])];
@@ -691,7 +691,7 @@ export default function (pi: ExtensionAPI) {
           const full = theme.fg("dim", blockDetails.fullReason);
           return new Text(`${label}: ${reason}\n${full}`, 0, 0);
         }
-        const hint = theme.fg("dim", keyHint("expandTools", "to expand"));
+        const hint = theme.fg("dim", keyHint("app.tools.expand", "to expand"));
         return new Text(`${label}: ${reason}\n${hint}`, 0, 0);
       }
 

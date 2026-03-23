@@ -9,8 +9,6 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { createReadTool } from "@mariozechner/pi-coding-agent";
-import type { AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 import { execSync } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { resolve, isAbsolute } from "node:path";
@@ -32,23 +30,12 @@ export default function (pi: ExtensionAPI) {
   const builtinRead = createReadTool(process.cwd());
 
   pi.registerTool({
-    name: "read",
-    label: "read",
-    description: builtinRead.description,
-    parameters: Type.Object({
-      path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
-      offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
-      limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
-    }),
-
-    // The installed type definition has a different parameter order than the
-    // actual runtime. Runtime order matches the docs: (signal, onUpdate, ctx).
-    // @ts-expect-error parameter order mismatch between installed types and runtime
+    ...builtinRead,
     async execute(
       toolCallId: string,
       params: { path: string; offset?: number; limit?: number },
       signal: AbortSignal | undefined,
-      onUpdate: AgentToolUpdateCallback | undefined,
+      onUpdate: any,
       ctx: ExtensionContext,
     ) {
       const absolutePath = resolvePath(params.path, ctx.cwd);

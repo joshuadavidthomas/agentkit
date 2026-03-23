@@ -588,7 +588,7 @@ export function renderScoutResult(
           const preview = lines.slice(0, 18).join("\n");
           c.addChild(new Markdown(preview, 0, 0, mdTheme));
           if (lines.length > 18) {
-            c.addChild(new Text(theme.fg("dim", keyHint("expandTools", "to expand")), 0, 0));
+            c.addChild(new Text(theme.fg("dim", keyHint("app.tools.expand", "to expand")), 0, 0));
           }
         }
       } else {
