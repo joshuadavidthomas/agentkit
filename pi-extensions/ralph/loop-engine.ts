@@ -84,7 +84,11 @@ export class LoopEngine {
 
 	// Control flow
 	private stopRequested = false;
+	private navigating = false;
 	private pendingFollowup?: string;
+
+	// Tree context mode — rolling branch point for accumulated summaries
+	private branchPoint: string | null = null;
 
 	// Filesystem
 	private eventsStream: WriteStream | null = null;
@@ -151,6 +155,17 @@ export class LoopEngine {
 			return;
 		}
 
+		// In tree mode, create an anchor entry as the root of the iteration tree.
+		// After each iteration, navigateTree summarizes the abandoned branch and
+		// creates a new child of the branch point. Summaries accumulate along the
+		// path so each iteration sees all prior context.
+		if (this.config.contextMode === "tree") {
+			this.branchPoint = this.session.sessionManager.appendCustomEntry(
+				"ralph_loop_anchor",
+				{ name: this.config.name },
+			);
+		}
+
 		// Subscribe to events for rendering and telemetry
 		this.unsubscribe = this.session.subscribe((event) => {
 			this.eventsStream?.write(JSON.stringify(event) + "\n");
@@ -183,6 +198,7 @@ export class LoopEngine {
 		}
 
 		if (this.session) {
+			this.session.abortBranchSummary();
 			this.session.abort().catch(() => {});
 		}
 		this.setStatus("stopped");
@@ -258,17 +274,65 @@ export class LoopEngine {
 			)
 				break;
 
-			// Fresh context for next iteration
-			await this.session!.newSession();
+			// Context management for next iteration
+			if (this.config.contextMode === "tree" && this.branchPoint) {
+				await this.navigateTreeBranch();
+			} else {
+				await this.session!.newSession();
+			}
 		}
 
 		this.setStatus(this.stopRequested ? "stopped" : "completed");
 		this.writeState();
 	}
 
+	/**
+	 * Navigate back to the current branch point with an LLM-generated summary.
+	 * The summary captures what happened in the completed iteration. Each summary
+	 * becomes a child of the previous one, so context accumulates across iterations.
+	 * Falls back to fresh context if navigation fails.
+	 */
+	private async navigateTreeBranch(): Promise<void> {
+		this.navigating = true;
+		try {
+			const result = await this.session!.navigateTree(
+				this.branchPoint!,
+				{
+					summarize: true,
+					customInstructions:
+						"Summarize the key findings, actions taken, and current state from this iteration.",
+				},
+			);
+
+			if (result.cancelled || result.aborted) {
+				// Navigation was cancelled — fall back to fresh context
+				await this.session!.newSession();
+				this.branchPoint =
+					this.session!.sessionManager.appendCustomEntry(
+						"ralph_loop_anchor",
+						{ name: this.config.name },
+					);
+			} else if (result.summaryEntry) {
+				// Advance branch point to the new summary so next iteration
+				// branches from here, keeping all prior summaries in the path
+				this.branchPoint = result.summaryEntry.id;
+			}
+		} catch {
+			// Summarization failed — fall back to fresh context
+			await this.session!.newSession();
+			this.branchPoint =
+				this.session!.sessionManager.appendCustomEntry(
+					"ralph_loop_anchor",
+					{ name: this.config.name },
+				);
+		} finally {
+			this.navigating = false;
+		}
+	}
+
 	private handleEvent(event: AgentSessionEvent): void {
-		// Don't forward events after stop/kill — prevents rendering after abort
-		if (this.stopRequested) return;
+		// Don't forward events after stop/kill or during tree navigation (summary generation)
+		if (this.stopRequested || this.navigating) return;
 
 		// Forward to extension for rendering
 		this.callbacks.onEvent(event);

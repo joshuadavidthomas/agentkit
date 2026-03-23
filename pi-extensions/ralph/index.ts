@@ -242,6 +242,7 @@ interface ParsedStartArgs {
 	provider?: string;
 	thinking?: string;
 	taskFile?: string;
+	contextMode?: "fresh" | "tree";
 }
 
 function parseStartArgs(argsStr: string): ParsedStartArgs | string {
@@ -288,8 +289,15 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		} else if (token === "--task" && i + 1 < tokens.length) {
 			result.taskFile = tokens[i + 1];
 			i += 2;
+		} else if (token === "--context" && i + 1 < tokens.length) {
+			const val = tokens[i + 1];
+			if (val !== "fresh" && val !== "tree") {
+				return `Invalid context mode: "${val}". Must be "fresh" or "tree".`;
+			}
+			result.contextMode = val;
+			i += 2;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task`;
+			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context`;
 		}
 	}
 
@@ -695,6 +703,7 @@ export default function (pi: ExtensionAPI) {
 			provider: parsed.provider,
 			thinking: parsed.thinking,
 			reflectEvery: 0,
+			contextMode: parsed.contextMode ?? "fresh",
 		};
 
 		// Resolve model from config or fall back to parent pi's current model
@@ -832,8 +841,10 @@ export default function (pi: ExtensionAPI) {
 				? "unlimited"
 				: String(parsed.maxIterations);
 		const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
+		const contextStr =
+			parsed.contextMode === "tree" ? ", context: tree" : "";
 		ctx.ui.notify(
-			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr})`,
+			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr}${contextStr})`,
 			"info",
 		);
 		updateWidget(ctx);
