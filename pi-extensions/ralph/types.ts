@@ -27,6 +27,8 @@ export interface LoopConfig {
 	exitDetection: boolean | ExitPatterns;
 	/** Stop the loop if cumulative cost exceeds this amount in dollars. 0 = no limit */
 	costCeiling: number;
+	/** Optional list of task files to cycle through. Overrides taskFile when set. */
+	roleSequence?: string[];
 }
 
 export interface ExitPatterns {
