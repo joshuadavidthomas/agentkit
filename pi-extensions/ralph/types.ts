@@ -23,6 +23,15 @@ export interface LoopConfig {
 	reflectEvery: number;
 	/** Context between iterations. "fresh" = new session each time, "tree" = navigate back with summary */
 	contextMode: "fresh" | "tree";
+	/** Exit detection. false = disabled, true = built-in patterns, or custom pattern sets */
+	exitDetection: boolean | ExitPatterns;
+}
+
+export interface ExitPatterns {
+	/** Phrases signaling the loop should exit (e.g., "no issues found") */
+	exit: string[];
+	/** Phrases signaling work was done — prevents premature exit when matched alongside exit phrases */
+	continueWorking: string[];
 }
 
 export interface IterationStats {
@@ -55,6 +64,8 @@ export interface LoopState {
 	startedAt: string;
 	updatedAt: string;
 	error?: string;
+	/** True if the loop exited because the agent signaled completion */
+	exitDetected?: boolean;
 }
 
 /** Get the .ralph/<name>/ directory for a named loop in a project */
