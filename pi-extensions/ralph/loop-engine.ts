@@ -111,6 +111,7 @@ export class LoopEngine {
 	private stopRequested = false;
 	private navigating = false;
 	private exitDetected = false;
+	private costCeilingHit = false;
 	private pendingFollowup?: string;
 
 	// Tree context mode — rolling branch point for accumulated summaries
@@ -144,6 +145,7 @@ export class LoopEngine {
 			updatedAt: new Date().toISOString(),
 			error: this.error,
 			exitDetected: this.exitDetected || undefined,
+			costCeilingHit: this.costCeilingHit || undefined,
 		};
 	}
 
@@ -297,6 +299,13 @@ export class LoopEngine {
 			if (this.stopRequested) break;
 			if (this.checkExitDetection()) {
 				this.exitDetected = true;
+				break;
+			}
+			if (
+				this.config.costCeiling > 0 &&
+				this.cumulativeStats.cost >= this.config.costCeiling
+			) {
+				this.costCeilingHit = true;
 				break;
 			}
 			if (
