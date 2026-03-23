@@ -279,9 +279,17 @@ export class LoopEngine {
 		this.pendingFollowup = message;
 	}
 
-	private async runIterations(): Promise<void> {
-		const taskPath = join(this.ralphDir, this.config.taskFile);
+	/** Resolve the task file path for the current iteration, cycling through roleSequence if set */
+	private resolveTaskPath(): string {
+		const seq = this.config.roleSequence;
+		if (seq && seq.length > 0) {
+			const idx = (this.iteration - 1) % seq.length;
+			return join(this.ralphDir, seq[idx]);
+		}
+		return join(this.ralphDir, this.config.taskFile);
+	}
 
+	private async runIterations(): Promise<void> {
 		for (
 			this.iteration = 1;
 			this.config.maxIterations === 0 ||
@@ -294,7 +302,7 @@ export class LoopEngine {
 			this.callbacks.onIterationStart?.(this.iteration);
 
 			// Re-read task each iteration — the agent may have updated it
-			const taskContent = readFileSync(taskPath, "utf-8").trim();
+			const taskContent = readFileSync(this.resolveTaskPath(), "utf-8").trim();
 			const prompt = this.pendingFollowup
 				? `${taskContent}\n\n---\n\n${this.pendingFollowup}`
 				: taskContent;

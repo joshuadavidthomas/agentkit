@@ -245,6 +245,7 @@ interface ParsedStartArgs {
 	contextMode?: "fresh" | "tree";
 	autoExit?: boolean;
 	costCeiling?: number;
+	roleSequence?: string[];
 }
 
 function parseStartArgs(argsStr: string): ParsedStartArgs | string {
@@ -311,8 +312,11 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 			}
 			result.costCeiling = val;
 			i += 2;
+		} else if (token === "--roles" && i + 1 < tokens.length) {
+			result.roleSequence = tokens[i + 1].split(",").map((s) => s.trim());
+			i += 2;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit, --cost-ceiling`;
+			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit, --cost-ceiling, --roles`;
 		}
 		}
 	}
@@ -709,6 +713,26 @@ export default function (pi: ExtensionAPI) {
 			writeFileSync(taskFilePath, taskContent);
 		}
 
+		// Handle role sequence — copy task files into the ralph dir
+		if (parsed.roleSequence) {
+			for (const role of parsed.roleSequence) {
+				const destPath = join(dir, role);
+				if (existsSync(destPath)) continue;
+
+				// Try resolving from cwd
+				const sourcePath = resolve(cwd, role);
+				if (!existsSync(sourcePath)) {
+					ctx.ui.notify(
+						`Role task file not found: ${role} (checked ${sourcePath} and ${destPath})`,
+						"error",
+					);
+					return;
+				}
+				const content = readFileSync(sourcePath, "utf-8");
+				writeFileSync(destPath, content);
+			}
+		}
+
 		// Build config
 		const config: LoopConfig = {
 			name: parsed.name,
@@ -722,6 +746,7 @@ export default function (pi: ExtensionAPI) {
 			contextMode: parsed.contextMode ?? "fresh",
 			exitDetection: parsed.autoExit ?? false,
 			costCeiling: parsed.costCeiling ?? 0,
+			roleSequence: parsed.roleSequence,
 		};
 
 		// Resolve model from config or fall back to parent pi's current model
