@@ -38,6 +38,27 @@ import type {
 	LoopStatus,
 } from "./types.ts";
 
+function fmtDuration(ms: number): string {
+	const secs = Math.round(ms / 1000);
+	if (secs < 60) return `${secs}s`;
+	const mins = Math.floor(secs / 60);
+	const remainSecs = secs % 60;
+	if (mins < 60) return `${mins}m${remainSecs}s`;
+	const hours = Math.floor(mins / 60);
+	const remainMins = mins % 60;
+	return `${hours}h${remainMins}m`;
+}
+
+function fmtCost(cost: number): string {
+	return `$${cost.toFixed(3)}`;
+}
+
+function fmtTokens(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return String(n);
+}
+
 const DEFAULT_EXIT_PATTERNS: ExitPatterns = {
 	exit: [
 		"no issues found",
@@ -71,6 +92,8 @@ export interface LoopEngineCallbacks {
 	onIterationEnd?: (iteration: number, stats: IterationStats) => void;
 	/** Fired when loop status changes (running, stopped, completed, error) */
 	onStatusChange?: (status: LoopStatus, error?: string) => void;
+	/** Fired after the loop ends with a summary of what happened */
+	onLoopSummary?: (summary: string) => void;
 }
 
 /** Dependencies from the parent pi session needed to create child sessions */
@@ -324,6 +347,52 @@ export class LoopEngine {
 
 		this.setStatus(this.stopRequested ? "stopped" : "completed");
 		this.writeState();
+		this.emitLoopSummary();
+	}
+
+	private emitLoopSummary(): void {
+		if (!this.callbacks.onLoopSummary) return;
+
+		const s = this.cumulativeStats;
+		const lines: string[] = [];
+
+		// Header
+		lines.push(`**Loop "${this.config.name}" — ${this.status}**`);
+		lines.push("");
+
+		// Reason for stopping
+		if (this.exitDetected) {
+			lines.push("Stopped: agent signaled completion (clean exit)");
+		} else if (this.costCeilingHit) {
+			lines.push(
+				`Stopped: cost ceiling reached ($${this.config.costCeiling})`,
+			);
+		} else if (this.stopRequested) {
+			lines.push("Stopped: user requested stop");
+		} else if (
+			this.config.maxIterations > 0 &&
+			s.iterations >= this.config.maxIterations
+		) {
+			lines.push(
+				`Stopped: reached max iterations (${this.config.maxIterations})`,
+			);
+		} else if (this.error) {
+			lines.push(`Stopped: error — ${this.error}`);
+		}
+
+		// Stats table
+		lines.push("");
+		lines.push("| Metric | Value |");
+		lines.push("|--------|-------|");
+		lines.push(`| Iterations | ${s.iterations} |`);
+		lines.push(`| Duration | ${fmtDuration(s.durationMs)} |`);
+		lines.push(`| Cost | ${fmtCost(s.cost)} |`);
+		lines.push(`| Turns | ${s.turns} |`);
+		lines.push(
+			`| Tokens | ${fmtTokens(s.tokensIn)} in / ${fmtTokens(s.tokensOut)} out |`,
+		);
+
+		this.callbacks.onLoopSummary(lines.join("\n"));
 	}
 
 	/**

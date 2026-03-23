@@ -845,6 +845,15 @@ export default function (pi: ExtensionAPI) {
 						clearWidgetAfterDelay(ctx);
 					}
 				},
+
+				onLoopSummary: (summary) => {
+					pi.sendMessage({
+						customType: "ralph_assistant",
+						content: summary,
+						display: true,
+						details: {},
+					});
+				},
 			},
 			{
 				modelRegistry,
