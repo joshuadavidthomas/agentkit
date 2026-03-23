@@ -31,11 +31,36 @@ import {
 import { join } from "node:path";
 import type {
 	CumulativeStats,
+	ExitPatterns,
 	IterationStats,
 	LoopConfig,
 	LoopState,
 	LoopStatus,
 } from "./types.ts";
+
+const DEFAULT_EXIT_PATTERNS: ExitPatterns = {
+	exit: [
+		"no issues found",
+		"no issues remaining",
+		"no remaining issues",
+		"no further issues",
+		"no problems found",
+		"no changes needed",
+		"no changes necessary",
+		"nothing to fix",
+		"everything looks good",
+		"no improvements needed",
+	],
+	continueWorking: [
+		"fixed",
+		"corrected",
+		"resolved",
+		"applied fix",
+		"made changes",
+		"applied changes",
+		"refactored",
+	],
+};
 
 export interface LoopEngineCallbacks {
 	/** Typed session event forwarded for TUI rendering */
@@ -85,6 +110,7 @@ export class LoopEngine {
 	// Control flow
 	private stopRequested = false;
 	private navigating = false;
+	private exitDetected = false;
 	private pendingFollowup?: string;
 
 	// Tree context mode — rolling branch point for accumulated summaries
@@ -117,6 +143,7 @@ export class LoopEngine {
 			startedAt: this.startedAt.toISOString(),
 			updatedAt: new Date().toISOString(),
 			error: this.error,
+			exitDetected: this.exitDetected || undefined,
 		};
 	}
 
@@ -268,6 +295,10 @@ export class LoopEngine {
 
 			// Check stop conditions
 			if (this.stopRequested) break;
+			if (this.checkExitDetection()) {
+				this.exitDetected = true;
+				break;
+			}
 			if (
 				this.config.maxIterations > 0 &&
 				this.iteration >= this.config.maxIterations
@@ -328,6 +359,34 @@ export class LoopEngine {
 		} finally {
 			this.navigating = false;
 		}
+	}
+
+	/**
+	 * Check if the agent's last message signals completion.
+	 * Uses dual-signal detection: exit only when an exit phrase is found
+	 * AND no continue-working phrase is found. This prevents premature exit
+	 * after the agent fixes issues (it should get one more verification pass).
+	 */
+	private checkExitDetection(): boolean {
+		if (!this.config.exitDetection) return false;
+
+		const text = this.session!.getLastAssistantText()?.toLowerCase() ?? "";
+		if (!text) return false;
+
+		const patterns =
+			this.config.exitDetection === true
+				? DEFAULT_EXIT_PATTERNS
+				: this.config.exitDetection;
+
+		const hasExit = patterns.exit.some((p) =>
+			text.includes(p.toLowerCase()),
+		);
+		if (!hasExit) return false;
+
+		const hasContinue = patterns.continueWorking.some((p) =>
+			text.includes(p.toLowerCase()),
+		);
+		return !hasContinue;
 	}
 
 	private handleEvent(event: AgentSessionEvent): void {
