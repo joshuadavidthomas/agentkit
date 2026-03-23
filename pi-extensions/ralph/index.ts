@@ -318,7 +318,6 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		} else {
 			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit, --cost-ceiling, --roles`;
 		}
-		}
 	}
 
 	return result;
@@ -581,25 +580,85 @@ export default function (pi: ExtensionAPI) {
 
 	// Command Registration
 
+	const subcommands: Array<{ value: string; label: string; description: string }> = [
+		{ value: "start", label: "start", description: "Start a new loop" },
+		{ value: "stop", label: "stop", description: "Stop after current iteration" },
+		{ value: "kill", label: "kill", description: "Abort immediately" },
+		{ value: "status", label: "status", description: "Show loop details" },
+		{ value: "list", label: "list", description: "List all loops" },
+		{ value: "clean", label: "clean", description: "Remove finished loops" },
+		{ value: "help", label: "help", description: "Show usage" },
+	];
+
+	const startFlags: Array<{ flag: string; description: string; values?: string[] }> = [
+		{ flag: "-n", description: "Max iterations (0 = unlimited)" },
+		{ flag: "--max-iterations", description: "Max iterations (0 = unlimited)" },
+		{ flag: "-m", description: "Model ID" },
+		{ flag: "--model", description: "Model ID" },
+		{ flag: "--provider", description: "Model provider" },
+		{ flag: "--thinking", description: "Thinking level" },
+		{ flag: "--task", description: "Path to task file" },
+		{ flag: "--context", description: "Context mode", values: ["fresh", "tree"] },
+		{ flag: "--auto-exit", description: "Exit when agent signals completion" },
+		{ flag: "--cost-ceiling", description: "Max cost in dollars" },
+		{ flag: "--roles", description: "Comma-separated task files to cycle" },
+	];
+
+	function getStartCompletions(parts: string[]): Array<{ value: string; label: string; description?: string }> | null {
+		const prefix = parts[parts.length - 1] || "";
+		const prev = parts.length >= 2 ? parts[parts.length - 2] : "";
+
+		// Complete values for flags that take them
+		if (prev === "--context") {
+			return ["fresh", "tree"]
+				.filter((v) => v.startsWith(prefix))
+				.map((v) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${v}`,
+					label: v,
+				}));
+		}
+		if (prev === "--thinking") {
+			return ["off", "minimal", "low", "medium", "high", "xhigh"]
+				.filter((v) => v.startsWith(prefix))
+				.map((v) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${v}`,
+					label: v,
+				}));
+		}
+
+		// Complete flags
+		if (prefix.startsWith("-")) {
+			const usedFlags = new Set(parts.slice(0, -1));
+			return startFlags
+				.filter((f) => f.flag.startsWith(prefix) && !usedFlags.has(f.flag))
+				.map((f) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${f.flag}`,
+					label: f.flag,
+					description: f.description,
+				}));
+		}
+
+		return null;
+	}
+
 	pi.registerCommand("ralph", {
 		description:
-			"Ralph loop extension. Subcommands: start, stop, kill, status, list, clean",
+			"Iterative agent loop. Subcommands: start, stop, kill, status, list, clean, help",
 		getArgumentCompletions: (prefix) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
-				const subcommands = [
-					"start",
-					"stop",
-					"kill",
-					"status",
-					"list",
-					"clean",
-				];
-				return subcommands
-					.filter((s) => s.startsWith(parts[0] || ""))
-					.map((s) => ({ value: s, label: s }));
+				return subcommands.filter((s) =>
+					s.value.startsWith(parts[0] || ""),
+				);
 			}
 			const sub = parts[0];
+
+			// start: name then flags
+			if (sub === "start") {
+				return getStartCompletions(parts.slice(1));
+			}
+
+			// stop/kill/status: loop names
 			if (["stop", "kill", "status"].includes(sub)) {
 				const namePrefix = parts[1] || "";
 				const loops = listLocalLoops(process.cwd());
@@ -635,11 +694,10 @@ export default function (pi: ExtensionAPI) {
 					return handleList(pi, ctx);
 				case "clean":
 					return handleClean(ctx);
+				case "help":
+					return handleHelp(pi, subArgs.trim() || undefined);
 				default:
-					ctx.ui.notify(
-						"Usage: /ralph <start|stop|kill|status|list|clean> [args]",
-						"info",
-					);
+					return handleHelp(pi);
 			}
 		},
 	});
@@ -1127,5 +1185,48 @@ export default function (pi: ExtensionAPI) {
 			`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
 			"info",
 		);
+	}
+
+	function handleHelp(pi: ExtensionAPI, subcommand?: string) {
+		let help: string;
+
+		if (subcommand === "start") {
+			help = `**ralph start** — Start a new loop
+
+Usage: \`/ralph start <name> [options]\`
+
+| Option | Description |
+|--------|-------------|
+| \`-n, --max-iterations <N>\` | Max iterations (0 = unlimited, default: 50) |
+| \`-m, --model <id>\` | Model to use |
+| \`--provider <name>\` | Model provider |
+| \`--thinking <level>\` | off, minimal, low, medium, high, xhigh |
+| \`--task <path>\` | Path to task file |
+| \`--context <mode>\` | \`fresh\` (default) or \`tree\` (accumulated summaries) |
+| \`--auto-exit\` | Stop when agent signals completion |
+| \`--cost-ceiling <dollars>\` | Stop when cost exceeds threshold |
+| \`--roles <a.md,b.md,...>\` | Cycle task files across iterations |
+
+**While running:** Enter to steer, Alt+Enter to queue for next iteration, Esc to kill`;
+		} else {
+			help = `**Ralph — Iterative Agent Loop**
+
+| Command | Description |
+|---------|-------------|
+| \`/ralph start <name> [options]\` | Start a new loop |
+| \`/ralph stop [name]\` | Stop after current iteration finishes |
+| \`/ralph kill [name]\` | Abort immediately |
+| \`/ralph status [name]\` | Show loop details |
+| \`/ralph list\` | List all loops |
+| \`/ralph clean\` | Remove finished loop artifacts |
+| \`/ralph help [command]\` | Show help |`;
+		}
+
+		pi.sendMessage({
+			customType: "ralph_assistant",
+			content: help,
+			display: true,
+			details: {},
+		});
 	}
 }
