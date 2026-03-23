@@ -21,6 +21,8 @@ export interface LoopConfig {
 	thinking?: string;
 	/** 0 = disabled */
 	reflectEvery: number;
+	/** Context between iterations. "fresh" = new session each time, "tree" = navigate back with summary */
+	contextMode: "fresh" | "tree";
 }
 
 export interface IterationStats {
