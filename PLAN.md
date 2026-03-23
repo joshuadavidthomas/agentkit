@@ -26,25 +26,25 @@ Implementation plan for the `/ak:*` workflow in pi. Design rationale is in [DESI
 ### Handoff extension
 - [x] `/handoff` command — extracts files, context, and task into a new session prompt
 
-## Phase 1: Ralph Enhancements
+## Phase 1: Ralph Enhancements ✅
 
-Ralph is the loop engine for review and work phases. It needs these capabilities before the workflow prompts can use it.
+Ralph is the loop engine for review and work phases.
 
 ### Context tree integration
-- [ ] Add `contextMode` option to ralph loops: `"fresh"` (current behavior) or `"tree"` (navigate back with summary)
-- [ ] In `"tree"` mode: after each iteration, `ctx.navigateTree()` back to the loop start point with `{ summarize: true }` — the summary carries what was found/fixed into the next iteration
-- [ ] In `"fresh"` mode: keep current `session.newSession()` behavior
-- [ ] Default: `"tree"` for review tasks, `"fresh"` for work tasks
+- [x] `contextMode: "fresh" | "tree"` — `"fresh"` uses `newSession()`, `"tree"` uses `navigateTree()` with LLM-generated summaries
+- [x] In tree mode: anchor entry at loop start, summaries accumulate as children along the path
+- [x] Falls back to fresh context if summarization fails or is cancelled
+- [x] `--context tree` CLI flag, defaults to `"fresh"`
 
 ### Exit detection
-- [ ] Dual-signal parsing: exit phrases ("no issues found", "looks good") AND issues-fixed phrases ("Fixed N issues", "Ready for another review")
-- [ ] Exit only when `exitPhrase && !issuesFixed` — prevents premature exit after fixing things
-- [ ] Configurable pattern sets per loop
+- [x] Dual-signal parsing: exit phrases AND continue-working phrases
+- [x] Exit only when `exitPhrase && !continueWorking` — prevents premature exit after fixing things
+- [x] Built-in default patterns (`--auto-exit` flag) or custom `ExitPatterns` via programmatic API
 
 ### Other enhancements
-- [ ] Cost ceiling — stop loop if cumulative cost exceeds a threshold
-- [ ] Post-loop summary — what happened across iterations (N passes, what was fixed, final status)
-- [ ] Role sequences — optional list of task files to cycle through (implement.md → spec-review.md → quality-review.md)
+- [x] Cost ceiling — `--cost-ceiling <dollars>` stops loop when cumulative cost exceeds threshold
+- [x] Post-loop summary — rendered markdown table with stop reason, iterations, duration, cost, tokens
+- [x] Role sequences — `--roles file1.md,file2.md` cycles task files across iterations
 
 ## Phase 2: Conversion Script
 
