@@ -25,6 +25,8 @@ export interface LoopConfig {
 	contextMode: "fresh" | "tree";
 	/** Exit detection. false = disabled, true = built-in patterns, or custom pattern sets */
 	exitDetection: boolean | ExitPatterns;
+	/** Stop the loop if cumulative cost exceeds this amount in dollars. 0 = no limit */
+	costCeiling: number;
 }
 
 export interface ExitPatterns {
@@ -66,6 +68,8 @@ export interface LoopState {
 	error?: string;
 	/** True if the loop exited because the agent signaled completion */
 	exitDetected?: boolean;
+	/** True if the loop stopped because cumulative cost exceeded the ceiling */
+	costCeilingHit?: boolean;
 }
 
 /** Get the .ralph/<name>/ directory for a named loop in a project */

@@ -244,6 +244,7 @@ interface ParsedStartArgs {
 	taskFile?: string;
 	contextMode?: "fresh" | "tree";
 	autoExit?: boolean;
+	costCeiling?: number;
 }
 
 function parseStartArgs(argsStr: string): ParsedStartArgs | string {
@@ -300,8 +301,19 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		} else if (token === "--auto-exit") {
 			result.autoExit = true;
 			i += 1;
+		} else if (
+			(token === "--cost-ceiling" || token === "--cost") &&
+			i + 1 < tokens.length
+		) {
+			const val = parseFloat(tokens[i + 1]);
+			if (isNaN(val) || val < 0) {
+				return `Invalid cost ceiling: "${tokens[i + 1]}". Must be a positive number (dollars).`;
+			}
+			result.costCeiling = val;
+			i += 2;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit`;
+			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit, --cost-ceiling`;
+		}
 		}
 	}
 
@@ -709,6 +721,7 @@ export default function (pi: ExtensionAPI) {
 			reflectEvery: 0,
 			contextMode: parsed.contextMode ?? "fresh",
 			exitDetection: parsed.autoExit ?? false,
+			costCeiling: parsed.costCeiling ?? 0,
 		};
 
 		// Resolve model from config or fall back to parent pi's current model
@@ -810,7 +823,9 @@ export default function (pi: ExtensionAPI) {
 						const state = engine.getState();
 						const exitMsg = state.exitDetected
 							? " — clean exit detected"
-							: "";
+							: state.costCeilingHit
+								? " — cost ceiling reached"
+								: "";
 						ctx.ui.notify(
 							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})${exitMsg}`,
 							"info",
