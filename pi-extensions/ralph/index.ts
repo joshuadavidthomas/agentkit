@@ -243,6 +243,7 @@ interface ParsedStartArgs {
 	thinking?: string;
 	taskFile?: string;
 	contextMode?: "fresh" | "tree";
+	autoExit?: boolean;
 }
 
 function parseStartArgs(argsStr: string): ParsedStartArgs | string {
@@ -296,8 +297,11 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 			}
 			result.contextMode = val;
 			i += 2;
+		} else if (token === "--auto-exit") {
+			result.autoExit = true;
+			i += 1;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context`;
+			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit`;
 		}
 	}
 
@@ -704,6 +708,7 @@ export default function (pi: ExtensionAPI) {
 			thinking: parsed.thinking,
 			reflectEvery: 0,
 			contextMode: parsed.contextMode ?? "fresh",
+			exitDetection: parsed.autoExit ?? false,
 		};
 
 		// Resolve model from config or fall back to parent pi's current model
@@ -803,8 +808,11 @@ export default function (pi: ExtensionAPI) {
 					updateWidget(ctx);
 					if (status === "completed") {
 						const state = engine.getState();
+						const exitMsg = state.exitDetected
+							? " — clean exit detected"
+							: "";
 						ctx.ui.notify(
-							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
+							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})${exitMsg}`,
 							"info",
 						);
 						clearWidgetAfterDelay(ctx);
