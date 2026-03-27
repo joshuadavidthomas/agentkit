@@ -179,10 +179,10 @@ async function selectSummaryModel(ctx: ExtensionContext) {
 		const model = getModel(provider, id);
 		if (!model) continue;
 
-		const apiKey = await ctx.modelRegistry.getApiKey(model);
-		if (!apiKey) continue;
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok) continue;
 
-		return { model, apiKey };
+		return { model, apiKey: auth.apiKey, headers: auth.headers };
 	}
 	return null;
 }
@@ -196,7 +196,7 @@ async function generateNotificationSummary(turnSummary: string, ctx: ExtensionCo
 		return "Ready for input";
 	}
 
-	const { model, apiKey } = selected;
+	const { model, apiKey, headers } = selected;
 
 	const prompt = `Generate a desktop notification (max 50 chars). Output ONLY the text, nothing else.
 
@@ -222,7 +222,7 @@ NO QUESTIONS. NO EXPLANATIONS. JUST THE NOTIFICATION TEXT.`;
 					},
 				],
 			},
-			{ apiKey }
+			{ apiKey, headers }
 		);
 
 		const summary = response.content
