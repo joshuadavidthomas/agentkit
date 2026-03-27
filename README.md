@@ -113,6 +113,12 @@ Overrides the built-in read tool to handle directories gracefully.
 
 When called on a directory, returns an `ls -la` listing with a hint instead of erroring with EISDIR. All other behavior delegates to the built-in implementation.
 
+#### [rg-replace-warning](./pi-extensions/rg-replace-warning.ts)
+
+Warns when `rg` is called with `-r` (which means `--replace`, not recursive). A common grep muscle memory mistake: `rg -rn "pattern"` silently replaces every match with the letter `n` instead of searching recursively with line numbers. `rg` is already recursive and shows line numbers by default.
+
+Non-blocking — the command still runs, but a warning is prepended to the tool result so the LLM sees it and self-corrects.
+
 #### [scouts](./pi-extensions/scouts/)
 
 Scout subagent system — spins up focused small-model sessions with purpose-built tool sets, returning structured results with custom TUI rendering. Originally vendored from [pi-finder](https://github.com/default-anton/pi-finder) and [pi-librarian](https://github.com/default-anton/pi-librarian), now significantly expanded.
