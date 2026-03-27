@@ -1,0 +1,7 @@
+{
+  "name": "answer",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

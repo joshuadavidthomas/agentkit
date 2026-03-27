@@ -242,6 +242,10 @@ interface ParsedStartArgs {
 	provider?: string;
 	thinking?: string;
 	taskFile?: string;
+	contextMode?: "fresh" | "tree";
+	autoExit?: boolean;
+	costCeiling?: number;
+	roleSequence?: string[];
 }
 
 function parseStartArgs(argsStr: string): ParsedStartArgs | string {
@@ -288,8 +292,31 @@ function parseStartArgs(argsStr: string): ParsedStartArgs | string {
 		} else if (token === "--task" && i + 1 < tokens.length) {
 			result.taskFile = tokens[i + 1];
 			i += 2;
+		} else if (token === "--context" && i + 1 < tokens.length) {
+			const val = tokens[i + 1];
+			if (val !== "fresh" && val !== "tree") {
+				return `Invalid context mode: "${val}". Must be "fresh" or "tree".`;
+			}
+			result.contextMode = val;
+			i += 2;
+		} else if (token === "--auto-exit") {
+			result.autoExit = true;
+			i += 1;
+		} else if (
+			(token === "--cost-ceiling" || token === "--cost") &&
+			i + 1 < tokens.length
+		) {
+			const val = parseFloat(tokens[i + 1]);
+			if (isNaN(val) || val < 0) {
+				return `Invalid cost ceiling: "${tokens[i + 1]}". Must be a positive number (dollars).`;
+			}
+			result.costCeiling = val;
+			i += 2;
+		} else if (token === "--roles" && i + 1 < tokens.length) {
+			result.roleSequence = tokens[i + 1].split(",").map((s) => s.trim());
+			i += 2;
 		} else {
-			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task`;
+			return `Unknown option: "${token}". Options: --max-iterations/-n, --model/-m, --provider, --thinking, --task, --context, --auto-exit, --cost-ceiling, --roles`;
 		}
 	}
 
@@ -553,25 +580,85 @@ export default function (pi: ExtensionAPI) {
 
 	// Command Registration
 
+	const subcommands: Array<{ value: string; label: string; description: string }> = [
+		{ value: "start", label: "start", description: "Start a new loop" },
+		{ value: "stop", label: "stop", description: "Stop after current iteration" },
+		{ value: "kill", label: "kill", description: "Abort immediately" },
+		{ value: "status", label: "status", description: "Show loop details" },
+		{ value: "list", label: "list", description: "List all loops" },
+		{ value: "clean", label: "clean", description: "Remove finished loops" },
+		{ value: "help", label: "help", description: "Show usage" },
+	];
+
+	const startFlags: Array<{ flag: string; description: string; values?: string[] }> = [
+		{ flag: "-n", description: "Max iterations (0 = unlimited)" },
+		{ flag: "--max-iterations", description: "Max iterations (0 = unlimited)" },
+		{ flag: "-m", description: "Model ID" },
+		{ flag: "--model", description: "Model ID" },
+		{ flag: "--provider", description: "Model provider" },
+		{ flag: "--thinking", description: "Thinking level" },
+		{ flag: "--task", description: "Path to task file" },
+		{ flag: "--context", description: "Context mode", values: ["fresh", "tree"] },
+		{ flag: "--auto-exit", description: "Exit when agent signals completion" },
+		{ flag: "--cost-ceiling", description: "Max cost in dollars" },
+		{ flag: "--roles", description: "Comma-separated task files to cycle" },
+	];
+
+	function getStartCompletions(parts: string[]): Array<{ value: string; label: string; description?: string }> | null {
+		const prefix = parts[parts.length - 1] || "";
+		const prev = parts.length >= 2 ? parts[parts.length - 2] : "";
+
+		// Complete values for flags that take them
+		if (prev === "--context") {
+			return ["fresh", "tree"]
+				.filter((v) => v.startsWith(prefix))
+				.map((v) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${v}`,
+					label: v,
+				}));
+		}
+		if (prev === "--thinking") {
+			return ["off", "minimal", "low", "medium", "high", "xhigh"]
+				.filter((v) => v.startsWith(prefix))
+				.map((v) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${v}`,
+					label: v,
+				}));
+		}
+
+		// Complete flags
+		if (prefix.startsWith("-")) {
+			const usedFlags = new Set(parts.slice(0, -1));
+			return startFlags
+				.filter((f) => f.flag.startsWith(prefix) && !usedFlags.has(f.flag))
+				.map((f) => ({
+					value: `start ${parts.slice(0, -1).join(" ")} ${f.flag}`,
+					label: f.flag,
+					description: f.description,
+				}));
+		}
+
+		return null;
+	}
+
 	pi.registerCommand("ralph", {
 		description:
-			"Ralph loop extension. Subcommands: start, stop, kill, status, list, clean",
+			"Iterative agent loop. Subcommands: start, stop, kill, status, list, clean, help",
 		getArgumentCompletions: (prefix) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
-				const subcommands = [
-					"start",
-					"stop",
-					"kill",
-					"status",
-					"list",
-					"clean",
-				];
-				return subcommands
-					.filter((s) => s.startsWith(parts[0] || ""))
-					.map((s) => ({ value: s, label: s }));
+				return subcommands.filter((s) =>
+					s.value.startsWith(parts[0] || ""),
+				);
 			}
 			const sub = parts[0];
+
+			// start: name then flags
+			if (sub === "start") {
+				return getStartCompletions(parts.slice(1));
+			}
+
+			// stop/kill/status: loop names
 			if (["stop", "kill", "status"].includes(sub)) {
 				const namePrefix = parts[1] || "";
 				const loops = listLocalLoops(process.cwd());
@@ -607,11 +694,10 @@ export default function (pi: ExtensionAPI) {
 					return handleList(pi, ctx);
 				case "clean":
 					return handleClean(ctx);
+				case "help":
+					return handleHelp(pi, subArgs.trim() || undefined);
 				default:
-					ctx.ui.notify(
-						"Usage: /ralph <start|stop|kill|status|list|clean> [args]",
-						"info",
-					);
+					return handleHelp(pi);
 			}
 		},
 	});
@@ -685,6 +771,26 @@ export default function (pi: ExtensionAPI) {
 			writeFileSync(taskFilePath, taskContent);
 		}
 
+		// Handle role sequence — copy task files into the ralph dir
+		if (parsed.roleSequence) {
+			for (const role of parsed.roleSequence) {
+				const destPath = join(dir, role);
+				if (existsSync(destPath)) continue;
+
+				// Try resolving from cwd
+				const sourcePath = resolve(cwd, role);
+				if (!existsSync(sourcePath)) {
+					ctx.ui.notify(
+						`Role task file not found: ${role} (checked ${sourcePath} and ${destPath})`,
+						"error",
+					);
+					return;
+				}
+				const content = readFileSync(sourcePath, "utf-8");
+				writeFileSync(destPath, content);
+			}
+		}
+
 		// Build config
 		const config: LoopConfig = {
 			name: parsed.name,
@@ -695,6 +801,10 @@ export default function (pi: ExtensionAPI) {
 			provider: parsed.provider,
 			thinking: parsed.thinking,
 			reflectEvery: 0,
+			contextMode: parsed.contextMode ?? "fresh",
+			exitDetection: parsed.autoExit ?? false,
+			costCeiling: parsed.costCeiling ?? 0,
+			roleSequence: parsed.roleSequence,
 		};
 
 		// Resolve model from config or fall back to parent pi's current model
@@ -794,8 +904,13 @@ export default function (pi: ExtensionAPI) {
 					updateWidget(ctx);
 					if (status === "completed") {
 						const state = engine.getState();
+						const exitMsg = state.exitDetected
+							? " — clean exit detected"
+							: state.costCeilingHit
+								? " — cost ceiling reached"
+								: "";
 						ctx.ui.notify(
-							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})`,
+							`Loop "${parsed.name}" completed after ${state.stats.iterations} iterations (${fmtCost(state.stats.cost)})${exitMsg}`,
 							"info",
 						);
 						clearWidgetAfterDelay(ctx);
@@ -812,6 +927,15 @@ export default function (pi: ExtensionAPI) {
 						);
 						clearWidgetAfterDelay(ctx);
 					}
+				},
+
+				onLoopSummary: (summary) => {
+					pi.sendMessage({
+						customType: "ralph_assistant",
+						content: summary,
+						display: true,
+						details: {},
+					});
 				},
 			},
 			{
@@ -832,8 +956,10 @@ export default function (pi: ExtensionAPI) {
 				? "unlimited"
 				: String(parsed.maxIterations);
 		const modelStr = parsed.model ? ` (model: ${parsed.model})` : "";
+		const contextStr =
+			parsed.contextMode === "tree" ? ", context: tree" : "";
 		ctx.ui.notify(
-			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr})`,
+			`Loop "${parsed.name}" started (max: ${maxStr} iterations${modelStr}${contextStr})`,
 			"info",
 		);
 		updateWidget(ctx);
@@ -1059,5 +1185,48 @@ export default function (pi: ExtensionAPI) {
 			`Cleaned ${cleaned} loop${cleaned > 1 ? "s" : ""}: ${names}`,
 			"info",
 		);
+	}
+
+	function handleHelp(pi: ExtensionAPI, subcommand?: string) {
+		let help: string;
+
+		if (subcommand === "start") {
+			help = `**ralph start** — Start a new loop
+
+Usage: \`/ralph start <name> [options]\`
+
+| Option | Description |
+|--------|-------------|
+| \`-n, --max-iterations <N>\` | Max iterations (0 = unlimited, default: 50) |
+| \`-m, --model <id>\` | Model to use |
+| \`--provider <name>\` | Model provider |
+| \`--thinking <level>\` | off, minimal, low, medium, high, xhigh |
+| \`--task <path>\` | Path to task file |
+| \`--context <mode>\` | \`fresh\` (default) or \`tree\` (accumulated summaries) |
+| \`--auto-exit\` | Stop when agent signals completion |
+| \`--cost-ceiling <dollars>\` | Stop when cost exceeds threshold |
+| \`--roles <a.md,b.md,...>\` | Cycle task files across iterations |
+
+**While running:** Enter to steer, Alt+Enter to queue for next iteration, Esc to kill`;
+		} else {
+			help = `**Ralph — Iterative Agent Loop**
+
+| Command | Description |
+|---------|-------------|
+| \`/ralph start <name> [options]\` | Start a new loop |
+| \`/ralph stop [name]\` | Stop after current iteration finishes |
+| \`/ralph kill [name]\` | Abort immediately |
+| \`/ralph status [name]\` | Show loop details |
+| \`/ralph list\` | List all loops |
+| \`/ralph clean\` | Remove finished loop artifacts |
+| \`/ralph help [command]\` | Show help |`;
+		}
+
+		pi.sendMessage({
+			customType: "ralph_assistant",
+			content: help,
+			display: true,
+			details: {},
+		});
 	}
 }
