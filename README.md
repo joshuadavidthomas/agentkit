@@ -20,6 +20,12 @@ This installs everything:
 
 Extensions for [pi](https://shittycodingagent.ai/), a TUI coding agent.
 
+#### [auto-share](./pi-extensions/auto-share/)
+
+Automates the built-in `/share` functionality — keeps a gist updated with the current session as you work, so you always have a shareable URL without manual exports.
+
+Off by default. Enable per-project with `/auto-share on` or per-invocation with `pi --auto-share`. Requires `gh` CLI (`gh auth login`).
+
 #### [answer](./pi-extensions/answer.ts)
 
 Extract questions from the last assistant message into an interactive Q&A interface.
