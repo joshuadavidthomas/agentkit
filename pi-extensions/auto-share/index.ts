@@ -171,35 +171,6 @@ function updateGist(gistId: string, tmpFile: string): Promise<boolean> {
 	});
 }
 
-function createGistSync(tmpFile: string): string | null {
-	try {
-		const result = spawnSync("gh", ["gist", "create", "--public=false", tmpFile], {
-			encoding: "utf-8",
-			timeout: 30_000,
-		});
-		if (result.status !== 0) return null;
-		const url = result.stdout?.trim();
-		return url?.split("/").pop() || null;
-	} catch {
-		return null;
-	}
-}
-
-function updateGistSync(gistId: string, tmpFile: string): boolean {
-	try {
-		const result = spawnSync("gh", [
-			"gist", "edit", gistId,
-			"--filename", GIST_FILENAME,
-			tmpFile,
-		], {
-			encoding: "utf-8",
-			timeout: 30_000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
 
 function debugLog(message: string): void {
 	try {
@@ -306,41 +277,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		if (!enabled) return;
-		if (!checkGh()) return;
-
-		const sessionFile = ctx.sessionManager.getSessionFile();
-		if (!sessionFile || !existsSync(sessionFile)) return;
-
-		const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
-		mkdirSync(tmpDir, { recursive: true });
-		const tmpFile = join(tmpDir, GIST_FILENAME);
-
-		try {
-			// exportFromFile is async, so for shutdown we use the CLI directly
-			const result = spawnSync("pi", ["--export", sessionFile, tmpFile], {
-				encoding: "utf-8",
-				timeout: 30_000,
-			});
-			if (result.status !== 0) return;
-
-			if (gistId) {
-				updateGistSync(gistId, tmpFile);
-				updateManifest(ctx, gistId, false);
-			} else {
-				const newGistId = createGistSync(tmpFile);
-				if (newGistId) {
-					gistId = newGistId;
-					pi.appendEntry(CUSTOM_TYPE, { gistId } satisfies ShareData);
-					updateManifest(ctx, gistId, true);
-				}
-			}
-		} catch {
-			// Best effort on shutdown
-		} finally {
-			cleanupTmpFile(tmpFile);
-			cleanupTmpDir(tmpDir);
-		}
+		await doExport(pi, ctx, true);
 	});
 
 	pi.registerCommand("auto-share", {
