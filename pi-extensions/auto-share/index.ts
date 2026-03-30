@@ -12,13 +12,14 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { getShareViewerUrl } from "@mariozechner/pi-coding-agent/dist/config.js";
 import { exportFromFile } from "@mariozechner/pi-coding-agent/dist/core/export-html/index.js";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const CUSTOM_TYPE = "auto-share";
 const COOLDOWN_MS = 10_000;
 const MANIFEST_FILENAME = "shares.json";
+const GIST_FILENAME = "session.html";
 
 interface ShareData {
 	gistId: string;
@@ -167,7 +168,7 @@ function updateGist(gistId: string, tmpFile: string): Promise<boolean> {
 	return new Promise((resolve) => {
 		const proc = spawn("gh", [
 			"gist", "edit", gistId,
-			"--filename", "session.html",
+			"--filename", GIST_FILENAME,
 			tmpFile,
 		]);
 		let stderr = "";
@@ -203,7 +204,7 @@ function updateGistSync(gistId: string, tmpFile: string): boolean {
 	try {
 		const result = spawnSync("gh", [
 			"gist", "edit", gistId,
-			"--filename", "session.html",
+			"--filename", GIST_FILENAME,
 			tmpFile,
 		], {
 			encoding: "utf-8",
@@ -229,6 +230,10 @@ function cleanupTmpFile(path: string): void {
 	try { unlinkSync(path); } catch { /* ignore */ }
 }
 
+function cleanupTmpDir(path: string): void {
+	try { rmdirSync(path); } catch { /* ignore */ }
+}
+
 async function doExport(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -247,7 +252,10 @@ async function doExport(
 	if (!sessionFile || !existsSync(sessionFile)) return;
 
 	exporting = true;
-	const tmpFile = join(tmpdir(), `pi-auto-share-${Date.now()}.html`);
+	// Use a subdirectory so the gist file is named consistently
+	const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
+	mkdirSync(tmpDir, { recursive: true });
+	const tmpFile = join(tmpDir, GIST_FILENAME);
 
 	try {
 		await exportFromFile(sessionFile, tmpFile);
@@ -272,6 +280,7 @@ async function doExport(
 		debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
 	} finally {
 		cleanupTmpFile(tmpFile);
+		cleanupTmpDir(tmpDir);
 		exporting = false;
 	}
 }
@@ -283,7 +292,9 @@ function doExportSync(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionFile || !existsSync(sessionFile)) return;
 
-	const tmpFile = join(tmpdir(), `pi-auto-share-${Date.now()}.html`);
+	const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
+	mkdirSync(tmpDir, { recursive: true });
+	const tmpFile = join(tmpDir, GIST_FILENAME);
 
 	try {
 		// exportFromFile is async, so for shutdown we use the CLI directly
@@ -308,6 +319,7 @@ function doExportSync(ctx: ExtensionContext, pi: ExtensionAPI): void {
 		// Best effort on shutdown
 	} finally {
 		cleanupTmpFile(tmpFile);
+		cleanupTmpDir(tmpDir);
 	}
 }
 
