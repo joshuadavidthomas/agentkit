@@ -1,0 +1,291 @@
+/**
+ * Auto-Share Extension
+ *
+ * Automatically exports pi sessions to GitHub gists and keeps them
+ * updated as the conversation progresses. Produces stable, shareable
+ * URLs that always reflect the latest session state.
+ *
+ * Requires: gh CLI installed and authenticated (gh auth login)
+ */
+
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getShareViewerUrl } from "@mariozechner/pi-coding-agent/dist/config.js";
+import { exportFromFile } from "@mariozechner/pi-coding-agent/dist/core/export-html/index.js";
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+
+const COOLDOWN_MS = 10_000;
+const MANIFEST_FILENAME = "shares.json";
+const GIST_FILENAME = "session.html";
+const DEBUG_LOG = join(tmpdir(), "pi-auto-share-debug.log");
+
+interface ManifestEntry {
+	gistId: string;
+	viewerUrl: string;
+	name?: string;
+	sessionFile: string;
+	created: string;
+	updated: string;
+}
+
+interface Manifest {
+	enabled?: boolean;
+	sessions?: Record<string, ManifestEntry>;
+}
+
+// In-memory state
+let gistId: string | null = null;
+let lastExportTime = 0;
+let ghAvailable: boolean | null = null;
+let ghWarningShown = false;
+let enabled = false;
+let flagOverride: boolean | null = null;
+let exporting = false;
+
+function updateManifest(ctx: ExtensionContext, gistId: string, isNew: boolean): void {
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	if (!sessionFile) return;
+
+	const manifestPath = join(dirname(sessionFile), MANIFEST_FILENAME);
+	let manifest: Manifest = {};
+	try {
+		if (existsSync(manifestPath)) {
+			manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		}
+	} catch {
+		// Corrupted file, start fresh
+	}
+	const sessions = manifest.sessions ??= {};
+	const sessionId = ctx.sessionManager.getSessionId();
+	const now = new Date().toISOString();
+
+	const existing = sessions[sessionId];
+	sessions[sessionId] = {
+		gistId,
+		viewerUrl: getShareViewerUrl(gistId),
+		name: ctx.sessionManager.getSessionName(),
+		sessionFile: basename(sessionFile),
+		created: isNew ? now : existing?.created ?? now,
+		updated: now,
+	};
+
+	const dir = dirname(manifestPath);
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf-8");
+}
+
+function persistEnabled(ctx: ExtensionContext, value: boolean): void {
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	if (!sessionFile) return;
+	const manifestPath = join(dirname(sessionFile), MANIFEST_FILENAME);
+	let manifest: Manifest = {};
+	try {
+		if (existsSync(manifestPath)) {
+			manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		}
+	} catch {}
+	manifest.enabled = value;
+	const dir = dirname(manifestPath);
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf-8");
+}
+
+function runGh(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
+	return new Promise((resolve) => {
+		const proc = spawn("gh", args);
+		let stdout = "";
+		let stderr = "";
+		proc.stdout?.on("data", (data) => { stdout += data.toString(); });
+		proc.stderr?.on("data", (data) => { stderr += data.toString(); });
+		proc.on("close", (code) => resolve({ code, stdout, stderr }));
+		proc.on("error", () => resolve({ code: 1, stdout, stderr }));
+	});
+}
+
+function debugLog(message: string): void {
+	try {
+		appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${message}\n`);
+	} catch {}
+}
+
+async function doExport(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	skipCooldown: boolean,
+): Promise<void> {
+	if (!enabled) return;
+	if (exporting) return;
+	if (!skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
+
+	if (ghAvailable !== true) {
+		const authCheck = await runGh(["auth", "status"]);
+		ghAvailable = authCheck.code === 0;
+		if (!ghAvailable) {
+			if (!ghWarningShown) {
+				ghWarningShown = true;
+				const versionCheck = await runGh(["--version"]);
+				if (versionCheck.code !== 0) {
+					ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
+				} else {
+					ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
+				}
+			}
+			return;
+		}
+	}
+
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	if (!sessionFile || !existsSync(sessionFile)) return;
+
+	exporting = true;
+	// Use a subdirectory so the gist file is named consistently
+	const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
+	mkdirSync(tmpDir, { recursive: true });
+	const tmpFile = join(tmpDir, GIST_FILENAME);
+
+	try {
+		await exportFromFile(sessionFile, tmpFile);
+
+		if (gistId) {
+			const result = await runGh(["gist", "edit", gistId, "--filename", GIST_FILENAME, tmpFile]);
+			if (result.code === 0) {
+				updateManifest(ctx, gistId, false);
+				lastExportTime = Date.now();
+			} else {
+				debugLog(`gist edit failed: ${result.stderr.trim()}`);
+			}
+		} else {
+			const result = await runGh(["gist", "create", "--public=false", tmpFile]);
+			const newGistId = result.code === 0 ? result.stdout.trim().split("/").pop() : null;
+			if (newGistId) {
+				gistId = newGistId;
+				updateManifest(ctx, gistId, true);
+				lastExportTime = Date.now();
+				debugLog(`Created gist ${gistId} for session ${ctx.sessionManager.getSessionId()}`);
+			} else {
+				debugLog(`gist create failed: ${result.stderr.trim()}`);
+			}
+		}
+	} catch (err) {
+		debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+		exporting = false;
+	}
+}
+
+export default function (pi: ExtensionAPI) {
+	pi.registerFlag("auto-share", {
+		description: "Enable auto-sharing to GitHub gists",
+		type: "boolean",
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		gistId = null;
+
+		const flag = pi.getFlag("auto-share");
+		if (typeof flag === "boolean") {
+			flagOverride = flag;
+		}
+
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		if (!sessionFile) return;
+		const manifestPath = join(dirname(sessionFile), MANIFEST_FILENAME);
+		let manifest: Manifest = {};
+		try {
+			if (existsSync(manifestPath)) {
+				manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+			}
+		} catch {
+			return;
+		}
+
+		enabled = flagOverride ?? manifest.enabled ?? false;
+
+		const entry = manifest.sessions?.[ctx.sessionManager.getSessionId()];
+		if (entry?.gistId) {
+			gistId = entry.gistId;
+		}
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		doExport(pi, ctx, false);
+	});
+
+	pi.on("session_compact", async (_event, ctx) => {
+		doExport(pi, ctx, false);
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		doExport(pi, ctx, false);
+	});
+
+	pi.on("session_before_switch", async (_event, ctx) => {
+		// Final export of the outgoing session before switching away
+		await doExport(pi, ctx, true);
+		gistId = null;
+		lastExportTime = 0;
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		await doExport(pi, ctx, true);
+	});
+
+	pi.registerCommand("auto-share", {
+		description: "Toggle auto-sharing or show status",
+		getArgumentCompletions: (prefix: string) => {
+			const items = [
+				{ value: "status", label: "status" },
+				{ value: "on", label: "on" },
+				{ value: "off", label: "off" },
+			];
+			const filtered = items.filter((i) => i.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
+		handler: async (args, ctx) => {
+			const arg = args.trim().toLowerCase();
+
+			if (arg === "status") {
+				const authCheck = await runGh(["auth", "status"]);
+				ghAvailable = authCheck.code === 0;
+				const ghStatus = ghAvailable ? "available" : "unavailable";
+				const lines = [
+					`Auto-share: ${enabled ? "enabled" : "disabled"}`,
+					`GitHub CLI: ${ghStatus}`,
+				];
+				if (gistId) {
+					lines.push(`Gist: ${getShareViewerUrl(gistId)}`);
+				} else {
+					lines.push("Gist: none (will create on next export)");
+				}
+				if (lastExportTime > 0) {
+					const ago = Math.round((Date.now() - lastExportTime) / 1000);
+					lines.push(`Last export: ${ago}s ago`);
+				}
+				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+
+			if (arg === "on" || arg === "off" || arg === "") {
+				const next = arg === "" ? !enabled : arg === "on";
+				if (next === enabled) {
+					ctx.ui.notify(`Auto-share is already ${enabled ? "enabled" : "disabled"}`, "info");
+					return;
+				}
+				enabled = next;
+				persistEnabled(ctx, enabled);
+				ctx.ui.notify(`Auto-share ${enabled ? "enabled" : "disabled"}`, "info");
+				if (enabled) {
+					doExport(pi, ctx, true);
+				}
+				return;
+			}
+		},
+	});
+}
