@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { getShareViewerUrl } from "@mariozechner/pi-coding-agent/dist/config.js";
 import { exportFromFile } from "@mariozechner/pi-coding-agent/dist/core/export-html/index.js";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -161,12 +161,8 @@ function updateGist(gistId: string, tmpFile: string): Promise<boolean> {
 
 function debugLog(message: string): void {
 	try {
-		const timestamp = new Date().toISOString();
-		const { appendFileSync } = require("node:fs");
-		appendFileSync("/tmp/pi-auto-share-debug.log", `[${timestamp}] ${message}\n`);
-	} catch {
-		// ignore
-	}
+		appendFileSync("/tmp/pi-auto-share-debug.log", `[${new Date().toISOString()}] ${message}\n`);
+	} catch {}
 }
 
 
