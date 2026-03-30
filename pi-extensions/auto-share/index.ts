@@ -74,21 +74,6 @@ function warnGhUnavailable(ctx: ExtensionContext): void {
 	}
 }
 
-function restoreGistId(ctx: ExtensionContext): void {
-	gistId = null;
-	const entries = ctx.sessionManager.getEntries();
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i];
-		if (entry.type === "custom" && entry.customType === CUSTOM_TYPE) {
-			const data = entry.data as ShareData | undefined;
-			if (data?.gistId) {
-				gistId = data.gistId;
-				return;
-			}
-		}
-	}
-}
-
 function getSessionDir(ctx: ExtensionContext): string | null {
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionFile) return null;
@@ -285,47 +270,20 @@ async function doExport(
 	}
 }
 
-function doExportSync(ctx: ExtensionContext, pi: ExtensionAPI): void {
-	if (!enabled) return;
-	if (!checkGh()) return;
-
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	if (!sessionFile || !existsSync(sessionFile)) return;
-
-	const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
-	mkdirSync(tmpDir, { recursive: true });
-	const tmpFile = join(tmpDir, GIST_FILENAME);
-
-	try {
-		// exportFromFile is async, so for shutdown we use the CLI directly
-		const result = spawnSync("pi", ["--export", sessionFile, tmpFile], {
-			encoding: "utf-8",
-			timeout: 30_000,
-		});
-		if (result.status !== 0) return;
-
-		if (gistId) {
-			updateGistSync(gistId, tmpFile);
-			updateManifest(ctx, gistId, false);
-		} else {
-			const newGistId = createGistSync(tmpFile);
-			if (newGistId) {
-				gistId = newGistId;
-				pi.appendEntry(CUSTOM_TYPE, { gistId } satisfies ShareData);
-				updateManifest(ctx, gistId, true);
-			}
-		}
-	} catch {
-		// Best effort on shutdown
-	} finally {
-		cleanupTmpFile(tmpFile);
-		cleanupTmpDir(tmpDir);
-	}
-}
-
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
-		restoreGistId(ctx);
+		gistId = null;
+		const entries = ctx.sessionManager.getEntries();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
+			if (entry.type === "custom" && entry.customType === CUSTOM_TYPE) {
+				const data = entry.data as ShareData | undefined;
+				if (data?.gistId) {
+					gistId = data.gistId;
+					break;
+				}
+			}
+		}
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
@@ -348,7 +306,41 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		doExportSync(ctx, pi);
+		if (!enabled) return;
+		if (!checkGh()) return;
+
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		if (!sessionFile || !existsSync(sessionFile)) return;
+
+		const tmpDir = join(tmpdir(), `pi-auto-share-${Date.now()}`);
+		mkdirSync(tmpDir, { recursive: true });
+		const tmpFile = join(tmpDir, GIST_FILENAME);
+
+		try {
+			// exportFromFile is async, so for shutdown we use the CLI directly
+			const result = spawnSync("pi", ["--export", sessionFile, tmpFile], {
+				encoding: "utf-8",
+				timeout: 30_000,
+			});
+			if (result.status !== 0) return;
+
+			if (gistId) {
+				updateGistSync(gistId, tmpFile);
+				updateManifest(ctx, gistId, false);
+			} else {
+				const newGistId = createGistSync(tmpFile);
+				if (newGistId) {
+					gistId = newGistId;
+					pi.appendEntry(CUSTOM_TYPE, { gistId } satisfies ShareData);
+					updateManifest(ctx, gistId, true);
+				}
+			}
+		} catch {
+			// Best effort on shutdown
+		} finally {
+			cleanupTmpFile(tmpFile);
+			cleanupTmpDir(tmpDir);
+		}
 	});
 
 	pi.registerCommand("auto-share", {
