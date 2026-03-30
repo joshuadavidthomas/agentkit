@@ -182,10 +182,6 @@ function debugLog(message: string): void {
 	}
 }
 
-function cleanupTmp(dir: string, file: string): void {
-	try { unlinkSync(file); } catch { /* ignore */ }
-	try { rmdirSync(dir); } catch { /* ignore */ }
-}
 
 async function doExport(
 	pi: ExtensionAPI,
@@ -232,7 +228,8 @@ async function doExport(
 	} catch (err) {
 		debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
 	} finally {
-		cleanupTmp(tmpDir, tmpFile);
+		try { unlinkSync(tmpFile); } catch {}
+		try { rmdirSync(tmpDir); } catch {}
 		exporting = false;
 	}
 }
