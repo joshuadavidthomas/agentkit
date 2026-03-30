@@ -182,12 +182,9 @@ function debugLog(message: string): void {
 	}
 }
 
-function cleanupTmpFile(path: string): void {
-	try { unlinkSync(path); } catch { /* ignore */ }
-}
-
-function cleanupTmpDir(path: string): void {
-	try { rmdirSync(path); } catch { /* ignore */ }
+function cleanupTmp(dir: string, file: string): void {
+	try { unlinkSync(file); } catch { /* ignore */ }
+	try { rmdirSync(dir); } catch { /* ignore */ }
 }
 
 async function doExport(
@@ -235,8 +232,7 @@ async function doExport(
 	} catch (err) {
 		debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
 	} finally {
-		cleanupTmpFile(tmpFile);
-		cleanupTmpDir(tmpDir);
+		cleanupTmp(tmpDir, tmpFile);
 		exporting = false;
 	}
 }
