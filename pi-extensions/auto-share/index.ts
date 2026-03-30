@@ -60,19 +60,6 @@ function checkGh(): boolean {
 	return ghAvailable;
 }
 
-function warnGhUnavailable(ctx: ExtensionContext): void {
-	if (ghWarningShown) return;
-	ghWarningShown = true;
-
-	if (ghAvailable === false) {
-		try {
-			spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 2000 });
-			ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
-		} catch {
-			ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
-		}
-	}
-}
 
 function getSessionDir(ctx: ExtensionContext): string | null {
 	const sessionFile = ctx.sessionManager.getSessionFile();
@@ -193,7 +180,15 @@ async function doExport(
 	if (!skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
 
 	if (!checkGh()) {
-		warnGhUnavailable(ctx);
+		if (!ghWarningShown) {
+			ghWarningShown = true;
+			try {
+				spawnSync("gh", ["--version"], { encoding: "utf-8", timeout: 2000 });
+				ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
+			} catch {
+				ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
+			}
+		}
 		return;
 	}
 
