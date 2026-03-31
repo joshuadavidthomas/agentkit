@@ -90,15 +90,15 @@ Each phase is a prompt template under `~/.pi/agent/prompts/`. Listed in workflow
 - [ ] Resolve open questions here, not downstream — never write "TBD"
 - [ ] Output: `docs/design/YYYY-MM-DD-<description>.md`
 
-### `/ak:structure`
+### `/ak:outline`
 - [ ] Reads design document from `/ak:design`
 - [ ] High-level overview of phases and testing checkpoints
 - [ ] Like a C header file — signatures and types, not implementation
-- [ ] Interactive: confirm structure with user before detailed planning
-- [ ] Output: `docs/structure/YYYY-MM-DD-<description>.md`
+- [ ] Interactive: confirm outline with user before detailed planning
+- [ ] Output: `docs/outline/YYYY-MM-DD-<description>.md`
 
 ### `/ak:plan`
-- [ ] Reads structure from `/ak:structure` — design and structural decisions are already made
+- [ ] Reads outline from `/ak:outline` — design and structural decisions are already made
 - [ ] If no design exists, suggest `/ak:design` but don't block
 - [ ] Vertical slices: each task is end-to-end through all layers, producing a testable increment
 - [ ] "What We're NOT Doing" section — explicit anti-scope
@@ -159,7 +159,7 @@ Each phase is a prompt template under `~/.pi/agent/prompts/`. Listed in workflow
 ## Phase 4: Orchestration
 
 ### Prompt templates
-- [ ] `/lfg` — full sequence: brainstorm → research → design → structure → plan → work → review → finish
+- [ ] `/lfg` — full sequence: brainstorm → research → design → outline → plan → work → review → finish
 - [ ] `/slfg` — same with parallelism where possible
 - [ ] `/setup` — project setup workflow
 
