@@ -36,7 +36,7 @@ The original plan committed to ralph's `session.newSession()` for fresh context 
 
 **Ralph's role changes:** Ralph stays as the loop engine (iteration tracking, stats, steering, exit detection). But instead of always creating fresh sessions, it uses `ctx.navigateTree()` for review loops — tree back to the loop start with a summary, so the next iteration has context.
 
-## Workflow: brainstorm → research → design → plan → work → review → finish → compound
+## Workflow: brainstorm → research → design → structure → plan → work → review → finish → compound
 
 Two key structural differences from compound engineering:
 
@@ -45,9 +45,11 @@ Two key structural differences from compound engineering:
 - Plan reads those artifacts with fresh context
 - Research can be re-run without re-planning
 
-**Design as the human checkpoint.** From Horthy's revised RPI methodology: planning should split into a design discussion (where are we going?) and task-level breakdown (how do we get there?). The design discussion — a short artifact covering current state, desired end state, and patterns to follow — is where the human reviews and corrects the agent's understanding before any code or detailed plan exists. Everything downstream gets cheaper because the mental model is right.
+**Design as the human checkpoint.** From Horthy's revised RPI methodology: planning should split into a design discussion (where are we going?), a structural outline (how do we get there?), and task-level detail. The design discussion — a short artifact covering current state, desired end state, and patterns to follow — is where the human reviews and corrects the agent's understanding before any code or detailed plan exists. Everything downstream gets cheaper because the mental model is right.
 
-The plan then becomes lightweight scaffolding: vertical slices in order, not a reviewed artifact. No plan review loop, no plan enrichment — the review investment happens at the design stage.
+**Structure as the bridge between design and plan.** If design is "where are we going," structure is "how do we get there." It's sprint planning — a high-level overview of phases, testing checkpoints, and the shape of the work. Like a C header file: signatures and types, not implementation. The human confirms the structure before detailed planning begins.
+
+The plan then becomes lightweight scaffolding: vertical slices filling in the structure, not a reviewed artifact. No plan enrichment — the review investment happens at the design and structure stages.
 
 ## Research Agent Taxonomy
 
