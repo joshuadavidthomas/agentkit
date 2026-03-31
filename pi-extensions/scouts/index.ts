@@ -163,8 +163,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
-      return renderScoutCall("finder", args as Record<string, unknown>, theme);
+    renderCall(args: any, theme: any, context: any) {
+      return renderScoutCall("finder", args as Record<string, unknown>, theme, undefined, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -186,11 +186,11 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(LIBRARIAN_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any) {
       const a = args as Record<string, unknown>;
       const repos = Array.isArray(a?.repos) ? a.repos.length : 0;
       const owners = Array.isArray(a?.owners) ? a.owners.length : 0;
-      return renderScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`);
+      return renderScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -222,8 +222,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(oracleConfig, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
-      return renderScoutCall("oracle", args as Record<string, unknown>, theme);
+    renderCall(args: any, theme: any, context: any) {
+      return renderScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -305,12 +305,13 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       );
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any) {
       const p = args as { skill?: string; task?: string };
       const skill = p?.skill ?? "unknown";
       const task = (p?.task ?? "").trim();
-      const preview = task.length > 60 ? task.slice(0, 57) + "..." : task;
-      return renderScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`);
+      const expanded = context?.expanded ?? false;
+      const preview = expanded ? task : (task.length > 60 ? task.slice(0, 57) + "..." : task);
+      return renderScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -450,14 +451,14 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeParallelScouts(resolvedConfigs, resolvedTasks, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any) {
       const p = args as { tasks?: Array<{ scout: string; query: string; skill?: string }> };
       const count = Array.isArray(p?.tasks) ? p.tasks.length : 0;
       const scouts = Array.isArray(p?.tasks)
         ? [...new Set(p.tasks.map((t) => t.scout === "specialist" ? `specialist:${t.skill ?? "?"}` : t.scout))].join(", ")
         : "";
       const info = `${count} task${count === 1 ? "" : "s"}${scouts ? ` (${scouts})` : ""}`;
-      return renderScoutCall("scouts", args as Record<string, unknown>, theme, info);
+      return renderScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
