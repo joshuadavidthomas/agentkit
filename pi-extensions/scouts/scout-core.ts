@@ -33,7 +33,7 @@ export type ScoutStatus = "running" | "done" | "error" | "aborted";
 
 // Interleaved display items — tool calls and text, in chronological order
 export type DisplayItem =
-  | { type: "tool"; name: string; args: Record<string, unknown>; isError?: boolean }
+  | { type: "tool"; name: string; args: Record<string, unknown>; isError?: boolean; toolCallId?: string; result?: string }
   | { type: "text"; text: string };
 
 export interface ScoutRunDetails {
@@ -167,20 +167,50 @@ export function getLastAssistantText(messages: any[]): string {
 // Extract interleaved display items from session messages
 function extractDisplayItems(messages: any[]): DisplayItem[] {
   const items: DisplayItem[] = [];
+  const toolItemById = new Map<string, DisplayItem & { type: "tool" }>();
+
   for (const msg of messages) {
-    if (msg?.role !== "assistant") continue;
-    const parts = msg.content;
-    if (!Array.isArray(parts)) continue;
-    for (const part of parts) {
-      if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
-        items.push({ type: "text", text: part.text });
-      } else if (part?.type === "toolCall" || part?.type === "tool_use") {
-        const args = part.arguments ?? part.input ?? {};
-        items.push({ type: "tool", name: part.name ?? "unknown", args });
+    if (msg?.role === "assistant") {
+      const parts = msg.content;
+      if (!Array.isArray(parts)) continue;
+      for (const part of parts) {
+        if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
+          items.push({ type: "text", text: part.text });
+        } else if (part?.type === "toolCall" || part?.type === "tool_use") {
+          const args = part.arguments ?? part.input ?? {};
+          const id = part.id ?? part.toolCallId;
+          const item: DisplayItem & { type: "tool" } = { type: "tool", name: part.name ?? "unknown", args, toolCallId: id };
+          items.push(item);
+          if (id) toolItemById.set(id, item);
+        }
+      }
+    } else if (msg?.role === "toolResult" && msg.toolCallId) {
+      const toolItem = toolItemById.get(msg.toolCallId);
+      if (toolItem) {
+        const text = extractToolResultText(msg);
+        if (text) toolItem.result = text;
+        if (msg.isError) toolItem.isError = true;
       }
     }
   }
   return items;
+}
+
+function cleanToolResult(raw: string): string {
+  const cleaned = raw.replace(/\n*\[turn budget\][^\n]*/g, "").trimEnd();
+  const lines = cleaned.split("\n");
+  return lines.length > 30 ? lines.slice(0, 30).join("\n") + `\n... (${lines.length - 30} more lines)` : cleaned;
+}
+
+function extractToolResultText(tr: any): string | undefined {
+  if (typeof tr.content === "string") return tr.content;
+  if (Array.isArray(tr.content)) {
+    const texts = tr.content
+      .filter((c: any) => c?.type === "text" && typeof c.text === "string")
+      .map((c: any) => c.text);
+    return texts.length > 0 ? texts.join("\n") : undefined;
+  }
+  return undefined;
 }
 
 export function computeOverallStatus(runs: ScoutRunDetails[]): ScoutStatus {
@@ -404,6 +434,7 @@ export async function executeScout(
               type: "tool",
               name: event.toolName,
               args: event.args ?? {},
+              toolCallId: event.toolCallId,
             });
             if (run.displayItems.length > MAX_DISPLAY_ITEMS) {
               run.displayItems.splice(0, run.displayItems.length - MAX_DISPLAY_ITEMS);
@@ -412,14 +443,14 @@ export async function executeScout(
             break;
           }
           case "tool_execution_end": {
-            if (event.isError) {
-              // Mark the matching tool item as errored
-              for (let i = run.displayItems.length - 1; i >= 0; i--) {
-                const item = run.displayItems[i];
-                if (item.type === "tool" && item.name === event.toolName) {
-                  item.isError = true;
-                  break;
-                }
+            // Find the matching tool item and attach result
+            for (let i = run.displayItems.length - 1; i >= 0; i--) {
+              const item = run.displayItems[i];
+              if (item.type === "tool" && item.toolCallId === event.toolCallId) {
+                if (event.isError) item.isError = true;
+                const text = extractToolResultText(event.result);
+                if (text) item.result = text;
+                break;
               }
             }
             emitAll(true);
@@ -482,13 +513,15 @@ export function renderScoutCall(
   args: Record<string, unknown> | undefined,
   theme: any,
   extraInfo?: string,
+  context?: { expanded?: boolean },
 ): any {
   const query = typeof args?.query === "string" ? (args.query as string).trim() : "";
-  const preview = shorten(query.replace(/\s+/g, " ").trim(), 70);
+  const expanded = context?.expanded ?? false;
+  const display = expanded ? query.replace(/\s+/g, " ").trim() : shorten(query.replace(/\s+/g, " ").trim(), 70);
 
   const title = theme.fg("toolTitle", theme.bold(scoutName));
-  const info = extraInfo ? `\n${theme.fg("muted", extraInfo)} · ${theme.fg("muted", preview)}` : "";
-  const text = title + (preview && !extraInfo ? `\n${theme.fg("muted", preview)}` : info);
+  const info = extraInfo ? `\n${theme.fg("muted", extraInfo)} · ${theme.fg("muted", display)}` : "";
+  const text = title + (display && !extraInfo ? `\n${theme.fg("muted", display)}` : info);
   return new Text(text, 0, 0);
 }
 
@@ -545,6 +578,14 @@ export function renderScoutResult(
       c.addChild(
         new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
+      if (expanded && item.result) {
+        const cleaned = cleanToolResult(item.result);
+        if (cleaned) {
+          c.addChild(new Spacer(1));
+          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
+          c.addChild(new Spacer(1));
+        }
+      }
     }
 
     return c;
@@ -574,6 +615,14 @@ export function renderScoutResult(
       c.addChild(
         new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
+      if (expanded && item.result) {
+        const cleaned = cleanToolResult(item.result);
+        if (cleaned) {
+          c.addChild(new Spacer(1));
+          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
+          c.addChild(new Spacer(1));
+        }
+      }
     } else if (item.type === "text" && item.text.trim()) {
       // Is this the last text item?
       const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
