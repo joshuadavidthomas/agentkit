@@ -81,29 +81,29 @@ Each phase is a prompt template under `~/.pi/agent/prompts/`. Listed in workflow
 - [ ] YAML frontmatter on artifacts (git commit, branch, date, researcher)
 - [ ] `mcp__context7__*` calls → librarian scout
 
-### `/ak:plan`
+### `/ak:design`
 - [ ] Reads research artifacts from `docs/research/`
-- [ ] If no artifacts exist, suggest `/ak:research` but don't block
-- [ ] Detail level selection (MINIMAL/MORE/A LOT)
+- [ ] Produces a design document: current state, desired end state, patterns to follow
+- [ ] Interactive: presents understanding, asks clarifying questions, iterates with user
+- [ ] Human checkpoint — correct the agent's mental model before planning begins
+- [ ] No implementation details, no task breakdown — that's `/ak:plan`
+- [ ] Resolve open questions here, not downstream — never write "TBD"
+- [ ] Output: `docs/design/YYYY-MM-DD-<description>.md`
+
+### `/ak:plan`
+- [ ] Reads design document from `/ak:design` — design decisions are already made
+- [ ] If no design exists, suggest `/ak:design` but don't block
+- [ ] Vertical slices: each task is end-to-end through all layers, producing a testable increment
 - [ ] "What We're NOT Doing" section — explicit anti-scope
-- [ ] "No Open Questions" rule — resolve before continuing, never write "TBD"
 - [ ] Bifurcated success criteria: automated verification (commands) vs manual verification (human checks)
 - [ ] Plan tracks progress with checkmarks — mutable state, not read-only spec
-- [ ] Interactive: outline first, confirm with user, then detail
+- [ ] Short and structural — closer to a sprint backlog than a specification
 
 ### Plan review (ralph loop, tree mode)
 - [ ] After plan is written, ralph runs review iterations using tree navigation
 - [ ] Each pass reviews the plan document only — no code writing
-- [ ] Assessment heuristics: "What decision is being avoided? What assumptions are unstated?"
+- [ ] Assessment heuristics: "What decision is being avoided? What assumptions are unstated? Are tasks vertical slices?"
 - [ ] Exits when clean or after 2 refinement passes (diminishing returns)
-
-### `/deepen-plan`
-- [ ] Parse plan into sections
-- [ ] Discover all available skills, match relevant ones to plan sections
-- [ ] Spawn parallel subagents (one per matched skill)
-- [ ] Search `docs/solutions/` for relevant past learnings
-- [ ] Synthesize results back into the plan
-- [ ] Manual trigger — enrichment, not review
 
 ### `/ak:work`
 - [ ] For each plan task, ralph runs a role sequence (fresh context per role):
@@ -152,7 +152,7 @@ Each phase is a prompt template under `~/.pi/agent/prompts/`. Listed in workflow
 ## Phase 4: Orchestration
 
 ### Prompt templates
-- [ ] `/lfg` — full sequence: brainstorm → research → plan → deepen → work → review → finish
+- [ ] `/lfg` — full sequence: brainstorm → research → design → plan → work → review → finish
 - [ ] `/slfg` — same with parallelism where possible
 - [ ] `/setup` — project setup workflow
 
