@@ -490,9 +490,16 @@ export default function (pi: ExtensionAPI) {
           }
 
           if (displayContextUsage) {
+            // Dumb zone thresholds based on absolute token counts, not percentages.
+            // Horthy's 40% rule was observed on 128K-200K windows — the real
+            // degradation is ~40K-80K tokens regardless of window size.
+            const cw = displayContextUsage.contextWindow;
+            const warningAt = Math.max(40_000, Math.min(cw * 0.40, 80_000));
+            const errorAt = Math.max(65_000, Math.min(cw * 0.65, 130_000));
+
             let contextColor: "success" | "warning" | "error" = "success";
-            if (displayContextUsage.percent >= 65) contextColor = "error";
-            else if (displayContextUsage.percent >= 40) contextColor = "warning";
+            if (displayContextUsage.tokens >= errorAt) contextColor = "error";
+            else if (displayContextUsage.tokens >= warningAt) contextColor = "warning";
 
             const contextStr = `${NERD_FONT_MAP["BRAIN"]} ${displayContextUsage.percent.toFixed(0)}%`;
             const contextDetail = `(${formatTokens(displayContextUsage.tokens)}/${formatTokens(displayContextUsage.contextWindow)})`;
