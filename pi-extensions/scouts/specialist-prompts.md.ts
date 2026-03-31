@@ -18,10 +18,14 @@ Constraints:
 - You have a limited turn budget. Be efficient with tool calls.
 - Focus on the task. Do not go on tangents.`;
 
-export function buildSpecialistSystemPrompt(skillContent: string, maxTurns: number): string {
+export function buildSpecialistSystemPrompt(skillContent: string, maxTurns: number, skillBaseDir?: string): string {
+  const baseDirHint = skillBaseDir
+    ? `\n\nSkill base directory: ${skillBaseDir}\nWhen the skill references \`{baseDir}\`, resolve it to this path. When it references relative paths, resolve them against this directory.`
+    : "";
+
   return `${PREAMBLE}
 
-Turn budget: ${maxTurns} turns total. Budget ~${Math.ceil(maxTurns * 0.7)} turns for investigation and action, reserve the rest for synthesis. On your final turn, tool use is disabled — provide your answer.
+Turn budget: ${maxTurns} turns total. Budget ~${Math.ceil(maxTurns * 0.7)} turns for investigation and action, reserve the rest for synthesis. On your final turn, tool use is disabled — provide your answer.${baseDirHint}
 
 ## Domain Expertise
 
