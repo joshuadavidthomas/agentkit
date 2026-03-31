@@ -9,17 +9,32 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getShareViewerUrl } from "@mariozechner/pi-coding-agent/dist/config.js";
-import { exportFromFile } from "@mariozechner/pi-coding-agent/dist/core/export-html/index.js";
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 const COOLDOWN_MS = 10_000;
 const MANIFEST_FILENAME = "shares.json";
 const GIST_FILENAME = "session.html";
 const DEBUG_LOG = join(tmpdir(), "pi-auto-share-debug.log");
+const SHARE_VIEWER_URL = process.env.PI_SHARE_VIEWER_URL || "https://pi.dev/session/";
+
+function getShareViewerUrl(gistId: string): string {
+	return `${SHARE_VIEWER_URL}#${gistId}`;
+}
+
+type ExportSessionToHtmlFn = (sm: any, state: any, options: any) => Promise<string>;
+let _exportSessionToHtml: ExportSessionToHtmlFn | null = null;
+async function loadExportFn(): Promise<ExportSessionToHtmlFn> {
+	if (!_exportSessionToHtml) {
+		const dist = dirname(fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent")));
+		const mod = await import(join(dist, "core", "export-html", "index.js"));
+		_exportSessionToHtml = mod.exportSessionToHtml;
+	}
+	return _exportSessionToHtml!;
+}
 
 interface ManifestEntry {
 	gistId: string;
@@ -37,6 +52,8 @@ interface Manifest {
 
 // In-memory state
 let gistId: string | null = null;
+let ghUsername: string | null = null;
+
 let lastExportTime = 0;
 let ghAvailable: boolean | null = null;
 let ghWarningShown = false;
@@ -150,7 +167,16 @@ async function doExport(
 	const tmpFile = join(tmpDir, GIST_FILENAME);
 
 	try {
-		await exportFromFile(sessionFile, tmpFile);
+		const exportSessionToHtml = await loadExportFn();
+		const activeToolNames = new Set(pi.getActiveTools());
+		const tools = pi.getAllTools()
+			.filter((t) => activeToolNames.has(t.name))
+			.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+		const state = { systemPrompt: ctx.getSystemPrompt(), tools };
+		await exportSessionToHtml(ctx.sessionManager, state, {
+			outputPath: tmpFile,
+			themeName: ctx.ui.theme.name,
+		});
 
 		if (gistId) {
 			const result = await runGh(["gist", "edit", gistId, "--filename", GIST_FILENAME, tmpFile]);
@@ -162,7 +188,7 @@ async function doExport(
 			}
 		} else {
 			const result = await runGh(["gist", "create", "--public=false", tmpFile]);
-			const newGistId = result.code === 0 ? result.stdout.trim().split("/").pop() : null;
+			const newGistId = result.code === 0 ? basename(result.stdout.trim()) : null;
 			if (newGistId) {
 				gistId = newGistId;
 				updateManifest(ctx, gistId, true);
@@ -252,21 +278,23 @@ export default function (pi: ExtensionAPI) {
 			const arg = args.trim().toLowerCase();
 
 			if (arg === "status") {
-				const authCheck = await runGh(["auth", "status"]);
-				ghAvailable = authCheck.code === 0;
-				const ghStatus = ghAvailable ? "available" : "unavailable";
-				const lines = [
-					`Auto-share: ${enabled ? "enabled" : "disabled"}`,
-					`GitHub CLI: ${ghStatus}`,
-				];
-				if (gistId) {
-					lines.push(`Gist: ${getShareViewerUrl(gistId)}`);
-				} else {
-					lines.push("Gist: none (will create on next export)");
-				}
-				if (lastExportTime > 0) {
-					const ago = Math.round((Date.now() - lastExportTime) / 1000);
-					lines.push(`Last export: ${ago}s ago`);
+				const lines = [`Auto-share: ${enabled ? "enabled" : "disabled"}`];
+				if (enabled) {
+					const authCheck = await runGh(["auth", "status"]);
+					ghAvailable = authCheck.code === 0;
+					lines.push(`GitHub CLI: ${ghAvailable ? "available" : "unavailable"}`);
+					if (gistId) {
+						if (!ghUsername) {
+							const info = await runGh(["api", "user", "--jq", ".login"]);
+							if (info.code === 0) ghUsername = info.stdout.trim();
+						}
+						lines.push(`Share URL: ${getShareViewerUrl(gistId)}`);
+						lines.push(`Gist: https://gist.github.com/${ghUsername}/${gistId}`);
+					}
+					if (lastExportTime > 0) {
+						const ago = Math.round((Date.now() - lastExportTime) / 1000);
+						lines.push(`Last export: ${ago}s ago`);
+					}
 				}
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
