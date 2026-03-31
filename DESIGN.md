@@ -11,6 +11,7 @@ This workflow draws from several sources:
 - **[Superpowers](https://github.com/obra/superpowers)** — design gates, branch completion workflow, anti-sycophancy, feedback triage, systematic debugging
 - **[Branch-driven development](https://github.com/noahsaso/my-pi/tree/main/skills/superpowers/branch-driven-development)** (noahsaso/Superpowers fork) — role isolation per context branch (implementer → spec reviewer → quality reviewer)
 - **[pi-review-loop](https://github.com/nicobailon/pi-review-loop)** — iterative review until clean, plan review vs code review distinction
+- **[Everything We Got Wrong About RPI](reference/everything-we-got-wrong-about-rpi-dex-horthy.md)** (Dexter Horthy, 2026) — instruction budget limits (~150-200 per session), design discussion as the human checkpoint before planning, vertical slicing over horizontal, plans as disposable scaffolding not reviewed artifacts
 
 ## Key Decision: Context Tree Over Fresh Context
 
@@ -35,12 +36,18 @@ The original plan committed to ralph's `session.newSession()` for fresh context 
 
 **Ralph's role changes:** Ralph stays as the loop engine (iteration tracking, stats, steering, exit detection). But instead of always creating fresh sessions, it uses `ctx.navigateTree()` for review loops — tree back to the loop start with a summary, so the next iteration has context.
 
-## Workflow: brainstorm → research → plan → work → review → finish → compound
+## Workflow: brainstorm → research → design → plan → work → review → finish → compound
 
-The key difference from compound engineering is **research as its own phase**. In compound's `ak:plan`, research and planning are tangled — 4 parallel research agents fire, results land in context, then planning happens in the same loaded session. By splitting:
+Two key structural differences from compound engineering:
+
+**Research as its own phase.** In compound's `ak:plan`, research and planning are tangled — 4 parallel research agents fire, results land in context, then planning happens in the same loaded session. By splitting:
 - Research artifacts save to disk (like HumanLayer's `thoughts/`)
 - Plan reads those artifacts with fresh context
 - Research can be re-run without re-planning
+
+**Design as the human checkpoint.** From Horthy's revised RPI methodology: planning should split into a design discussion (where are we going?) and task-level breakdown (how do we get there?). The design discussion — a short artifact covering current state, desired end state, and patterns to follow — is where the human reviews and corrects the agent's understanding before any code or detailed plan exists. Everything downstream gets cheaper because the mental model is right.
+
+The plan then becomes lightweight scaffolding: vertical slices in order, not a reviewed artifact. No plan review loop, no plan enrichment — the review investment happens at the design stage.
 
 ## Research Agent Taxonomy
 
@@ -62,6 +69,10 @@ Tool restrictions enforce roles — a locator skill with `tools: ["bash"]` liter
 ## Cross-Cutting Patterns
 
 These apply across all phases:
+
+**Instruction budget.** Frontier LLMs follow ~150-200 instructions with good consistency. Each prompt template targets <40 instructions. Cross-cutting patterns live in skills loaded on demand, not inlined into every prompt.
+
+**Vertical slicing.** Models default to horizontal plans (all DB → all services → API → frontend), producing large batches of untestable code. Each plan task must be a vertical slice — end-to-end through all layers, producing a testable increment.
 
 **Gate functions.** `BEFORE claiming X: IDENTIFY what command proves the claim → RUN it → READ output → VERIFY → THEN claim`. Prevents premature completion.
 
