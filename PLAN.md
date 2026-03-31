@@ -62,7 +62,7 @@ Convert compound engineering agents and skills into pi-native prompt templates a
 - [ ] Replace `Task(...)` calls → specialist tool, `mcp__context7__*` → librarian scout
 
 ### Skill resolver cleanup
-- [ ] Replace custom `skill-resolver.ts` with pi's native skill resolver — pi's `skills.ts` already discovers `SKILL.md` files recursively, respects `.gitignore`, handles symlinks, deduplicates
+- [x] Replace custom `skill-resolver.ts` with pi's native skill resolver — pi's `skills.ts` already discovers `SKILL.md` files recursively, respects `.gitignore`, handles symlinks, deduplicates
 
 ## Phase 3: Workflow Prompts
 

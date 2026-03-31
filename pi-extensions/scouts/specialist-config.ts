@@ -3,11 +3,11 @@
 // Used by both the specialist tool registration and the parallel scouts dispatcher
 // to avoid duplicating the skill resolution + error handling + config building logic.
 
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
+import { readFileSync } from "node:fs";
+import { createBashTool, createEditTool, createReadTool, createWriteTool, loadSkills, type Skill } from "@mariozechner/pi-coding-agent";
 
 import type { ScoutConfig } from "./scout-core.ts";
 import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
-import { resolveSkill, listAvailableSkills } from "./skill-resolver.ts";
 
 export type SpecialistTool = "read" | "bash" | "write" | "edit";
 
@@ -21,6 +21,11 @@ export interface SpecialistConfigOptions {
   tools?: SpecialistTool[];
 }
 
+function discoverSkills(cwd: string): Skill[] {
+  const { skills } = loadSkills({ cwd });
+  return skills;
+}
+
 export function buildSpecialistConfig(
   skillName: string,
   cwd: string,
@@ -32,22 +37,21 @@ export function buildSpecialistConfig(
     return { error: "Specialist requires a skill name." };
   }
 
-  const result = resolveSkill(trimmed, cwd);
+  const allSkills = discoverSkills(cwd);
+  const match = allSkills.find((s) => s.name === trimmed);
 
-  if (result.status === "invalid-name") {
-    return { error: `Invalid skill name: ${result.reason}` };
-  }
-
-  if (result.status === "read-error") {
-    return { error: `Failed to read ${result.path}: ${result.error.message}` };
-  }
-
-  if (result.status === "not-found") {
-    const { skills } = listAvailableSkills(cwd);
-    const suggestion = skills.length > 0
-      ? ` Available: ${skills.join(", ")}`
-      : "";
+  if (!match) {
+    const names = allSkills.map((s) => s.name);
+    const suggestion = names.length > 0 ? ` Available: ${names.join(", ")}` : "";
     return { error: `Skill not found: ${trimmed}.${suggestion}` };
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(match.filePath, "utf-8");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: `Failed to read ${match.filePath}: ${message}` };
   }
 
   const configName = options?.configName ?? `specialist:${trimmed}`;
@@ -64,7 +68,7 @@ export function buildSpecialistConfig(
     name: configName,
     maxTurns: 16,
     defaultModel: "claude-sonnet-4-5",
-    buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(result.skill.content, maxTurns),
+    buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,
     getTools: () => tools.map((t) => toolBuilders[t]()),
   };
