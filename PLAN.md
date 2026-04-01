@@ -46,20 +46,20 @@ Ralph is the loop engine for review and work phases.
 - [x] Post-loop summary — rendered markdown table with stop reason, iterations, duration, cost, tokens
 - [x] Role sequences — `--roles file1.md,file2.md` cycles task files across iterations
 
-## Phase 2: Conversion Script
+## Phase 2: Conversion Script ✅
 
 Convert compound engineering agents and skills into pi-native prompt templates and skills.
 
 ### Setup
-- [ ] Write `scripts/convert-compound-engineering.sh` — takes compound engineering source, installs into `~/.pi/agent/`
-- [ ] Source repo cloned/updated to `$XDG_CACHE_HOME/agentkit/compound-engineering-plugin`
-- [ ] Re-runnable (overwrites on re-run), `--clean` flag to remove everything
-- [ ] Integrate into `install.sh`
+- [x] Write `scripts/convert-compound-engineering.sh` — takes compound engineering source, installs into `~/.pi/agent/`
+- [x] Source repo cloned/updated to `$XDG_CACHE_HOME/agentkit/compound-engineering-plugin`
+- [x] Re-runnable (overwrites on re-run), `--clean` flag to remove everything
+- [x] Integrate into `install.sh`
 
 ### Agent conversion
-- [ ] Convert 14 kept agents to skills under `~/.agents/skills/compound-engineering/`
-- [ ] Map `model` frontmatter (e.g., `haiku` → `claude-haiku-4-5`, `inherit` → omit)
-- [ ] Replace `Task(...)` calls → specialist tool, `mcp__context7__*` → librarian scout
+- [x] Convert 15 kept agents to skills under `~/.agents/skills/compound-engineering/`
+- [x] Map `model` frontmatter (`inherit` → omit, no haiku agents in kept set)
+- [x] Replace `mcp__context7__*` → librarian scout (agents didn't contain `Task(...)` calls)
 
 ### Skill resolver cleanup
 - [x] Replace custom `skill-resolver.ts` with pi's native skill resolver — pi's `skills.ts` already discovers `SKILL.md` files recursively, respects `.gitignore`, handles symlinks, deduplicates

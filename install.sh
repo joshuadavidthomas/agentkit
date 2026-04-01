@@ -4,6 +4,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Convert compound engineering agents to pi skills (generates skills/compound-engineering/)
+if [[ -x "$REPO_DIR/scripts/convert-compound-engineering.sh" ]]; then
+    bash "$REPO_DIR/scripts/convert-compound-engineering.sh"
+fi
+
 # Unified skills directory
 SKILLS_DIR="$HOME/.agents/skills"
 
