@@ -66,95 +66,99 @@ Convert compound engineering agents and skills into pi-native prompt templates a
 
 ## Phase 3: Workflow Prompts
 
-Each phase is a prompt template under `~/.pi/agent/prompts/`. Listed in workflow order.
+Each phase is a prompt template under `~/.pi/agent/prompts/`. Design rationale in [docs/design/2026-04-01-phase-3-workflow-prompts.md](docs/design/2026-04-01-phase-3-workflow-prompts.md).
 
-### `/ak:brainstorm`
-- [ ] Interactive Q&A using `ask_user_question`
-- [ ] Lightweight repo research via specialist (not the full research phase)
-- [ ] Permission to revisit earlier phases when new information surfaces
-- [ ] Points to `/ak:research` as the next step
+The sequence follows Horthy's CRISPY split: questions → research → design → structure → plan → work → implement → PR. Each prompt targets <40 instructions. Cross-cutting patterns live in skills, not inlined.
 
-### `/ak:research`
-- [ ] Dispatch research agents in parallel via scouts (specialist tasks)
-- [ ] Each agent writes findings to `docs/research/YYYY-MM-DD-<topic>/`
+### `/ak:brainstorm` (Questions)
+- [ ] Interactive Q&A via `ask_user_question` — one question at a time, structured choices
+- [ ] Check `docs/brainstorms/` for existing docs, offer resume
+- [ ] Lightweight repo scan via `finder` (documentarian: describe what exists)
+- [ ] Product pressure test — challenge whether this is the right problem
+- [ ] Output: `docs/brainstorms/YYYY-MM-DD-<topic>.md` — questions + problem framing
+- [ ] Points to `/ak:research`
+
+### `/ak:research` (Facts)
+- [ ] Takes research questions from brainstorm, NOT goals
 - [ ] Confirm research scope with user before dispatching
-- [ ] YAML frontmatter on artifacts (git commit, branch, date, researcher)
-- [ ] `mcp__context7__*` calls → librarian scout
+- [ ] Dispatch agents in parallel via `scouts`:
+  - `finder` (locator), `oracle` (analyzer), `librarian` (web researcher)
+  - CE specialist skills when domain-specific research needed
+- [ ] Documentarian framing: describe what exists, no opinions, no suggestions
+- [ ] Each agent writes to `docs/research/YYYY-MM-DD-<topic>/`
+- [ ] YAML frontmatter on artifacts (date, researcher role, branch, git commit)
 
-### `/ak:design`
+### `/ak:design` (Where are we going?)
 - [ ] Reads research artifacts from `docs/research/`
-- [ ] Produces a design document: current state, desired end state, patterns to follow
-- [ ] Interactive: presents understanding, asks clarifying questions, iterates with user
-- [ ] Human checkpoint — correct the agent's mental model before planning begins
-- [ ] No implementation details, no task breakdown — that's `/ak:plan`
-- [ ] Resolve open questions here, not downstream — never write "TBD"
+- [ ] ~200 lines of condensed human↔agent alignment
+- [ ] Interactive: present understanding, ask questions, iterate until mental alignment
+- [ ] The entire phase IS the conversation — model can't skip it
+- [ ] Absorbs CE's requirements concept: current state, desired end state, patterns to follow, requirements, non-goals, resolved design questions
+- [ ] Product questions resolve here — never write "TBD" for product decisions
+- [ ] Technical questions can defer to plan
+- [ ] No implementation details, no task breakdown
 - [ ] Output: `docs/design/YYYY-MM-DD-<description>.md`
 
-### `/ak:outline`
-- [ ] Reads design document from `/ak:design`
-- [ ] High-level overview of phases and testing checkpoints
+### `/ak:outline` (How do we get there?)
+- [ ] Reads design document from `docs/design/`
+- [ ] Phases AND the shape of the solution at each phase
+- [ ] Testing checkpoints at each phase
 - [ ] Like a C header file — signatures and types, not implementation
-- [ ] Interactive: confirm outline with user before detailed planning
+- [ ] Lighter interaction: propose, user approves or adjusts, done
 - [ ] Output: `docs/outline/YYYY-MM-DD-<description>.md`
 
-### `/ak:plan`
-- [ ] Reads outline from `/ak:outline` — design and structural decisions are already made
-- [ ] If no design exists, suggest `/ak:design` but don't block
-- [ ] Vertical slices: each task is end-to-end through all layers, producing a testable increment
-- [ ] "What We're NOT Doing" section — explicit anti-scope
-- [ ] Bifurcated success criteria: automated verification (commands) vs manual verification (human checks)
-- [ ] Plan tracks progress with checkmarks — mutable state, not read-only spec
-- [ ] Short and structural — closer to a sprint backlog than a specification
+### `/ak:plan` (Task checklist)
+- [ ] Reads outline from `docs/outline/`
+- [ ] If no outline/design exists, suggest `/ak:design` but don't block
+- [ ] Vertical slices: each task end-to-end, testable
+- [ ] "What We're NOT Doing" section (anti-scope)
+- [ ] Success criteria: automated (commands) + manual (human checks)
+- [ ] Checkable tasks (`- [ ]`), mutable state
+- [ ] Short and structural — sprint backlog, not specification
+- [ ] Outline already has the structure; plan is the task checklist
 
-### Plan review (ralph loop, tree mode)
-- [ ] After plan is written, ralph runs review iterations using tree navigation
-- [ ] Each pass reviews the plan document only — no code writing
-- [ ] Assessment heuristics: "What decision is being avoided? What assumptions are unstated? Are tasks vertical slices?"
-- [ ] Exits when clean or after 2 refinement passes (diminishing returns)
+### Plan review (ralph, tree mode)
+- [ ] After plan written, ralph runs review in tree mode
+- [ ] Each pass reviews plan only — no code writing
+- [ ] Heuristics: "What decision is being avoided? What assumptions are unstated? Are tasks vertical slices?"
+- [ ] Max 3 passes
 
-### `/ak:work`
-- [ ] For each plan task, ralph runs a role sequence (fresh context per role):
-  1. Implement (with self-review)
-  2. Spec compliance review
-  3. Code quality review
-- [ ] Three-stage review: self-review → spec → quality. Spec before quality (quality without spec compliance is waste)
-- [ ] Review task files use adversarial framing: "The implementer's report may be incomplete. Verify independently."
+### `/ak:work` (Implement)
+- [ ] Implement each task with self-review
 - [ ] Plan as mutable state — check off items as work progresses
-- [ ] Mismatch protocol: Expected / Found / Why this matters — when reality differs from plan
-- [ ] Gate functions and rationalization prevention in every task file
-- [ ] After all per-task sequences: one final full-implementation review
+- [ ] Mismatch protocol: Expected / Found / Why this matters
+- [ ] After all tasks: one final single-pass review
+- [ ] Points to `/ak:review`
 
-### `/ak:review`
-- [ ] Ralph review loop using tree mode — each iteration carries summary of prior findings
-- [ ] Dispatch parallel review agents via scouts: architecture-strategist, code-simplicity-reviewer, security-sentinel, performance-oracle, pattern-recognition-specialist, language-specific reviewers
-- [ ] Synthesize findings, fix issues, next iteration re-reviews
-- [ ] Git-based discovery: `git log` + `git diff` with `BASE_SHA`/`HEAD_SHA` scoping
+### `/ak:review` (Parallel review agents)
+- [ ] Ralph review loop, tree mode — each iteration carries summary of prior findings
+- [ ] Dispatch parallel review agents via `scouts` (specialist tasks using CE skills):
+  - Core set (always): architecture-strategist, code-simplicity-reviewer, security-sentinel, performance-oracle
+  - Language-specific (by file type): kieran-python, kieran-typescript, julik-frontend-races
+- [ ] Git-based discovery: `git diff` with BASE_SHA/HEAD_SHA scoping
 - [ ] Feedback triage: Critical / Important / Minor
-- [ ] Anti-sycophancy: forbidden phrases list
-- [ ] Max iterations safety (default 7)
+- [ ] Report findings — user decides what to fix
+- [ ] Anti-sycophancy: forbidden phrases, adversarial framing
+- [ ] Max 7 iterations default
 
-### `/ak:finish`
+### `/ak:finish` (Ship)
 - [ ] Verify all tests pass (fresh run)
 - [ ] Present 4 options via `ask_user_question`: merge locally, create PR, keep as-is, discard
 - [ ] Execute chosen option, clean up worktree if applicable
 
-### `/ak:compound`
-- [ ] 5 parallel subagents: Context Analyzer, Solution Extractor, Related Docs Finder, Prevention Strategist, Category Classifier
+### `/ak:compound` (Capture solutions)
+- [ ] 5 parallel subagents via `scouts`: Context Analyzer, Solution Extractor, Related Docs Finder, Prevention Strategist, Category Classifier
 - [ ] Subagents return text only — orchestrator assembles and writes to `docs/solutions/{category}/`
 - [ ] Auto-offer on trigger phrases ("that worked", "it's fixed")
-- [ ] Context budget check before launching parallel agents
-- [ ] Compact-safe single-pass fallback when context is tight
+- [ ] Context budget check; compact-safe single-pass fallback
 
-### `/ak:triage`
+### `/ak:triage` (Classify findings)
 - [ ] After `/ak:review`, interactively classify findings one-by-one
 - [ ] Three options per finding: approve (create todo), skip, customize
-- [ ] Use cheaper model for classification (Haiku)
+- [ ] Standalone prompt — usable independently
 
-### `/ak:handoff` and `/ak:resume`
-- [ ] `/ak:handoff` produces structured document: status, references, changes, learnings, artifacts, next steps
-- [ ] `/ak:resume` reads handoff, verifies current state matches claims, handles divergence
-- [ ] Stored at `docs/handoffs/YYYY-MM-DD-<description>.md`
-- [ ] Ralph auto-creates handoff when hitting max iterations or cost ceiling
+### Deferred
+- `/ak:handoff` and `/ak:resume` — `/handoff` extension works for now
 
 ## Phase 4: Orchestration
 
