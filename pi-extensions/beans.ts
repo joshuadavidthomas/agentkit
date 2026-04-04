@@ -54,10 +54,6 @@ export default function (pi: ExtensionAPI) {
     await refreshBeansContext(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    await refreshBeansContext(ctx);
-  });
-
   pi.on("before_agent_start", async (event) => {
     if (!beansContext) return;
     return { systemPrompt: `${event.systemPrompt}\n\n${beansContext}` };

@@ -601,11 +601,6 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
-  pi.on("session_switch", async () => {
-    lastContextUsageCache = null;
-    requestFooterRender();
-  });
-
   pi.on("turn_start", async () => {
     requestFooterRender();
   });
