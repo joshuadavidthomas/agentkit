@@ -1,4 +1,4 @@
-// Scouts extension — registers finder, librarian, and oracle tools.
+// Scouts extension — registers finder, librarian, oracle, and specialist tools.
 //
 // Finder and librarian originally vendored from pi-finder v1.2.2 and
 // pi-librarian v1.1.2, consolidated into a single extension with shared
@@ -9,7 +9,7 @@
 // pi-librarian: https://github.com/default-anton/pi-librarian
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createReadTool } from "@mariozechner/pi-coding-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -27,6 +27,7 @@ import { createGrepGitHubTool } from "./grep-app-tool.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./librarian-prompts.md.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./oracle-prompts.md.ts";
 import { createReadOnlyBashTool } from "./read-only-bash.ts";
+import { buildSpecialistConfig } from "./specialist-config.ts";
 import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 
 // Shared parameter: model override
@@ -162,8 +163,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
-      return renderScoutCall("finder", args as Record<string, unknown>, theme);
+    renderCall(args: any, theme: any, context: any) {
+      return renderScoutCall("finder", args as Record<string, unknown>, theme, undefined, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -185,11 +186,11 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(LIBRARIAN_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any) {
       const a = args as Record<string, unknown>;
       const repos = Array.isArray(a?.repos) ? a.repos.length : 0;
       const owners = Array.isArray(a?.owners) ? a.owners.length : 0;
-      return renderScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`);
+      return renderScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -221,8 +222,8 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       return executeScout(oracleConfig, params as Record<string, unknown>, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
-      return renderScoutCall("oracle", args as Record<string, unknown>, theme);
+    renderCall(args: any, theme: any, context: any) {
+      return renderScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
     },
 
     renderResult(result: any, options: any, theme: any) {
@@ -230,22 +231,138 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     },
   });
 
-  // Scouts — parallel dispatch (finder + librarian only; oracle is too
-  // expensive to run in parallel and should be invoked directly)
+  // Specialist — skill-powered domain expert
+  const SpecialistParams = Type.Object({
+    skill: Type.String({
+      description: [
+        "Name of the skill to load as domain expertise.",
+        "The specialist becomes an expert in this skill and applies it to the task.",
+        "Use listAvailableSkills to discover what's installed.",
+      ].join("\n"),
+    }),
+    task: Type.String({
+      description: [
+        "The task for the specialist to execute using the loaded skill.",
+        "Be specific about what you want analyzed, reviewed, created, or investigated.",
+      ].join("\n"),
+    }),
+    tools: Type.Optional(
+      Type.Array(
+        Type.String({ enum: ["read", "bash", "write", "edit"] }),
+        { description: "Tools the specialist can use. Defaults to [\"read\", \"bash\"]. Add \"write\" and \"edit\" for tasks that need to modify files." },
+      ),
+    ),
+    model: ModelParam,
+  });
+
+  pi.registerTool({
+    name: "specialist",
+    label: "Specialist",
+    description:
+      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task. Defaults to read-only tools (read, bash). Pass tools: [\"read\", \"bash\", \"write\", \"edit\"] for tasks that need to modify files. Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/.",
+    parameters: SpecialistParams as any,
+
+    async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
+      const p = params as { skill: string; task: string; tools?: string[]; model?: string };
+      const skillName = (p.skill ?? "").trim();
+      const task = (p.task ?? "").trim();
+
+      if (!skillName) {
+        return {
+          content: [{ type: "text", text: "Missing required parameter: skill" }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      if (!task) {
+        return {
+          content: [{ type: "text", text: "Missing required parameter: task" }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      const configOrError = await buildSpecialistConfig(skillName, ctx.cwd, {
+        configName: "specialist",
+        tools: p.tools as any,
+      });
+
+      if ("error" in configOrError) {
+        return {
+          content: [{ type: "text", text: configOrError.error }],
+          details: { status: "error", runs: [] } satisfies ScoutDetails,
+          isError: true,
+        };
+      }
+
+      return executeScout(
+        configOrError,
+        { ...p, task, query: task },
+        signal,
+        onUpdate,
+        ctx,
+      );
+    },
+
+    renderCall(args: any, theme: any, context: any) {
+      const p = args as { skill?: string; task?: string };
+      const skill = p?.skill ?? "unknown";
+      const task = (p?.task ?? "").trim();
+      const expanded = context?.expanded ?? false;
+      const preview = expanded ? task : (task.length > 60 ? task.slice(0, 57) + "..." : task);
+      return renderScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
+    },
+
+    renderResult(result: any, options: any, theme: any) {
+      return renderScoutResult("specialist", result, options, theme);
+    },
+  });
+
+  // Scouts — parallel dispatch (finder, librarian, and specialist)
   const scoutConfigs = new Map<string, ScoutConfig>([
     ["finder", FINDER_CONFIG],
     ["librarian", LIBRARIAN_CONFIG],
   ]);
 
+  // Resolve a scout config for a parallel task. Static scouts use the
+  // config map; specialist builds a dynamic config from the skill name.
+  async function resolveParallelConfig(
+    task: { scout: string; skill?: string; tools?: string[]; query: string },
+    cwd: string,
+  ): Promise<ScoutConfig | { error: string }> {
+    if (task.scout !== "specialist") {
+      const config = scoutConfigs.get(task.scout);
+      if (!config) return { error: `Unknown scout: ${task.scout}` };
+      return config;
+    }
+
+    const skillName = (task.skill ?? "").trim();
+    if (!skillName) return { error: "Specialist task requires a skill name." };
+
+    return buildSpecialistConfig(skillName, cwd, { tools: task.tools as any });
+  }
+
+  const VALID_SCOUTS = ["finder", "librarian", "specialist"];
+
   const ScoutsParams = Type.Object({
     tasks: Type.Array(
       Type.Object({
         scout: Type.String({
-          description: "Scout name: 'finder' or 'librarian'.",
+          description: "Scout name: 'finder', 'librarian', or 'specialist'.",
         }),
         query: Type.String({
           description: "The query/task for this scout.",
         }),
+        skill: Type.Optional(
+          Type.String({ description: "Skill name (specialist only). The specialist loads this as domain expertise." }),
+        ),
+        tools: Type.Optional(
+          Type.Array(
+            Type.String({ enum: ["read", "bash", "write", "edit"] }),
+            { description: "Tools for the specialist (specialist only). Defaults to [\"read\", \"bash\"]." },
+          ),
+        ),
         repos: Type.Optional(
           Type.Array(Type.String(), { description: "Repository hints (librarian only)." }),
         ),
@@ -265,11 +382,11 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "scouts",
     label: "Scouts",
     description:
-      "Run finder and librarian scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
+      "Run finder, librarian, and specialist scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-      const p = params as { tasks: Array<{ scout: string; query: string; repos?: string[]; owners?: string[]; model?: string }> };
+      const p = params as { tasks: Array<{ scout: string; query: string; skill?: string; tools?: string[]; repos?: string[]; owners?: string[]; model?: string }> };
 
       if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
         return {
@@ -280,18 +397,17 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       }
 
       const invalidScouts = [...new Set(
-        p.tasks.map((t) => t.scout).filter((s) => !scoutConfigs.has(s)),
+        p.tasks.map((t) => t.scout).filter((s) => !VALID_SCOUTS.includes(s)),
       )];
       if (invalidScouts.length > 0) {
         const hasOracle = invalidScouts.includes("oracle");
         const others = invalidScouts.filter((s) => s !== "oracle");
         const parts: string[] = [];
         if (hasOracle) {
-          parts.push("Oracle is not available in parallel scouts — call it separately. Use scouts to gather context then feed into oracle, or oracle first then scouts to fan out on what it finds.");
+          parts.push("Oracle is not available in parallel scouts — call it separately.");
         }
         if (others.length > 0) {
-          const available = [...scoutConfigs.keys()].join(", ");
-          parts.push(`Unknown scout(s): ${others.join(", ")}. Available: ${available}.`);
+          parts.push(`Unknown scout(s): ${others.join(", ")}. Available: ${VALID_SCOUTS.join(", ")}.`);
         }
         return {
           content: [{ type: "text", text: parts.join(" ") }],
@@ -300,27 +416,49 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const tasks = p.tasks.map((t) => ({
-        scout: t.scout,
-        params: {
-          query: t.query,
-          repos: t.repos,
-          owners: t.owners,
-          model: t.model,
-        } as Record<string, unknown>,
-      }));
+      // Resolve configs for all tasks (specialist configs are dynamic)
+      const resolvedConfigs = new Map<string, ScoutConfig>();
+      const resolvedTasks: Array<{ scout: string; params: Record<string, unknown> }> = [];
 
-      return executeParallelScouts(scoutConfigs, tasks, signal, onUpdate, ctx);
+      for (const t of p.tasks) {
+        const configOrError = await resolveParallelConfig(t, ctx.cwd);
+        if ("error" in configOrError) {
+          return {
+            content: [{ type: "text", text: configOrError.error }],
+            details: { mode: "parallel", status: "error", results: [] },
+            isError: true,
+          };
+        }
+
+        const configKey = configOrError.name;
+        resolvedConfigs.set(configKey, configOrError);
+
+        const taskParams: Record<string, unknown> = {
+          query: t.query,
+          model: t.model,
+        };
+
+        if (t.scout === "specialist") {
+          taskParams.task = t.query;
+        } else {
+          taskParams.repos = t.repos;
+          taskParams.owners = t.owners;
+        }
+
+        resolvedTasks.push({ scout: configKey, params: taskParams });
+      }
+
+      return executeParallelScouts(resolvedConfigs, resolvedTasks, signal, onUpdate, ctx);
     },
 
-    renderCall(args: any, theme: any) {
-      const p = args as { tasks?: Array<{ scout: string; query: string }> };
+    renderCall(args: any, theme: any, context: any) {
+      const p = args as { tasks?: Array<{ scout: string; query: string; skill?: string }> };
       const count = Array.isArray(p?.tasks) ? p.tasks.length : 0;
       const scouts = Array.isArray(p?.tasks)
-        ? [...new Set(p.tasks.map((t) => t.scout))].join(", ")
+        ? [...new Set(p.tasks.map((t) => t.scout === "specialist" ? `specialist:${t.skill ?? "?"}` : t.scout))].join(", ")
         : "";
       const info = `${count} task${count === 1 ? "" : "s"}${scouts ? ` (${scouts})` : ""}`;
-      return renderScoutCall("scouts", args as Record<string, unknown>, theme, info);
+      return renderScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
     },
 
     renderResult(result: any, options: any, theme: any) {

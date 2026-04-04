@@ -20,7 +20,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
-import { resolveModel } from "./model-selection.ts";
+import { resolveModelCandidates, type ThinkingLevel } from "./model-selection.ts";
 
 const MAX_DISPLAY_ITEMS = 120;
 
@@ -33,7 +33,7 @@ export type ScoutStatus = "running" | "done" | "error" | "aborted";
 
 // Interleaved display items — tool calls and text, in chronological order
 export type DisplayItem =
-  | { type: "tool"; name: string; args: Record<string, unknown>; isError?: boolean }
+  | { type: "tool"; name: string; args: Record<string, unknown>; isError?: boolean; toolCallId?: string; result?: string }
   | { type: "text"; text: string };
 
 export interface ScoutRunDetails {
@@ -57,8 +57,10 @@ export interface ScoutDetails {
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
-  /** Default model ID (e.g. "claude-haiku-4-5", "claude-opus-4-6"). */
+  /** Default model ID (e.g. "claude-haiku-4-5", "anthropic/claude-opus-4-6"). */
   defaultModel?: string;
+  /** Default thinking level. Overrides the model-selection default when set. */
+  defaultThinkingLevel?: ThinkingLevel;
   buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;
   /**
@@ -167,20 +169,50 @@ export function getLastAssistantText(messages: any[]): string {
 // Extract interleaved display items from session messages
 function extractDisplayItems(messages: any[]): DisplayItem[] {
   const items: DisplayItem[] = [];
+  const toolItemById = new Map<string, DisplayItem & { type: "tool" }>();
+
   for (const msg of messages) {
-    if (msg?.role !== "assistant") continue;
-    const parts = msg.content;
-    if (!Array.isArray(parts)) continue;
-    for (const part of parts) {
-      if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
-        items.push({ type: "text", text: part.text });
-      } else if (part?.type === "toolCall" || part?.type === "tool_use") {
-        const args = part.arguments ?? part.input ?? {};
-        items.push({ type: "tool", name: part.name ?? "unknown", args });
+    if (msg?.role === "assistant") {
+      const parts = msg.content;
+      if (!Array.isArray(parts)) continue;
+      for (const part of parts) {
+        if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
+          items.push({ type: "text", text: part.text });
+        } else if (part?.type === "toolCall" || part?.type === "tool_use") {
+          const args = part.arguments ?? part.input ?? {};
+          const id = part.id ?? part.toolCallId;
+          const item: DisplayItem & { type: "tool" } = { type: "tool", name: part.name ?? "unknown", args, toolCallId: id };
+          items.push(item);
+          if (id) toolItemById.set(id, item);
+        }
+      }
+    } else if (msg?.role === "toolResult" && msg.toolCallId) {
+      const toolItem = toolItemById.get(msg.toolCallId);
+      if (toolItem) {
+        const text = extractToolResultText(msg);
+        if (text) toolItem.result = text;
+        if (msg.isError) toolItem.isError = true;
       }
     }
   }
   return items;
+}
+
+function cleanToolResult(raw: string): string {
+  const cleaned = raw.replace(/\n*\[turn budget\][^\n]*/g, "").trimEnd();
+  const lines = cleaned.split("\n");
+  return lines.length > 30 ? lines.slice(0, 30).join("\n") + `\n... (${lines.length - 30} more lines)` : cleaned;
+}
+
+function extractToolResultText(tr: any): string | undefined {
+  if (typeof tr.content === "string") return tr.content;
+  if (Array.isArray(tr.content)) {
+    const texts = tr.content
+      .filter((c: any) => c?.type === "text" && typeof c.text === "string")
+      .map((c: any) => c.text);
+    return texts.length > 0 ? texts.join("\n") : undefined;
+  }
+  return undefined;
 }
 
 export function computeOverallStatus(runs: ScoutRunDetails[]): ScoutStatus {
@@ -248,12 +280,16 @@ export async function executeScout(
     ];
 
     const modelRegistry = ctx.modelRegistry;
-    // Resolve model: explicit model param > config defaultModel
+    // Resolve model candidates: explicit model param > config defaultModel.
+    // Multiple candidates enable fallback when a provider is unavailable.
     const modelId = (typeof params.model === "string" ? params.model : undefined) ?? config.defaultModel;
-    const subModelSelection = resolveModel(modelRegistry, ctx.model, modelId);
+    const candidates = resolveModelCandidates(modelRegistry, ctx.model, modelId);
 
-    if (!subModelSelection) {
-      const error = "No models available. Configure credentials (e.g. /login or auth.json) and try again.";
+    if (candidates.length === 0) {
+      const available = modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`);
+      const error = modelId
+        ? `Model "${modelId}" not found. Available: ${available.length ? available.join(", ") : "none (configure credentials via /login or auth.json)"}`
+        : "No model specified and no current model to fall back to.";
       runs[0].status = "error";
       runs[0].error = error;
       runs[0].summaryText = error;
@@ -265,8 +301,9 @@ export async function executeScout(
       };
     }
 
-    const subModel = subModelSelection.model;
-    const subagentThinkingLevel = subModelSelection.thinkingLevel;
+    // Use first candidate; fallbacks tried on provider failure below.
+    let subModel = candidates[0]!.model;
+    const subagentThinkingLevel = config.defaultThinkingLevel ?? candidates[0]!.thinkingLevel;
 
     let lastUpdate = 0;
     const emitAll = (force = false) => {
@@ -327,128 +364,142 @@ export async function executeScout(
     const wasAborted = () => toolAborted || signal?.aborted;
     const run = runs[0];
 
-    let session: any;
-    let unsubscribe: (() => void) | undefined;
+    // Try each candidate model in order; fall back on provider errors.
+    for (let ci = 0; ci < candidates.length; ci++) {
+      subModel = candidates[ci]!.model;
+      let session: any;
+      let unsubscribe: (() => void) | undefined;
 
-    try {
-      const resourceLoader = new DefaultResourceLoader({
-        noExtensions: true,
-        additionalExtensionPaths: [],
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        extensionFactories: [createTurnBudgetExtension(maxTurns)],
-        systemPromptOverride: () => systemPrompt,
-        skillsOverride: () => ({ skills: [], diagnostics: [] }),
-      });
-      await resourceLoader.reload();
+      try {
+        const resourceLoader = new DefaultResourceLoader({
+          noExtensions: true,
+          additionalExtensionPaths: [],
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
+          extensionFactories: [createTurnBudgetExtension(maxTurns)],
+          systemPromptOverride: () => systemPrompt,
+          skillsOverride: () => ({ skills: [], diagnostics: [] }),
+        });
+        await resourceLoader.reload();
 
-      run.status = "running";
-      run.turns = 0;
-      run.displayItems = [];
-      run.startedAt = Date.now();
-      run.endedAt = undefined;
-      run.error = undefined;
-      run.summaryText = undefined;
+        run.status = "running";
+        run.turns = 0;
+        run.displayItems = [];
+        run.startedAt = Date.now();
+        run.endedAt = undefined;
+        run.error = undefined;
+        run.summaryText = undefined;
 
-      // Split tools: built-in names (read, bash, edit, write, grep, find, ls) go to
-      // `tools`, everything else goes to `customTools` as ToolDefinitions.
-      const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+        // Split tools: built-in names (read, bash, edit, write, grep, find, ls) go to
+        // `tools`, everything else goes to `customTools` as ToolDefinitions.
+        const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
-      const allTools = config.getTools
-        ? config.getTools()
-        : [createReadTool(ctx.cwd), createBashTool(ctx.cwd)];
+        const allTools = config.getTools
+          ? config.getTools()
+          : [createReadTool(ctx.cwd), createBashTool(ctx.cwd)];
 
-      const builtinTools = allTools.filter((t: any) => BUILTIN_TOOL_NAMES.has(t.name));
-      const extraTools = allTools.filter((t: any) => !BUILTIN_TOOL_NAMES.has(t.name));
+        const builtinTools = allTools.filter((t: any) => BUILTIN_TOOL_NAMES.has(t.name));
+        const extraTools = allTools.filter((t: any) => !BUILTIN_TOOL_NAMES.has(t.name));
 
-      // Wrap AgentTool execute (4 params) as ToolDefinition execute (5 params, ctx ignored)
-      const customTools = extraTools.map((t: any) => ({
-        name: t.name,
-        label: t.label,
-        description: t.description,
-        parameters: t.parameters,
-        execute: (toolCallId: string, params: any, signal: any, onUpdate: any, _ctx: any) =>
-          t.execute(toolCallId, params, signal, onUpdate),
-      }));
+        // Wrap AgentTool execute (4 params) as ToolDefinition execute (5 params, ctx ignored)
+        const customTools = extraTools.map((t: any) => ({
+          name: t.name,
+          label: t.label,
+          description: t.description,
+          parameters: t.parameters,
+          execute: (toolCallId: string, params: any, signal: any, onUpdate: any, _ctx: any) =>
+            t.execute(toolCallId, params, signal, onUpdate),
+        }));
 
-      const { session: createdSession } = await createAgentSession({
-        cwd: ctx.cwd,
-        modelRegistry,
-        resourceLoader,
-        sessionManager: SessionManager.inMemory(ctx.cwd),
-        model: subModel,
-        thinkingLevel: subagentThinkingLevel,
-        tools: builtinTools,
-        customTools,
-      });
+        const { session: createdSession } = await createAgentSession({
+          cwd: ctx.cwd,
+          modelRegistry,
+          resourceLoader,
+          sessionManager: SessionManager.inMemory(ctx.cwd),
+          model: subModel,
+          thinkingLevel: subagentThinkingLevel,
+          tools: builtinTools,
+          customTools,
+        });
 
-      session = createdSession;
-      activeSessions.add(session as any);
+        session = createdSession;
+        activeSessions.add(session as any);
 
-      unsubscribe = session.subscribe((event: any) => {
-        switch (event.type) {
-          case "turn_end": {
-            run.turns += 1;
-            // Rebuild display items from the full message history
-            const items = extractDisplayItems(session.state.messages as any[]);
-            run.displayItems = items.length > MAX_DISPLAY_ITEMS
-              ? items.slice(items.length - MAX_DISPLAY_ITEMS)
-              : items;
-            emitAll(true);
-            break;
-          }
-          case "tool_execution_start": {
-            // Add a live tool item for the running tool
-            run.displayItems.push({
-              type: "tool",
-              name: event.toolName,
-              args: event.args ?? {},
-            });
-            if (run.displayItems.length > MAX_DISPLAY_ITEMS) {
-              run.displayItems.splice(0, run.displayItems.length - MAX_DISPLAY_ITEMS);
+        unsubscribe = session.subscribe((event: any) => {
+          switch (event.type) {
+            case "turn_end": {
+              run.turns += 1;
+              // Rebuild display items from the full message history
+              const items = extractDisplayItems(session.state.messages as any[]);
+              run.displayItems = items.length > MAX_DISPLAY_ITEMS
+                ? items.slice(items.length - MAX_DISPLAY_ITEMS)
+                : items;
+              emitAll(true);
+              break;
             }
-            emitAll(true);
-            break;
-          }
-          case "tool_execution_end": {
-            if (event.isError) {
-              // Mark the matching tool item as errored
+            case "tool_execution_start": {
+              // Add a live tool item for the running tool
+              run.displayItems.push({
+                type: "tool",
+                name: event.toolName,
+                args: event.args ?? {},
+                toolCallId: event.toolCallId,
+              });
+              if (run.displayItems.length > MAX_DISPLAY_ITEMS) {
+                run.displayItems.splice(0, run.displayItems.length - MAX_DISPLAY_ITEMS);
+              }
+              emitAll(true);
+              break;
+            }
+            case "tool_execution_end": {
+              // Find the matching tool item and attach result
               for (let i = run.displayItems.length - 1; i >= 0; i--) {
                 const item = run.displayItems[i];
-                if (item.type === "tool" && item.name === event.toolName) {
-                  item.isError = true;
+                if (item.type === "tool" && item.toolCallId === event.toolCallId) {
+                  if (event.isError) item.isError = true;
+                  const text = extractToolResultText(event.result);
+                  if (text) item.result = text;
                   break;
                 }
               }
+              emitAll(true);
+              break;
             }
-            emitAll(true);
-            break;
           }
+        });
+
+        const userPrompt = config.buildUserPrompt(params);
+        await session.prompt(userPrompt, { expandPromptTemplates: false });
+
+        // Final extraction from complete messages
+        run.displayItems = extractDisplayItems(session.state.messages as any[]);
+        run.summaryText = getLastAssistantText(session.state.messages as any[]).trim();
+        if (!run.summaryText) run.summaryText = wasAborted() ? "Aborted" : "(no output)";
+        run.status = wasAborted() ? "aborted" : "done";
+        run.endedAt = Date.now();
+        emitAll(true);
+
+        // Success — stop trying candidates.
+        break;
+      } catch (error) {
+        const message = wasAborted() ? "Aborted" : error instanceof Error ? error.message : String(error);
+
+        // If there are more candidates and this wasn't an abort, try the next one.
+        if (!wasAborted() && ci < candidates.length - 1) {
+          continue;
         }
-      });
 
-      const userPrompt = config.buildUserPrompt(params);
-      await session.prompt(userPrompt, { expandPromptTemplates: false });
-
-      // Final extraction from complete messages
-      run.displayItems = extractDisplayItems(session.state.messages as any[]);
-      run.summaryText = getLastAssistantText(session.state.messages as any[]).trim();
-      if (!run.summaryText) run.summaryText = wasAborted() ? "Aborted" : "(no output)";
-      run.status = wasAborted() ? "aborted" : "done";
-      run.endedAt = Date.now();
-      emitAll(true);
-    } catch (error) {
-      const message = wasAborted() ? "Aborted" : error instanceof Error ? error.message : String(error);
-      run.status = wasAborted() ? "aborted" : "error";
-      run.error = wasAborted() ? undefined : message;
-      run.summaryText = message;
-      run.endedAt = Date.now();
-      emitAll(true);
-    } finally {
-      if (session) activeSessions.delete(session as any);
-      unsubscribe?.();
-      session?.dispose();
+        run.status = wasAborted() ? "aborted" : "error";
+        run.error = wasAborted() ? undefined : message;
+        run.summaryText = message;
+        run.endedAt = Date.now();
+        emitAll(true);
+      } finally {
+        if (session) activeSessions.delete(session as any);
+        unsubscribe?.();
+        session?.dispose();
+      }
     }
 
     return buildFinalResult(runs, subModel);
@@ -482,13 +533,15 @@ export function renderScoutCall(
   args: Record<string, unknown> | undefined,
   theme: any,
   extraInfo?: string,
+  context?: { expanded?: boolean },
 ): any {
   const query = typeof args?.query === "string" ? (args.query as string).trim() : "";
-  const preview = shorten(query.replace(/\s+/g, " ").trim(), 70);
+  const expanded = context?.expanded ?? false;
+  const display = expanded ? query.replace(/\s+/g, " ").trim() : shorten(query.replace(/\s+/g, " ").trim(), 70);
 
   const title = theme.fg("toolTitle", theme.bold(scoutName));
-  const info = extraInfo ? `\n${theme.fg("muted", extraInfo)} · ${theme.fg("muted", preview)}` : "";
-  const text = title + (preview && !extraInfo ? `\n${theme.fg("muted", preview)}` : info);
+  const info = extraInfo ? `\n${theme.fg("muted", extraInfo)} · ${theme.fg("muted", display)}` : "";
+  const text = title + (display && !extraInfo ? `\n${theme.fg("muted", display)}` : info);
   return new Text(text, 0, 0);
 }
 
@@ -545,6 +598,14 @@ export function renderScoutResult(
       c.addChild(
         new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
+      if (expanded && item.result) {
+        const cleaned = cleanToolResult(item.result);
+        if (cleaned) {
+          c.addChild(new Spacer(1));
+          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
+          c.addChild(new Spacer(1));
+        }
+      }
     }
 
     return c;
@@ -574,6 +635,14 @@ export function renderScoutResult(
       c.addChild(
         new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
       );
+      if (expanded && item.result) {
+        const cleaned = cleanToolResult(item.result);
+        if (cleaned) {
+          c.addChild(new Spacer(1));
+          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
+          c.addChild(new Spacer(1));
+        }
+      }
     } else if (item.type === "text" && item.text.trim()) {
       // Is this the last text item?
       const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
