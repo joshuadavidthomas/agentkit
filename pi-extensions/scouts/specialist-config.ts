@@ -4,9 +4,11 @@
 // to avoid duplicating the skill resolution + error handling + config building logic.
 
 import { readFileSync } from "node:fs";
-import { createBashTool, createEditTool, createReadTool, createWriteTool, loadSkills, type Skill } from "@mariozechner/pi-coding-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool, DefaultResourceLoader, type Skill } from "@mariozechner/pi-coding-agent";
+import { parse as parseYaml } from "yaml";
 
 import type { ScoutConfig } from "./scout-core.ts";
+import type { ThinkingLevel } from "./model-selection.ts";
 import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
 
 export type SpecialistTool = "read" | "bash" | "write" | "edit";
@@ -21,23 +23,34 @@ export interface SpecialistConfigOptions {
   tools?: SpecialistTool[];
 }
 
-function discoverSkills(cwd: string): Skill[] {
-  const { skills } = loadSkills({ cwd });
-  return skills;
+function parseFrontmatter(content: string): Record<string, unknown> {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  try {
+    return parseYaml(match[1]) ?? {};
+  } catch {
+    return {};
+  }
 }
 
-export function buildSpecialistConfig(
+async function discoverSkills(cwd: string): Promise<Skill[]> {
+  const loader = new DefaultResourceLoader({ cwd, noExtensions: true, noPromptTemplates: true, noThemes: true });
+  await loader.reload();
+  return loader.getSkills().skills;
+}
+
+export async function buildSpecialistConfig(
   skillName: string,
   cwd: string,
   options?: SpecialistConfigOptions,
-): ScoutConfig | { error: string } {
+): Promise<ScoutConfig | { error: string }> {
   const trimmed = skillName.trim();
 
   if (!trimmed) {
     return { error: "Specialist requires a skill name." };
   }
 
-  const allSkills = discoverSkills(cwd);
+  const allSkills = await discoverSkills(cwd);
   const match = allSkills.find((s) => s.name === trimmed);
 
   if (!match) {
@@ -54,6 +67,7 @@ export function buildSpecialistConfig(
     return { error: `Failed to read ${match.filePath}: ${message}` };
   }
 
+  const fm = parseFrontmatter(content);
   const configName = options?.configName ?? `specialist:${trimmed}`;
   const tools = options?.tools ?? DEFAULT_TOOLS;
 
@@ -67,7 +81,8 @@ export function buildSpecialistConfig(
   return {
     name: configName,
     maxTurns: 16,
-    defaultModel: "claude-sonnet-4-5",
+    defaultModel: (fm.model as string) || "anthropic/claude-sonnet-4-6",
+    defaultThinkingLevel: (fm["thinking-level"] as ThinkingLevel) || undefined,
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,
     getTools: () => tools.map((t) => toolBuilders[t]()),

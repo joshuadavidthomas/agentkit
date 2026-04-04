@@ -1,6 +1,6 @@
-# Phase 3: Workflow Prompts — Design
+# Phase 3: Workflow Phases — Design
 
-Each prompt template is a markdown file at `~/.pi/agent/prompts/ak:<name>.md`. Prompt templates use YAML frontmatter for description and `$ARGUMENTS` / `$@` for argument interpolation. They're user messages the LLM interprets using available tools (ask_user_question, scouts, specialist, review_loop, read, bash, write, edit).
+Each workflow phase is a pi extension under `pi-extensions/ak-<name>/` (symlinked to `~/.pi/agent/extensions/` by `install.sh`). Extensions register `/ak:<name>` commands. Mechanical work (file checks, scout dispatch, context assembly) is TypeScript code. The LLM gets a focused prompt for just the interactive/reasoning parts, injected via `ctx.ui.setEditorText()`.
 
 ## Design Principles
 

@@ -283,7 +283,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
         };
       }
 
-      const configOrError = buildSpecialistConfig(skillName, ctx.cwd, {
+      const configOrError = await buildSpecialistConfig(skillName, ctx.cwd, {
         configName: "specialist",
         tools: p.tools as any,
       });
@@ -327,10 +327,10 @@ export default function scoutsExtension(pi: ExtensionAPI) {
 
   // Resolve a scout config for a parallel task. Static scouts use the
   // config map; specialist builds a dynamic config from the skill name.
-  function resolveParallelConfig(
+  async function resolveParallelConfig(
     task: { scout: string; skill?: string; tools?: string[]; query: string },
     cwd: string,
-  ): ScoutConfig | { error: string } {
+  ): Promise<ScoutConfig | { error: string }> {
     if (task.scout !== "specialist") {
       const config = scoutConfigs.get(task.scout);
       if (!config) return { error: `Unknown scout: ${task.scout}` };
@@ -421,7 +421,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
       const resolvedTasks: Array<{ scout: string; params: Record<string, unknown> }> = [];
 
       for (const t of p.tasks) {
-        const configOrError = resolveParallelConfig(t, ctx.cwd);
+        const configOrError = await resolveParallelConfig(t, ctx.cwd);
         if ("error" in configOrError) {
           return {
             content: [{ type: "text", text: configOrError.error }],

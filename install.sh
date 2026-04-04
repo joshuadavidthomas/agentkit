@@ -47,6 +47,34 @@ if [[ -d "$PI_AGENTS_DIR" ]]; then
     done
 fi
 
+# Pi prompt templates
+PI_PROMPTS_DIR="$HOME/.pi/agent/prompts"
+PI_PROMPTS_SRC="$REPO_DIR/pi-prompts"
+
+if [[ -d "$PI_PROMPTS_SRC" ]]; then
+    mkdir -p "$PI_PROMPTS_DIR"
+
+    # Remove stale prompt links from this repo
+    for existing in "$PI_PROMPTS_DIR"/*; do
+        [[ -L "$existing" ]] || continue
+        target=$(readlink "$existing")
+        [[ "$target" == "$PI_PROMPTS_SRC/"* ]] || continue
+
+        prompt_name=$(basename "$existing")
+        if [[ ! -f "$PI_PROMPTS_SRC/$prompt_name" ]]; then
+            rm "$existing"
+            echo "Removed stale prompt link: $prompt_name"
+        fi
+    done
+
+    for prompt in "$PI_PROMPTS_SRC"/*.md; do
+        [[ -e "$prompt" ]] || continue
+        prompt_name=$(basename "$prompt")
+        ln -sfn "$prompt" "$PI_PROMPTS_DIR/$prompt_name"
+        echo "Linked $prompt_name -> $PI_PROMPTS_DIR/"
+    done
+fi
+
 # Pi extensions
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
