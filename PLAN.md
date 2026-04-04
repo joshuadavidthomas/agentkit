@@ -66,17 +66,17 @@ Convert compound engineering agents and skills into pi-native prompt templates a
 
 ## Phase 3: Workflow Prompts
 
-Each phase is a prompt template under `~/.pi/agent/prompts/`. Design rationale in [docs/design/2026-04-01-phase-3-workflow-prompts.md](docs/design/2026-04-01-phase-3-workflow-prompts.md).
+Each phase is a pi extension under `pi-extensions/ak-<name>/`. Design rationale in [docs/design/2026-04-01-phase-3-workflow-prompts.md](docs/design/2026-04-01-phase-3-workflow-prompts.md).
 
-The sequence follows Horthy's CRISPY split: questions → research → design → structure → plan → work → implement → PR. Each prompt targets <40 instructions. Cross-cutting patterns live in skills, not inlined.
+The sequence follows Horthy's CRISPY split: questions → research → design → structure → plan → work → implement → PR. Mechanical work (file checks, scout dispatch, output writing) is code. The LLM gets a focused prompt for just the interactive/reasoning parts. Cross-cutting patterns live in skills, not inlined.
 
 ### `/ak:brainstorm` (Questions)
-- [ ] Interactive Q&A via `ask_user_question` — one question at a time, structured choices
-- [ ] Check `docs/brainstorms/` for existing docs, offer resume
-- [ ] Lightweight repo scan via `finder` (documentarian: describe what exists)
-- [ ] Product pressure test — challenge whether this is the right problem
-- [ ] Output: `docs/brainstorms/YYYY-MM-DD-<topic>.md` — questions + problem framing
-- [ ] Points to `/ak:research`
+- [x] Interactive Q&A via `ask_user_question` — one question at a time, structured choices
+- [x] Check `docs/brainstorms/` for existing docs, offer resume
+- [x] Lightweight repo scan via `finder` (documentarian: describe what exists)
+- [x] Product pressure test — challenge whether this is the right problem
+- [x] Output: `docs/brainstorms/YYYY-MM-DD-<topic>.md` — questions + problem framing
+- [x] Points to `/ak:research`
 
 ### `/ak:research` (Facts)
 - [ ] Takes research questions from brainstorm, NOT goals
