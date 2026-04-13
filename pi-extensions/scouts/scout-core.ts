@@ -20,7 +20,12 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
-import { resolveModelCandidates, type ThinkingLevel } from "./model-selection.ts";
+import {
+  resolveModelFamily,
+  resolvePlannedModelCandidates,
+  type ModelFamily,
+  type ThinkingLevel,
+} from "./model-selection.ts";
 
 const MAX_DISPLAY_ITEMS = 120;
 
@@ -57,8 +62,14 @@ export interface ScoutDetails {
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
-  /** Default model ID (e.g. "claude-haiku-4-5", "anthropic/claude-opus-4-6"). */
+  /** Generic default model ID (e.g. "claude-haiku-4-5", "anthropic/claude-opus-4-6"). */
   defaultModel?: string;
+  /** Generic default candidate list, tried in order before falling back to the current model. */
+  defaultModelCandidates?: string[];
+  /** Shared model-family candidate lists, keyed by an explicit family name. */
+  familyModelCandidates?: Partial<Record<ModelFamily, string[]>>;
+  /** Exact provider overrides, keyed by provider id in lowercase (e.g. "openai", "openai-codex"). */
+  providerModelCandidates?: Partial<Record<string, string[]>>;
   /** Default thinking level. Overrides the model-selection default when set. */
   defaultThinkingLevel?: ThinkingLevel;
   buildSystemPrompt: (maxTurns: number) => string;
@@ -112,7 +123,7 @@ export function bumpDefaultEventTargetMaxListeners(): () => void {
   const state = getEventTargetMaxListenersState();
   const raw = process.env.PI_EVENTTARGET_MAX_LISTENERS ?? process.env.PI_ABORT_MAX_LISTENERS;
   const desired = raw !== undefined ? Number(raw) : DEFAULT_EVENTTARGET_MAX_LISTENERS;
-  if (!Number.isFinite(desired) || desired < 0) return () => {};
+  if (!Number.isFinite(desired) || desired < 0) return () => { };
 
   if (state.depth === 0) state.savedDefault = events.defaultMaxListeners;
   state.depth += 1;
@@ -280,15 +291,30 @@ export async function executeScout(
     ];
 
     const modelRegistry = ctx.modelRegistry;
-    // Resolve model candidates: explicit model param > config defaultModel.
+    // Resolve model candidates in this order:
+    // explicit model param > exact provider override > model-family stack > generic defaults.
     // Multiple candidates enable fallback when a provider is unavailable.
-    const modelId = (typeof params.model === "string" ? params.model : undefined) ?? config.defaultModel;
-    const candidates = resolveModelCandidates(modelRegistry, ctx.model, modelId);
+    const explicitModelId = typeof params.model === "string" ? params.model.trim() : undefined;
+    const currentProvider = ctx.model?.provider?.toLowerCase();
+    const currentFamily = resolveModelFamily(ctx.model);
+    const providerModelIds = currentProvider ? config.providerModelCandidates?.[currentProvider] : undefined;
+    const familyModelIds = currentFamily ? config.familyModelCandidates?.[currentFamily] : undefined;
+    const defaultModelIds = config.defaultModelCandidates ?? (config.defaultModel ? [config.defaultModel] : undefined);
+    const candidates = resolvePlannedModelCandidates(modelRegistry, ctx.model, {
+      explicitModelId,
+      providerModelIds,
+      familyModelIds,
+      defaultModelIds,
+    });
 
     if (candidates.length === 0) {
       const available = modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`);
-      const error = modelId
-        ? `Model "${modelId}" not found. Available: ${available.length ? available.join(", ") : "none (configure credentials via /login or auth.json)"}`
+      const requested = explicitModelId
+        ?? providerModelIds?.join(", ")
+        ?? familyModelIds?.join(", ")
+        ?? defaultModelIds?.join(", ");
+      const error = requested
+        ? `Model "${requested}" not found. Available: ${available.length ? available.join(", ") : "none (configure credentials via /login or auth.json)"}`
         : "No model specified and no current model to fall back to.";
       runs[0].status = "error";
       runs[0].error = error;

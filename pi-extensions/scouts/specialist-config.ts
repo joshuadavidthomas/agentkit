@@ -78,10 +78,24 @@ export async function buildSpecialistConfig(
     edit: () => createEditTool(cwd),
   };
 
+  const frontmatterModel = fm.model as string | undefined;
+
   return {
     name: configName,
     maxTurns: 16,
-    defaultModel: (fm.model as string) || "anthropic/claude-sonnet-4-6",
+    defaultModel: frontmatterModel || "anthropic/claude-sonnet-4-6",
+    familyModelCandidates: frontmatterModel
+      ? undefined
+      : {
+          openai: ["gpt-5.4", "gpt-5.4-pro"],
+          anthropic: ["claude-sonnet-4-6", "claude-opus-4-6"],
+          google: ["gemini-3.1-pro-preview", "gemini-2.5-pro"],
+          kimi: ["kimi-k2-thinking", "k2p5"],
+          zai: ["glm-5", "glm-5.1"],
+          minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+          mistral: ["devstral-medium-latest", "mistral-large-latest"],
+          xai: ["grok-4", "grok-4-fast"],
+        },
     defaultThinkingLevel: (fm["thinking-level"] as ThinkingLevel) || undefined,
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,

@@ -33,7 +33,12 @@ import { createWebSearchTool, createWebFetchTool } from "./web-tools.ts";
 // Shared parameter: model override
 const ModelParam = Type.Optional(
   Type.String({
-    description: "Model override. Specify a model ID (e.g. 'claude-opus-4-6', 'gpt-5.3-codex', 'gemini-3.1-pro') to use a specific model instead of the scout's default.",
+    description: [
+      "Advanced model override. Usually omit this.",
+      "Only set it when the user explicitly requested a specific model/provider, or when a prior scout attempt failed and you need a deliberate retry.",
+      "If omitted, the scout prefers an exact provider override when configured, otherwise a shared model-family stack based on the current session model, then its generic default.",
+      "Examples: 'openai/gpt-5.4', 'anthropic/claude-opus-4-6', 'gemini-3.1-pro'.",
+    ].join("\n"),
   }),
 );
 
@@ -108,6 +113,16 @@ const FINDER_CONFIG: ScoutConfig = {
   name: "finder",
   maxTurns: 6,
   defaultModel: "claude-haiku-4-5",
+  familyModelCandidates: {
+    openai: ["gpt-5.4-mini", "gpt-5-mini", "gpt-5.4"],
+    anthropic: ["claude-haiku-4-5", "claude-sonnet-4-6"],
+    google: ["gemini-2.5-flash", "gemini-2.5-pro"],
+    kimi: ["k2p5", "kimi-k2-thinking"],
+    zai: ["glm-5-turbo", "glm-5", "glm-4.7-flash"],
+    minimax: ["MiniMax-M2.7-highspeed", "MiniMax-M2.7"],
+    mistral: ["devstral-small-2507", "devstral-medium-latest"],
+    xai: ["grok-4-fast-non-reasoning", "grok-4-fast"],
+  },
   buildSystemPrompt: buildFinderSystemPrompt,
   buildUserPrompt: buildFinderUserPrompt,
 };
@@ -116,6 +131,16 @@ const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
   maxTurns: 12,
   defaultModel: "claude-haiku-4-5",
+  familyModelCandidates: {
+    openai: ["gpt-5.4-mini", "gpt-5-mini", "gpt-5.4"],
+    anthropic: ["claude-haiku-4-5", "claude-sonnet-4-6"],
+    google: ["gemini-2.5-flash", "gemini-2.5-pro"],
+    kimi: ["k2p5", "kimi-k2-thinking"],
+    zai: ["glm-5-turbo", "glm-5", "glm-4.7-flash"],
+    minimax: ["MiniMax-M2.7-highspeed", "MiniMax-M2.7"],
+    mistral: ["devstral-small-2507", "devstral-medium-latest"],
+    xai: ["grok-4-fast-non-reasoning", "grok-4-fast"],
+  },
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [
@@ -130,6 +155,16 @@ const ORACLE_CONFIG: ScoutConfig = {
   name: "oracle",
   maxTurns: 12,
   defaultModel: "claude-opus-4-6",
+  familyModelCandidates: {
+    openai: ["gpt-5.4", "gpt-5.4-pro"],
+    anthropic: ["claude-opus-4-6", "claude-sonnet-4-6"],
+    google: ["gemini-3.1-pro-preview", "gemini-2.5-pro"],
+    kimi: ["kimi-k2-thinking", "k2p5"],
+    zai: ["glm-5", "glm-5.1", "glm-4.7"],
+    minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    mistral: ["devstral-medium-latest", "mistral-large-latest"],
+    xai: ["grok-4", "grok-4-fast"],
+  },
   buildSystemPrompt: buildOracleSystemPrompt,
   buildUserPrompt: buildOracleUserPrompt,
 };
@@ -154,7 +189,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "finder",
     label: "Finder",
     description:
-      "Read-only workspace scout for coding and personal-assistant tasks. Use when exact file/folder locations are unknown, you'd otherwise do exploratory ls/rg/fd/find/grep/read, or you need targeted evidence from large directories. Finder handles the reconnaissance and returns concise, relevant output: Summary, Locations (path:lineStart-lineEnd), Evidence, and Searched.",
+      "Read-only workspace scout for coding and personal-assistant tasks. Use when exact file/folder locations are unknown, you'd otherwise do exploratory ls/rg/fd/find/grep/read, or you need targeted evidence from large directories. Finder handles the reconnaissance and returns concise, relevant output: Summary, Locations (path:lineStart-lineEnd), Evidence, and Searched. Usually omit the optional `model` parameter unless the user explicitly asked for a specific model/provider.",
     parameters: FinderParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
@@ -177,7 +212,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "librarian",
     label: "Librarian",
     description:
-      "External research scout for coding and personal-assistant tasks. Use when the answer lives outside the local workspace — in GitHub repos, web documentation, or both. Librarian can search GitHub code, read repo files, search the web, and fetch page content. Use for API research, finding implementations in other repos, reading docs, or any question requiring external sources.",
+      "External research scout for coding and personal-assistant tasks. Use when the answer lives outside the local workspace — in GitHub repos, web documentation, or both. Librarian can search GitHub code, read repo files, search the web, and fetch page content. Use for API research, finding implementations in other repos, reading docs, or any question requiring external sources. Usually omit the optional `model` parameter unless the user explicitly asked for a specific model/provider.",
     parameters: LibrarianParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
@@ -203,7 +238,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "oracle",
     label: "Oracle",
     description:
-      "Deep code analysis scout. Use when you need to understand HOW code works — trace data flow, analyze architecture, find patterns, or get implementation details with precise file:line references. Oracle reads code deeply and reasons about it. For finding WHERE code is, use finder instead.",
+      "Deep code analysis scout. Use when you need to understand HOW code works — trace data flow, analyze architecture, find patterns, or get implementation details with precise file:line references. Oracle reads code deeply and reasons about it. For finding WHERE code is, use finder instead. Usually omit the optional `model` parameter unless the user explicitly asked for a specific model/provider.",
     parameters: OracleParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
@@ -259,7 +294,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "specialist",
     label: "Specialist",
     description:
-      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task. Defaults to read-only tools (read, bash). Pass tools: [\"read\", \"bash\", \"write\", \"edit\"] for tasks that need to modify files. Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/.",
+      "Skill-powered domain expert. Load any installed skill as domain expertise and dispatch a task. The specialist reads the skill, becomes an expert, and applies that expertise to your task. Defaults to read-only tools (read, bash). Pass tools: [\"read\", \"bash\", \"write\", \"edit\"] for tasks that need to modify files. Use for delegating work that requires specific domain knowledge — code review styles, framework patterns, documentation standards, or any skill in ~/.agents/skills/ or ~/.pi/agent/skills/. Usually omit the optional `model` parameter unless the user explicitly asked for a specific model/provider.",
     parameters: SpecialistParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
@@ -382,7 +417,7 @@ export default function scoutsExtension(pi: ExtensionAPI) {
     name: "scouts",
     label: "Scouts",
     description:
-      "Run finder, librarian, and specialist scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance.",
+      "Run finder, librarian, and specialist scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance. Usually omit per-task `model` overrides unless the user explicitly asked for a specific model/provider.",
     parameters: ScoutsParams as any,
 
     async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {

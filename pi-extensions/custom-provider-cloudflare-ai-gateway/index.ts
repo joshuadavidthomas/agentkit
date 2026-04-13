@@ -40,42 +40,43 @@ import { homedir } from "os";
 import { join } from "path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getModels, refreshModelsInBackground } from "./models.js";
+import { streamCloudflareAIGateway } from "./stream.js";
 
 interface CloudflareConfig {
-	accountId: string;
-	gatewayName: string;
+  accountId: string;
+  gatewayName: string;
 }
 
 function getConfigPath(): string {
-	const agentDir = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-	return join(agentDir, "cloudflare-ai-gateway.json");
+  const agentDir = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  return join(agentDir, "cloudflare-ai-gateway.json");
 }
 
 function loadConfig(): CloudflareConfig | null {
-	const configPath = getConfigPath();
+  const configPath = getConfigPath();
 
-	if (!existsSync(configPath)) {
-		return null;
-	}
+  if (!existsSync(configPath)) {
+    return null;
+  }
 
-	try {
-		const content = readFileSync(configPath, "utf-8");
-		const config = JSON.parse(content) as CloudflareConfig;
+  try {
+    const content = readFileSync(configPath, "utf-8");
+    const config = JSON.parse(content) as CloudflareConfig;
 
-		if (!config.accountId || !config.gatewayName) {
-			console.warn(
-				"[Cloudflare AI Gateway] Invalid config: accountId and gatewayName are required in cloudflare-ai-gateway.json",
-			);
-			return null;
-		}
+    if (!config.accountId || !config.gatewayName) {
+      console.warn(
+        "[Cloudflare AI Gateway] Invalid config: accountId and gatewayName are required in cloudflare-ai-gateway.json",
+      );
+      return null;
+    }
 
-		return config;
-	} catch (error) {
-		console.warn(
-			`[Cloudflare AI Gateway] Failed to load config from ${configPath}: ${error instanceof Error ? error.message : error}`,
-		);
-		return null;
-	}
+    return config;
+  } catch (error) {
+    console.warn(
+      `[Cloudflare AI Gateway] Failed to load config from ${configPath}: ${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
 }
 
 const config = loadConfig();
@@ -84,30 +85,30 @@ const CLOUDFLARE_ACCOUNT_ID = config?.accountId ?? process.env.CLOUDFLARE_ACCOUN
 const CLOUDFLARE_AI_GATEWAY_NAME = config?.gatewayName ?? process.env.CLOUDFLARE_AI_GATEWAY_NAME ?? "";
 
 const AI_GATEWAY_BASE_URL =
-	CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_AI_GATEWAY_NAME
-		? `https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${CLOUDFLARE_AI_GATEWAY_NAME}`
-		: "";
+  CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_AI_GATEWAY_NAME
+    ? `https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${CLOUDFLARE_AI_GATEWAY_NAME}/compat`
+    : "";
 
 export default function (pi: ExtensionAPI) {
-	if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_AI_GATEWAY_NAME) {
-		const configPath = getConfigPath();
-		console.warn("[Cloudflare AI Gateway] Configuration not found.");
-		console.warn(`[Cloudflare AI Gateway] Create ${configPath} with:`);
-		console.warn('  { "accountId": "your-account-id", "gatewayName": "your-gateway-name" }');
-		console.warn("[Cloudflare AI Gateway] Or set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_GATEWAY_NAME environment variables.");
-	}
+  if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_AI_GATEWAY_NAME) {
+    const configPath = getConfigPath();
+    console.warn("[Cloudflare AI Gateway] Configuration not found.");
+    console.warn(`[Cloudflare AI Gateway] Create ${configPath} with:`);
+    console.warn('  { "accountId": "your-account-id", "gatewayName": "your-gateway-name" }');
+    console.warn("[Cloudflare AI Gateway] Or set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_GATEWAY_NAME environment variables.");
+  }
 
-	const models = getModels();
+  const models = getModels();
 
-	pi.registerProvider("cloudflare-ai-gateway", {
-		baseUrl: AI_GATEWAY_BASE_URL,
-		apiKey: "CLOUDFLARE_AI_GATEWAY_TOKEN",
-		api: "openai-completions",
-		models,
-		authHeader: true,
-		headers: {},
-	});
+  pi.registerProvider("cloudflare-ai-gateway", {
+    baseUrl: AI_GATEWAY_BASE_URL,
+    apiKey: "CLOUDFLARE_AI_GATEWAY_TOKEN",
+    api: "openai-completions",
+    models,
+    authHeader: true,
+    streamSimple: streamCloudflareAIGateway,
+  });
 
-	// Refresh model cache in background for next startup
-	refreshModelsInBackground();
+  // Refresh model cache in background for next startup
+  refreshModelsInBackground();
 }
