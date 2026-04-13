@@ -1,11 +1,10 @@
-// Model selection for scout subagents.
+// Model configuration for scout subagents.
 //
-// Each scout specifies default model candidates. Callers can override per-invocation.
-// Resolution uses substring matching on model IDs, with two extra rules:
-// - Bare model IDs prefer the current session provider first.
-// - "provider/model" pins the provider exactly.
-//
-// Family selection is driven by explicit rule tables, not hardcoded branching.
+// Two concerns live here:
+// 1. Candidate lists (FAST_MODELS, HEAVY_MODELS) — which models each scout tier prefers.
+//    Adjust these to change model preferences for all scouts at once.
+// 2. Resolution engine — how a model ID string becomes an actual available model,
+//    with family detection, provider pinning, and fallback chains.
 
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
@@ -42,7 +41,29 @@ export interface PlannedModelSelection {
   defaultModelIds?: string[];
 }
 
-export const DEFAULT_MODEL_FAMILY_RULES: ModelFamilyRule[] = [
+export const FAST_MODELS: Partial<Record<ModelFamily, string[]>> = {
+  openai: ["gpt-5.4-mini", "gpt-5-mini", "gpt-5.4"],
+  anthropic: ["claude-haiku-4-5", "claude-sonnet-4-6"],
+  google: ["gemini-2.5-flash", "gemini-2.5-pro"],
+  kimi: ["k2p5", "kimi-k2-thinking"],
+  zai: ["glm-5-turbo", "glm-5", "glm-4.7-flash"],
+  minimax: ["MiniMax-M2.7-highspeed", "MiniMax-M2.7"],
+  mistral: ["devstral-small-2507", "devstral-medium-latest"],
+  xai: ["grok-4-fast-non-reasoning", "grok-4-fast"],
+};
+
+export const HEAVY_MODELS: Partial<Record<ModelFamily, string[]>> = {
+  openai: ["gpt-5.4", "gpt-5.4-pro"],
+  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6"],
+  google: ["gemini-3.1-pro-preview", "gemini-2.5-pro"],
+  kimi: ["kimi-k2-thinking", "k2p5"],
+  zai: ["glm-5", "glm-5.1", "glm-4.7"],
+  minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+  mistral: ["devstral-medium-latest", "mistral-large-latest"],
+  xai: ["grok-4", "grok-4-fast"],
+};
+
+const MODEL_FAMILY_RULES: ModelFamilyRule[] = [
   {
     family: "openai",
     providers: ["openai", "openai-codex", "azure-openai-responses"],
@@ -85,10 +106,6 @@ export const DEFAULT_MODEL_FAMILY_RULES: ModelFamilyRule[] = [
   },
 ];
 
-// Resolve a model by ID substring (e.g. "claude-opus-4-6", "haiku-4-5").
-// Searches all available (authed) models for a match.
-// Returns the preferred match first. Bare model IDs prefer the current
-// session provider. "provider/model" syntax pins the provider exactly.
 export function resolveModel(
   modelRegistry: ModelRegistry,
   currentModel: Model<Api> | undefined,
@@ -100,7 +117,7 @@ export function resolveModel(
 
 export function resolveModelFamily(
   currentModel: Model<Api> | undefined,
-  rules: ModelFamilyRule[] = DEFAULT_MODEL_FAMILY_RULES,
+  rules: ModelFamilyRule[] = MODEL_FAMILY_RULES,
 ): ModelFamily | undefined {
   if (!currentModel) return undefined;
 
@@ -132,9 +149,6 @@ function dedupeSelectedModels(candidates: SelectedModel[]): SelectedModel[] {
   return deduped;
 }
 
-// Resolve all candidate models in priority order.
-// Bare model IDs prefer the current session provider first.
-// "provider/model" returns only matches from that exact provider.
 export function resolveModelCandidates(
   modelRegistry: ModelRegistry,
   currentModel: Model<Api> | undefined,
@@ -152,7 +166,6 @@ export function resolveModelCandidates(
   const slashIdx = needle.indexOf("/");
 
   if (slashIdx !== -1) {
-    // "provider/model" — exact provider pin, substring match on model ID.
     const providerId = needle.slice(0, slashIdx).trim();
     const modelNeedle = needle.slice(slashIdx + 1).trim();
 
@@ -165,7 +178,6 @@ export function resolveModelCandidates(
       }));
   }
 
-  // Plain model ID — prefer matches from the current session provider first.
   const matches = available.filter((m) => m.id.toLowerCase().includes(needle));
   const currentProvider = currentModel?.provider?.toLowerCase();
 

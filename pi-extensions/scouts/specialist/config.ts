@@ -1,27 +1,40 @@
-// Specialist scout config builder — centralizes skill resolution and config construction.
-//
-// Used by both the specialist tool registration and the parallel scouts dispatcher
-// to avoid duplicating the skill resolution + error handling + config building logic.
-
 import { readFileSync } from "node:fs";
+import { Type } from "@sinclair/typebox";
 import { createBashTool, createEditTool, createReadTool, createWriteTool, DefaultResourceLoader, type Skill } from "@mariozechner/pi-coding-agent";
 import { parse as parseYaml } from "yaml";
 
-import type { ScoutConfig } from "./scout-core.ts";
-import type { ThinkingLevel } from "./model-selection.ts";
-import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./specialist-prompts.md.ts";
+import type { ScoutConfig } from "../types.ts";
+import type { ThinkingLevel } from "../models.ts";
+import { HEAVY_MODELS } from "../models.ts";
+import { ModelParam } from "../validate.ts";
+import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./prompt.ts";
 
 export type SpecialistTool = "read" | "bash" | "write" | "edit";
 
-const DEFAULT_TOOLS: SpecialistTool[] = ["read", "bash"];
+export const SpecialistParams = Type.Object({
+  skill: Type.String({
+    description: [
+      "Name of the skill to load as domain expertise.",
+      "The specialist becomes an expert in this skill and applies it to the task.",
+      "Use listAvailableSkills to discover what's installed.",
+    ].join("\n"),
+  }),
+  task: Type.String({
+    description: [
+      "The task for the specialist to execute using the loaded skill.",
+      "Be specific about what you want analyzed, reviewed, created, or investigated.",
+    ].join("\n"),
+  }),
+  tools: Type.Optional(
+    Type.Array(
+      Type.String({ enum: ["read", "bash", "write", "edit"] }),
+      { description: "Tools the specialist can use. Defaults to [\"read\", \"bash\"]. Add \"write\" and \"edit\" for tasks that need to modify files." },
+    ),
+  ),
+  model: ModelParam,
+});
 
-export interface SpecialistConfigOptions {
-  // Optional config name override. Defaults to "specialist" for single-use,
-  // or "specialist:<skillName>" for parallel execution (to distinguish multiple specialists).
-  configName?: string;
-  // Which tools to give the specialist. Defaults to ["read", "bash"].
-  tools?: SpecialistTool[];
-}
+const DEFAULT_TOOLS: SpecialistTool[] = ["read", "bash"];
 
 function parseFrontmatter(content: string): Record<string, unknown> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -42,7 +55,7 @@ async function discoverSkills(cwd: string): Promise<Skill[]> {
 export async function buildSpecialistConfig(
   skillName: string,
   cwd: string,
-  options?: SpecialistConfigOptions,
+  options?: { configName?: string; tools?: SpecialistTool[] },
 ): Promise<ScoutConfig | { error: string }> {
   const trimmed = skillName.trim();
 
@@ -86,16 +99,7 @@ export async function buildSpecialistConfig(
     defaultModel: frontmatterModel || "anthropic/claude-sonnet-4-6",
     familyModelCandidates: frontmatterModel
       ? undefined
-      : {
-          openai: ["gpt-5.4", "gpt-5.4-pro"],
-          anthropic: ["claude-sonnet-4-6", "claude-opus-4-6"],
-          google: ["gemini-3.1-pro-preview", "gemini-2.5-pro"],
-          kimi: ["kimi-k2-thinking", "k2p5"],
-          zai: ["glm-5", "glm-5.1"],
-          minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
-          mistral: ["devstral-medium-latest", "mistral-large-latest"],
-          xai: ["grok-4", "grok-4-fast"],
-        },
+      : HEAVY_MODELS,
     defaultThinkingLevel: (fm["thinking-level"] as ThinkingLevel) || undefined,
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,

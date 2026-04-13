@@ -28,30 +28,25 @@ const MUTATION_PATTERNS = [
 
 function extractLeadCommand(command: string): string | null {
   const trimmed = command.trim();
-  // Handle env vars, cd prefixes, etc.
   const match = trimmed.match(/^(?:(?:cd\s+\S+\s*&&\s*)|(?:\w+=\S+\s+))*(\w[\w.-]*)/);
   return match?.[1] ?? null;
 }
 
 function isReadOnly(command: string): { ok: boolean; reason?: string } {
-  // Check mutation patterns first
   for (const pattern of MUTATION_PATTERNS) {
     if (pattern.test(command)) {
       return { ok: false, reason: `Command matches blocked pattern: ${pattern.source}` };
     }
   }
 
-  // For piped commands, check each segment
   const segments = command.split(/[|;]/).map((s) => s.trim()).filter(Boolean);
 
   for (const segment of segments) {
-    // Handle subshells and command substitution loosely — check the inner command
     const inner = segment.replace(/^\(+/, "").replace(/\)+$/, "").trim();
     const lead = extractLeadCommand(inner);
 
     if (!lead) continue;
 
-    // Allow && and || chains by checking each part
     const parts = inner.split(/\s*(?:&&|\|\|)\s*/);
     for (const part of parts) {
       const partLead = extractLeadCommand(part);
