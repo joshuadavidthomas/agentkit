@@ -48,7 +48,7 @@ function execScript(
         resolve({
           stdout: stdout ?? "",
           stderr: stderr ?? "",
-          exitCode: error ? (error as any).code ?? 1 : 0,
+          exitCode: error ? (error as NodeJS.ErrnoException).code ? Number((error as NodeJS.ErrnoException).code) || 1 : 1 : 0,
         });
       },
     );

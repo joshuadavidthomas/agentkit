@@ -4,99 +4,47 @@
 // Each scout gets its own ScoutDetails tracked independently, with combined
 // progress updates for the TUI.
 
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { buildParallelCombinedText, buildParallelDetails } from "./display.ts";
 import { executeScout } from "./execute.ts";
 import { ParallelScoutsResult, ScoutCall } from "./render.ts";
-import type { ParallelDetails, ParallelScoutResult, ScoutConfig } from "./types.ts";
+import type { ParallelDetails, ScoutConfig, ScoutDetails } from "./types.ts";
+
+type ParallelScoutResult = ParallelDetails["results"][number];
+type ScoutStatus = ScoutDetails["status"];
 import { ModelParam } from "./validate.ts";
 import { FINDER_CONFIG } from "./finder/config.ts";
 import { LIBRARIAN_CONFIG } from "./librarian/config.ts";
-import { buildSpecialistConfig } from "./specialist/config.ts";
+import { buildSpecialistConfig, type SpecialistTool } from "./specialist/config.ts";
 
-interface ParallelTask {
-  scout: string;
-  params: Record<string, unknown>;
-}
-
-async function executeParallelScouts(
-  configs: Map<string, ScoutConfig>,
-  tasks: ParallelTask[],
-  signal: AbortSignal | undefined,
-  onUpdate: ((update: any) => void) | undefined,
-  ctx: ExtensionContext,
-): Promise<{
+function buildParallelSnapshot(results: ParallelScoutResult[]): {
   content: Array<{ type: "text"; text: string }>;
   details: ParallelDetails;
   isError: boolean;
-}> {
-  const results: ParallelScoutResult[] = tasks.map((t) => ({
-    scout: t.scout,
-    details: { mode: "single", status: "running", runs: [] },
-    content: [{ type: "text" as const, text: "(running...)" }],
-    isError: false,
-  }));
+} {
+  const content = [{
+    type: "text" as const,
+    text: results
+      .map((result) => `[${result.scout}] ${result.content[0]?.text ?? "(no output)"}`)
+      .join("\n\n"),
+  }];
 
-  let lastUpdate = 0;
-  const emitCombined = (force = false) => {
-    const now = Date.now();
-    if (!force && now - lastUpdate < 150) return;
-    lastUpdate = now;
-
-    onUpdate?.({
-      content: [{ type: "text", text: buildParallelCombinedText(results) }],
-      details: buildParallelDetails(results),
-    });
-  };
-
-  emitCombined(true);
-
-  const promises = tasks.map(async (task, i) => {
-    const config = configs.get(task.scout);
-    if (!config) {
-      results[i] = {
-        scout: task.scout,
-        details: { mode: "single", status: "error", runs: [] },
-        content: [{ type: "text" as const, text: `Unknown scout: ${task.scout}` }],
-        isError: true,
-      };
-      emitCombined(true);
-      return;
-    }
-
-    const result = await executeScout(
-      config,
-      task.params,
-      signal,
-      (update) => {
-        results[i] = {
-          scout: task.scout,
-          details: update.details ?? results[i].details,
-          content: update.content ?? results[i].content,
-          isError: false,
-        };
-        emitCombined();
-      },
-      ctx,
-    );
-
-    results[i] = {
-      scout: task.scout,
-      details: result.details,
-      content: result.content,
-      isError: result.isError,
-    };
-    emitCombined(true);
-  });
-
-  await Promise.allSettled(promises);
+  let status: ScoutStatus = "done";
+  if (results.some((result) => result.details.status === "running")) {
+    status = "running";
+  } else if (results.some((result) => result.details.status === "error")) {
+    status = "error";
+  }
 
   return {
-    content: [{ type: "text", text: buildParallelCombinedText(results) }],
-    details: buildParallelDetails(results),
-    isError: results.some((r) => r.isError),
+    content,
+    details: {
+      mode: "parallel",
+      status,
+      results,
+    },
+    isError: results.some((result) => result.isError),
   };
 }
 
@@ -130,7 +78,7 @@ async function resolveParallelConfig(
   const skillName = (task.skill ?? "").trim();
   if (!skillName) return { error: "Specialist task requires a skill name." };
 
-  return buildSpecialistConfig(skillName, cwd, { tools: task.tools as any });
+  return buildSpecialistConfig(skillName, cwd, { tools: task.tools as SpecialistTool[] | undefined });
 }
 
 const ScoutsParams = Type.Object({
@@ -166,15 +114,21 @@ const ScoutsParams = Type.Object({
   ),
 });
 
-export const SCOUTS_TOOL: ToolDefinition<any, ParallelDetails> = {
+export const SCOUTS_TOOL: ToolDefinition<typeof ScoutsParams, ParallelDetails> = {
   name: "scouts",
   label: "Scouts",
   description:
     "Run finder, librarian, and specialist scouts in parallel for independent research tasks. Oracle is not available here — call it separately before or after to combine deep analysis with broad reconnaissance. Usually omit per-task `model` overrides unless the user explicitly asked for a specific model/provider.",
   parameters: ScoutsParams,
 
-  async execute(_toolCallId: string, params: unknown, signal: any, onUpdate: any, ctx: any) {
-    const p = params as { tasks: Array<{ scout: string; query: string; skill?: string; tools?: string[]; repos?: string[]; owners?: string[]; model?: string }> };
+  async execute(
+    _toolCallId: string,
+    params: Static<typeof ScoutsParams>,
+    signal: AbortSignal | undefined,
+    onUpdate: ((update: ReturnType<typeof buildParallelSnapshot>) => void) | undefined,
+    ctx: ExtensionContext,
+  ) {
+    const p = params;
 
     if (!Array.isArray(p.tasks) || p.tasks.length === 0) {
       return makeParallelError("Invalid parameters: expected non-empty `tasks` array.");
@@ -223,10 +177,63 @@ export const SCOUTS_TOOL: ToolDefinition<any, ParallelDetails> = {
       resolvedTasks.push({ scout: configKey, params: taskParams });
     }
 
-    return executeParallelScouts(resolvedConfigs, resolvedTasks, signal, onUpdate, ctx);
+    const results: ParallelScoutResult[] = resolvedTasks.map((task) => ({
+      scout: task.scout,
+      details: { mode: "single", status: "running", runs: [] },
+      content: [{ type: "text" as const, text: "(running...)" }],
+      isError: false,
+    }));
+
+    const publishParallelSnapshot = () => {
+      onUpdate?.(buildParallelSnapshot(results));
+    };
+
+    publishParallelSnapshot();
+
+    const promises = resolvedTasks.map(async (task, i) => {
+      const config = resolvedConfigs.get(task.scout);
+      if (!config) {
+        results[i] = {
+          scout: task.scout,
+          details: { mode: "single", status: "error", runs: [] },
+          content: [{ type: "text" as const, text: `Unknown scout: ${task.scout}` }],
+          isError: true,
+        };
+        publishParallelSnapshot();
+        return;
+      }
+
+      const result = await executeScout(
+        config,
+        task.params,
+        signal,
+        (update) => {
+          results[i] = {
+            scout: task.scout,
+            details: update.details,
+            content: update.content,
+            isError: false,
+          };
+          publishParallelSnapshot();
+        },
+        ctx,
+      );
+
+      results[i] = {
+        scout: task.scout,
+        details: result.details,
+        content: result.content,
+        isError: result.isError,
+      };
+      publishParallelSnapshot();
+    });
+
+    await Promise.allSettled(promises);
+
+    return buildParallelSnapshot(results);
   },
 
-  renderCall(args: any, theme: any, context: any) {
+  renderCall(args, theme, context) {
     const p = args as { tasks?: Array<{ scout: string; query: string; skill?: string }> };
     const count = Array.isArray(p?.tasks) ? p.tasks.length : 0;
     const scouts = Array.isArray(p?.tasks)
@@ -236,7 +243,7 @@ export const SCOUTS_TOOL: ToolDefinition<any, ParallelDetails> = {
     return new ScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
   },
 
-  renderResult(result: any, options: any, theme: any) {
+  renderResult(result, options, theme) {
     return new ParallelScoutsResult(result, options, theme);
   },
 };

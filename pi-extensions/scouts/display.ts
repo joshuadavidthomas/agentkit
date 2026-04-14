@@ -3,49 +3,23 @@
 // Shared between execute (which produces display items) and render
 // (which consumes them).
 
-import type { DisplayItem, ParallelDetails, ParallelScoutResult, ScoutRunDetails, ScoutStatus } from "./types.ts";
+import type { AgentMessage, AgentToolResult } from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+
+import type { DisplayItem } from "./types.ts";
+
+type ToolResultLike = Pick<AgentToolResult<unknown>, "content"> | ToolResultMessage<unknown>;
 
 export const MAX_DISPLAY_ITEMS = 120;
 
-// Compute overall status from individual runs
-export function computeOverallStatus(runs: ScoutRunDetails[]): ScoutStatus {
-  if (runs.some((r) => r.status === "running")) return "running";
-  if (runs.some((r) => r.status === "error")) return "error";
-  if (runs.every((r) => r.status === "aborted")) return "aborted";
-  return "done";
-}
-
-export function buildParallelCombinedText(results: ParallelScoutResult[]): string {
-  return results
-    .map((r) => `[${r.scout}] ${r.content[0]?.text ?? "(no output)"}`)
-    .join("\n\n");
-}
-
-export function buildParallelDetails(results: ParallelScoutResult[]): ParallelDetails {
-  let status: ScoutStatus = "done";
-  if (results.some((r) => r.details.status === "running")) {
-    status = "running";
-  } else if (results.some((r) => r.details.status === "error")) {
-    status = "error";
-  }
-
-  return {
-    mode: "parallel",
-    status,
-    results,
-  };
-}
-
 // Extract the last assistant text block from session messages
-export function getLastAssistantText(messages: any[]): string {
+export function getLastAssistantText(messages: readonly AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg?.role !== "assistant") continue;
-    const parts = msg.content;
-    if (!Array.isArray(parts)) continue;
+    if (!isAssistantMessage(msg)) continue;
     const blocks: string[] = [];
-    for (const part of parts) {
-      if (part?.type === "text" && typeof part.text === "string") blocks.push(part.text);
+    for (const part of msg.content) {
+      if (part.type === "text") blocks.push(part.text);
     }
     if (blocks.length > 0) return blocks.join("");
   }
@@ -53,26 +27,27 @@ export function getLastAssistantText(messages: any[]): string {
 }
 
 // Extract interleaved display items from session messages
-export function extractDisplayItems(messages: any[]): DisplayItem[] {
+export function extractDisplayItems(messages: readonly AgentMessage[]): DisplayItem[] {
   const items: DisplayItem[] = [];
   const toolItemById = new Map<string, DisplayItem & { type: "tool" }>();
 
   for (const msg of messages) {
-    if (msg?.role === "assistant") {
-      const parts = msg.content;
-      if (!Array.isArray(parts)) continue;
-      for (const part of parts) {
-        if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
+    if (isAssistantMessage(msg)) {
+      for (const part of msg.content) {
+        if (part.type === "text" && part.text.trim()) {
           items.push({ type: "text", text: part.text });
-        } else if (part?.type === "toolCall" || part?.type === "tool_use") {
-          const args = part.arguments ?? part.input ?? {};
-          const id = part.id ?? part.toolCallId;
-          const item: DisplayItem & { type: "tool" } = { type: "tool", name: part.name ?? "unknown", args, toolCallId: id };
+        } else if (part.type === "toolCall") {
+          const item: DisplayItem & { type: "tool" } = {
+            type: "tool",
+            name: part.name,
+            args: part.arguments,
+            toolCallId: part.id,
+          };
           items.push(item);
-          if (id) toolItemById.set(id, item);
+          toolItemById.set(part.id, item);
         }
       }
-    } else if (msg?.role === "toolResult" && msg.toolCallId) {
+    } else if (isToolResultMessage(msg) && msg.toolCallId) {
       const toolItem = toolItemById.get(msg.toolCallId);
       if (toolItem) {
         const text = extractToolResultText(msg);
@@ -144,14 +119,18 @@ function shortenPaths(s: string): string {
   return result;
 }
 
+function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
+  return typeof message === "object" && message !== null && "role" in message && message.role === "assistant";
+}
+
+function isToolResultMessage(message: AgentMessage): message is ToolResultMessage<unknown> {
+  return typeof message === "object" && message !== null && "role" in message && message.role === "toolResult";
+}
+
 // Extract text content from a tool result message
-export function extractToolResultText(tr: any): string | undefined {
-  if (typeof tr.content === "string") return tr.content;
-  if (Array.isArray(tr.content)) {
-    const texts = tr.content
-      .filter((c: any) => c?.type === "text" && typeof c.text === "string")
-      .map((c: any) => c.text);
-    return texts.length > 0 ? texts.join("\n") : undefined;
-  }
-  return undefined;
+export function extractToolResultText(tr: ToolResultLike): string | undefined {
+  const texts = tr.content
+    .filter((content): content is TextContent => content.type === "text")
+    .map((content) => content.text);
+  return texts.length > 0 ? texts.join("\n") : undefined;
 }

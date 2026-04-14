@@ -27,7 +27,9 @@ export function makeErrorResult(text: string, details?: Partial<ScoutDetails>) {
 
 // Validate that `query` is a non-empty string, return error result or null
 export function validateQuery(params: unknown): ReturnType<typeof makeErrorResult> | null {
-  const rawQuery = (params as any).query;
+  const rawQuery = typeof params === "object" && params !== null
+    ? (params as { query?: unknown }).query
+    : undefined;
   const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
   if (!query) {
     return makeErrorResult("Invalid parameters: expected `query` to be a non-empty string.");

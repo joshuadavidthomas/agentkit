@@ -3,11 +3,17 @@
 // Handles both single-scout and parallel-scout result display,
 // including running-state previews, completed summaries, and error states.
 
-import { getMarkdownTheme, keyHint } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { getMarkdownTheme, keyHint, type Theme, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
 import { cleanToolResult, formatToolCallParts, shorten } from "./display.ts";
-import type { DisplayItem, ScoutDetails, ScoutResultDetails, ScoutRunDetails, ScoutStatus } from "./types.ts";
+import type { DisplayItem, ParallelDetails, ScoutDetails } from "./types.ts";
+
+type ScoutStatus = ScoutDetails["status"];
+type ScoutRunDetails = ScoutDetails["runs"][number];
+type ScoutToolResult = AgentToolResult<ScoutDetails>;
+type ParallelScoutsToolResult = AgentToolResult<ParallelDetails>;
 
 const SCOUT_STATUS_ICONS = {
   done: { color: "success", symbol: "✓" },
@@ -16,7 +22,7 @@ const SCOUT_STATUS_ICONS = {
   running: { color: "warning", symbol: "…" },
 } as const satisfies Record<ScoutStatus, { color: string; symbol: string }>;
 
-function scoutStatusIcon(theme: any, status: ScoutStatus): string {
+function scoutStatusIcon(theme: Theme, status: ScoutStatus): string {
   const icon = SCOUT_STATUS_ICONS[status];
   return theme.fg(icon.color, icon.symbol);
 }
@@ -25,7 +31,7 @@ class ScoutToolRow implements Component {
   constructor(
     private readonly item: Extract<DisplayItem, { type: "tool" }>,
     private readonly expanded: boolean,
-    private readonly theme: any,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
@@ -62,7 +68,7 @@ class ScoutTextBlock implements Component {
     private readonly item: Extract<DisplayItem, { type: "text" }>,
     private readonly isFinalText: boolean,
     private readonly expanded: boolean,
-    private readonly theme: any,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
@@ -89,7 +95,7 @@ class ScoutTextBlock implements Component {
     const preview = lines.slice(0, 18).join("\n");
     c.addChild(new Markdown(preview, 0, 0, mdTheme));
     if (lines.length > 18) {
-      c.addChild(new Text(this.theme.fg("dim", keyHint("app.tools.expand", "to expand")), 0, 0));
+      c.addChild(new Text(this.theme.fg("dim", keyHint("app.tools.expand", "to expand full response")), 0, 0));
     }
 
     return c.render(width);
@@ -101,7 +107,8 @@ class ScoutResultHeader implements Component {
     private readonly details: ScoutDetails,
     private readonly status: ScoutStatus,
     private readonly run: ScoutRunDetails | undefined,
-    private readonly theme: any,
+    private readonly isPartial: boolean,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
@@ -110,7 +117,9 @@ class ScoutResultHeader implements Component {
     const items = this.run?.displayItems ?? [];
     const toolCount = items.filter((item) => item.type === "tool").length;
     const totalTurns = this.run?.turns ?? 0;
-    const elapsed = this.run ? formatDuration(Date.now() - this.run.startedAt) : "";
+    const elapsed = this.run
+      ? formatElapsed(this.run.startedAt, this.run.endedAt, this.isPartial && this.status === "running")
+      : "";
 
     const icon = this.status === "running" ? "" : scoutStatusIcon(this.theme, this.status);
 
@@ -129,7 +138,7 @@ class ScoutResultBody implements Component {
     private readonly status: ScoutStatus,
     private readonly run: ScoutRunDetails | undefined,
     private readonly expanded: boolean,
-    private readonly theme: any,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
@@ -164,6 +173,10 @@ class ScoutResultBody implements Component {
     for (const item of toolItems.slice(-MAX_RUNNING_TOOLS)) {
       c.addChild(new ScoutToolRow(item, this.expanded, this.theme));
     }
+
+    if (!this.expanded && toolItems.length > 0) {
+      c.addChild(new Text(this.theme.fg("dim", keyHint("app.tools.expand", "to expand tool details")), 0, 0));
+    }
   }
 
   private renderError(c: Container): void {
@@ -173,6 +186,7 @@ class ScoutResultBody implements Component {
 
   private renderCompleted(c: Container, items: DisplayItem[]): void {
     let toolHeaderShown = false;
+    let toolCount = 0;
     let lastTextIndex = -1;
     for (let i = items.length - 1; i >= 0; i--) {
       const item = items[i];
@@ -189,6 +203,7 @@ class ScoutResultBody implements Component {
           c.addChild(new Text(this.theme.fg("dim", "Tool calls"), 0, 0));
           toolHeaderShown = true;
         }
+        toolCount += 1;
         c.addChild(new ScoutToolRow(item, this.expanded, this.theme));
         continue;
       }
@@ -197,30 +212,29 @@ class ScoutResultBody implements Component {
         c.addChild(new ScoutTextBlock(item, i === lastTextIndex, this.expanded, this.theme));
       }
     }
+
+    if (!this.expanded && toolCount > 0) {
+      c.addChild(new Text(this.theme.fg("dim", keyHint("app.tools.expand", "to expand tool details")), 0, 0));
+    }
   }
 }
 
 export class ScoutResult implements Component {
   constructor(
-    private readonly result: any,
-    private readonly options: { expanded: boolean; isPartial: boolean },
-    private readonly theme: any,
+    private readonly result: ScoutToolResult,
+    private readonly options: ToolRenderResultOptions,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
 
   render(width: number): string[] {
-    const details = this.result.details as ScoutResultDetails | undefined;
-    if (!details || details.mode !== "single") {
-      const text = this.result.content?.[0];
-      return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0).render(width);
-    }
-
-    const status = this.options.isPartial ? "running" : details.status;
+    const details = this.result.details;
+    const status = details.status;
     const run = details.runs[0];
     const c = new Container();
 
-    c.addChild(new ScoutResultHeader(details, status, run, this.theme));
+    c.addChild(new ScoutResultHeader(details, status, run, this.options.isPartial, this.theme));
     c.addChild(new ScoutResultBody(status, run, this.options.expanded, this.theme));
 
     return c.render(width);
@@ -229,20 +243,15 @@ export class ScoutResult implements Component {
 
 class ParallelScoutSection implements Component {
   constructor(
-    private readonly result: {
-      scout: string;
-      details: ScoutDetails;
-      content: Array<{ type: "text"; text: string }>;
-      isError: boolean;
-    },
-    private readonly options: { expanded: boolean; isPartial: boolean },
-    private readonly theme: any,
+    private readonly result: ParallelDetails["results"][number],
+    private readonly options: ToolRenderResultOptions,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
 
   render(width: number): string[] {
-    const status = this.options.isPartial ? "running" : this.result.details.status;
+    const status = this.result.details.status;
 
     const icon = scoutStatusIcon(this.theme, status);
     let title = `${icon} ${this.theme.fg("toolTitle", this.theme.bold(this.result.scout))}`;
@@ -250,7 +259,11 @@ class ParallelScoutSection implements Component {
     const run = this.result.details.runs?.[0];
     if (run) {
       const toolCount = (run.displayItems ?? []).filter((item) => item.type === "tool").length;
-      const duration = formatDuration(Date.now() - run.startedAt);
+      const duration = formatElapsed(
+        run.startedAt,
+        run.endedAt,
+        this.options.isPartial && status === "running",
+      );
       title += this.theme.fg("dim", ` • ${run.turns} turns • ${toolCount} tools • ${duration}`);
     }
 
@@ -265,7 +278,7 @@ export class ScoutCall implements Component {
   constructor(
     private readonly scoutName: string,
     private readonly args: Record<string, unknown> | undefined,
-    private readonly theme: any,
+    private readonly theme: Theme,
     private readonly extraInfo?: string,
     private readonly context?: { expanded?: boolean },
   ) { }
@@ -292,41 +305,25 @@ export class ScoutCall implements Component {
 
 export class ParallelScoutsResult implements Component {
   constructor(
-    private readonly result: any,
-    private readonly options: { expanded: boolean; isPartial: boolean },
-    private readonly theme: any,
+    private readonly result: ParallelScoutsToolResult,
+    private readonly options: ToolRenderResultOptions,
+    private readonly theme: Theme,
   ) { }
 
   invalidate(): void { }
 
   render(width: number): string[] {
     const details = this.result.details;
-    if (!details || details.mode !== "parallel") {
-      const text = this.result.content?.[0];
-      return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0).render(width);
-    }
-
-    const parallelResults = details.results as Array<{
-      scout: string;
-      details: ScoutDetails;
-      content: Array<{ type: "text"; text: string }>;
-      isError: boolean;
-    }>;
+    const parallelResults = details.results;
 
     let doneCount = 0;
-    let overallStatus: "running" | "error" | "done" = this.options.isPartial ? "running" : "done";
     for (const result of parallelResults) {
-      const status = result.details.status;
-      if (status === "done") {
+      if (result.details.status === "done") {
         doneCount += 1;
-      } else if (status === "running") {
-        overallStatus = "running";
-      } else if (status === "error" && overallStatus !== "running") {
-        overallStatus = "error";
       }
     }
 
-    const icon = scoutStatusIcon(this.theme, overallStatus);
+    const icon = scoutStatusIcon(this.theme, details.status);
 
     const c = new Container();
     c.addChild(new Text(
@@ -341,6 +338,11 @@ export class ParallelScoutsResult implements Component {
 
     return c.render(width);
   }
+}
+
+function formatElapsed(startedAt: number, endedAt: number | undefined, isLive: boolean): string {
+  if (!isLive && endedAt === undefined) return "";
+  return formatDuration((endedAt ?? Date.now()) - startedAt);
 }
 
 function formatDuration(ms: number): string {

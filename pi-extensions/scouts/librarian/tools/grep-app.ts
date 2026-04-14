@@ -7,7 +7,6 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 const GREP_APP_API = "https://grep.app/api/search";
-const DEFAULT_TIMEOUT_MS = 15_000;
 
 const searchCodeSchema = Type.Object({
   query: Type.String({

@@ -16,6 +16,23 @@ interface GhResult {
   exitCode: number;
 }
 
+interface GitHubSearchHit {
+  path?: string;
+  repository?: {
+    nameWithOwner?: string;
+    fullName?: string;
+    name?: string;
+  };
+  textMatches?: Array<{ fragment?: string }>;
+}
+
+interface GitHubRepositorySearchResult {
+  fullName?: string;
+  description?: string;
+  language?: string;
+  stargazersCount?: number;
+}
+
 function execGh(
   args: string[],
   signal?: AbortSignal,
@@ -38,7 +55,7 @@ function execGh(
         resolve({
           stdout: stdout ?? "",
           stderr: stderr ?? "",
-          exitCode: error ? (error as any).code ?? 1 : 0,
+          exitCode: error ? (error as NodeJS.ErrnoException).code ? Number((error as NodeJS.ErrnoException).code) || 1 : 1 : 0,
         });
       },
     );
@@ -263,7 +280,7 @@ export function createSearchGitHubTool(): AgentTool<typeof searchGitHubSchema> {
         return toolError(`Search failed: ${msg}`);
       }
 
-      let hits: any[];
+      let hits: GitHubSearchHit[];
       try {
         hits = JSON.parse(result.stdout);
       } catch {
@@ -555,7 +572,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
         return toolError(`Repository search failed: ${msg}`);
       }
 
-      let repos: any[];
+      let repos: GitHubRepositorySearchResult[];
       try {
         repos = JSON.parse(result.stdout);
       } catch {
@@ -566,7 +583,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
         return toolOk("No repositories found matching the criteria.");
       }
 
-      const lines = repos.map((r: any) => {
+      const lines = repos.map((r) => {
         const stars = r.stargazersCount ? ` ⭐${r.stargazersCount}` : "";
         const lang = r.language ? ` [${r.language}]` : "";
         const desc = r.description ? ` — ${r.description}` : "";
@@ -582,7 +599,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
 }
 
 // Factory to create all GitHub tools at once
-export function createGitHubTools(): AgentTool<any>[] {
+export function createGitHubTools() {
   return [
     createReadRepoFileTool(),
     createSearchGitHubTool(),

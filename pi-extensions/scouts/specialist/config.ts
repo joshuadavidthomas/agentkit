@@ -45,12 +45,6 @@ function parseFrontmatter(content: string): Record<string, unknown> {
   }
 }
 
-async function discoverSkills(cwd: string): Promise<Skill[]> {
-  const loader = new DefaultResourceLoader({ cwd, noExtensions: true, noPromptTemplates: true, noThemes: true });
-  await loader.reload();
-  return loader.getSkills().skills;
-}
-
 export async function buildSpecialistConfig(
   skillName: string,
   cwd: string,
@@ -62,7 +56,9 @@ export async function buildSpecialistConfig(
     return { error: "Specialist requires a skill name." };
   }
 
-  const allSkills = await discoverSkills(cwd);
+  const resourceLoader = new DefaultResourceLoader({ cwd, noExtensions: true, noPromptTemplates: true, noThemes: true });
+  await resourceLoader.reload();
+  const allSkills = resourceLoader.getSkills().skills;
   const match = allSkills.find((s) => s.name === trimmed);
 
   if (!match) {
@@ -83,13 +79,6 @@ export async function buildSpecialistConfig(
   const configName = options?.configName ?? `specialist:${trimmed}`;
   const tools = options?.tools ?? DEFAULT_TOOLS;
 
-  const toolBuilders: Record<SpecialistTool, () => any> = {
-    read: () => createReadTool(cwd),
-    bash: () => createBashTool(cwd),
-    write: () => createWriteTool(cwd),
-    edit: () => createEditTool(cwd),
-  };
-
   const frontmatterModel = fm.model as string | undefined;
 
   return {
@@ -100,6 +89,14 @@ export async function buildSpecialistConfig(
     defaultThinkingLevel: (fm["thinking-level"] as ThinkingLevel) || undefined,
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,
-    getTools: () => tools.map((t) => toolBuilders[t]()),
+    createTools: (runtimeCwd) => {
+      const toolBuilders: Record<SpecialistTool, () => any> = {
+        read: () => createReadTool(runtimeCwd),
+        bash: () => createBashTool(runtimeCwd),
+        write: () => createWriteTool(runtimeCwd),
+        edit: () => createEditTool(runtimeCwd),
+      };
+      return tools.map((t) => toolBuilders[t]());
+    },
   };
 }

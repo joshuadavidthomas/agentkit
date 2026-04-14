@@ -23,7 +23,7 @@ export const OracleParams = Type.Object({
 });
 
 // Base config without tools — tools need cwd at runtime
-const ORACLE_BASE_CONFIG: Omit<ScoutConfig, "getTools"> = {
+const ORACLE_BASE_CONFIG: Omit<ScoutConfig, "createTools"> = {
   name: "oracle",
   maxTurns: 12,
   workload: "deep",
@@ -32,10 +32,10 @@ const ORACLE_BASE_CONFIG: Omit<ScoutConfig, "getTools"> = {
 };
 
 // Build the full oracle config with tools scoped to cwd
-export function buildOracleConfig(cwd: string): ScoutConfig {
+export function buildOracleConfig(): ScoutConfig {
   return {
     ...ORACLE_BASE_CONFIG,
-    getTools: () => [
+    createTools: (cwd) => [
       createReadOnlyBashTool(cwd),
       createReadTool(cwd),
     ],

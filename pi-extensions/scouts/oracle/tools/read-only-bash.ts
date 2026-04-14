@@ -67,8 +67,9 @@ export function createReadOnlyBashTool(cwd: string) {
     name: "bash",
     description: "Execute read-only bash commands (rg, fd, ls, cat, wc, head, tail, file, stat, nl, find, tree, grep, sort, uniq, cut, diff). No writes, installs, or mutations allowed.",
 
-    async execute(toolCallId: string, params: any, signal: any, onUpdate: any) {
-      const command = typeof params?.command === "string" ? params.command : "";
+    async execute(...args: Parameters<typeof baseTool.execute>) {
+      const [toolCallId, params, signal, onUpdate] = args;
+      const command = typeof params.command === "string" ? params.command : "";
 
       const check = isReadOnly(command);
       if (!check.ok) {

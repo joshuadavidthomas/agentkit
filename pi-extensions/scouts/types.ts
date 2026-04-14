@@ -4,14 +4,14 @@ import type { ThinkingLevel } from "@mariozechner/pi-ai";
 
 import type { ScoutWorkload } from "./models.ts";
 
-export type ScoutStatus = "running" | "done" | "error" | "aborted";
+type ScoutStatus = "running" | "done" | "error" | "aborted";
 
-// Interleaved display items — tool calls and text, in chronological order
+// Scout-local timeline projection derived from pi message/tool-result types.
 export type DisplayItem =
   | { type: "tool"; name: string; args: Record<string, unknown>; isError?: boolean; toolCallId?: string; result?: string }
   | { type: "text"; text: string };
 
-export interface ScoutRunDetails {
+interface ScoutRunDetails {
   status: ScoutStatus;
   query: string;
   turns: number;
@@ -30,7 +30,7 @@ export interface ScoutDetails {
   runs: ScoutRunDetails[];
 }
 
-export interface ParallelScoutResult {
+interface ParallelScoutResult {
   scout: string;
   details: ScoutDetails;
   content: Array<{ type: "text"; text: string }>;
@@ -42,8 +42,6 @@ export interface ParallelDetails {
   status: ScoutStatus;
   results: ParallelScoutResult[];
 }
-
-export type ScoutResultDetails = ScoutDetails | ParallelDetails;
 
 export interface ScoutConfig {
   name: string;
@@ -60,5 +58,5 @@ export interface ScoutConfig {
    * Override the default tool set. If provided, replaces the defaults entirely.
    * Built-in tools (name matches allTools) go to `tools`, others go to `customTools`.
    */
-  getTools?: () => any[];
+  createTools?: (cwd: string) => any[];
 }

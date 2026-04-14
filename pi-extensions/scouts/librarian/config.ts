@@ -47,7 +47,7 @@ export const LIBRARIAN_CONFIG: ScoutConfig = {
   workload: "balanced",
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
-  getTools: () => [
+  createTools: (_cwd) => [
     createGrepGitHubTool(),
     ...createGitHubTools(),
     createWebSearchTool(),

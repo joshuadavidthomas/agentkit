@@ -6,7 +6,13 @@
 import events from "node:events";
 
 import type { Api, Model, ThinkingLevel } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  ExtensionContext,
+  ExtensionFactory,
+  ToolDefinition,
+} from "@mariozechner/pi-coding-agent";
 import {
   DefaultResourceLoader,
   SessionManager,
@@ -17,14 +23,16 @@ import {
 
 import { extractDisplayItems, extractToolResultText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
 import { resolveWorkloadModel } from "./models.ts";
-import type { ScoutConfig, ScoutDetails, ScoutRunDetails } from "./types.ts";
+import type { ScoutConfig, ScoutDetails } from "./types.ts";
+
+type ScoutRunDetails = ScoutDetails["runs"][number];
 
 // Turn budget extension — blocks tool use on the final turn
-export function createTurnBudgetExtension(maxTurns: number) {
-  return (pi: any) => {
+export function createTurnBudgetExtension(maxTurns: number): ExtensionFactory {
+  return (pi) => {
     let turnIndex = 0;
 
-    pi.on("turn_start", async (event: any) => {
+    pi.on("turn_start", async (event) => {
       turnIndex = event.turnIndex;
     });
 
@@ -37,7 +45,7 @@ export function createTurnBudgetExtension(maxTurns: number) {
       };
     });
 
-    pi.on("tool_result", async (event: any) => {
+    pi.on("tool_result", async (event) => {
       const remainingAfter = Math.max(0, maxTurns - (turnIndex + 1));
       const humanTurn = Math.min(turnIndex + 1, maxTurns);
       const budgetLine = `[turn budget] turn ${humanTurn}/${maxTurns}; remaining after this turn: ${remainingAfter}`;
@@ -59,19 +67,22 @@ type ScoutExecutionResult = {
   details: ScoutDetails;
   isError: boolean;
 };
+type ScoutUpdate = Pick<ScoutExecutionResult, "content" | "details">;
 type ScoutWorkflowPhase = "planning" | "running" | "aborting" | "finished";
 type ScoutRunPlan = {
   model: Model<Api>;
   thinkingLevel?: ThinkingLevel;
 };
-type AbortableSession = { abort: () => Promise<void> };
+type AbortableSession = Pick<AgentSession, "abort">;
 
 function getEventTargetMaxListenersState(): EventTargetMaxListenersState {
-  const g = globalThis as any;
+  const g = globalThis as typeof globalThis & {
+    [EVENTTARGET_MAX_LISTENERS_STATE_KEY]?: EventTargetMaxListenersState;
+  };
   if (!g[EVENTTARGET_MAX_LISTENERS_STATE_KEY]) {
     g[EVENTTARGET_MAX_LISTENERS_STATE_KEY] = { depth: 0 };
   }
-  return g[EVENTTARGET_MAX_LISTENERS_STATE_KEY] as EventTargetMaxListenersState;
+  return g[EVENTTARGET_MAX_LISTENERS_STATE_KEY];
 }
 
 export function bumpDefaultEventTargetMaxListeners(): () => void {
@@ -103,20 +114,23 @@ function createInitialRun(query: string): ScoutRunDetails {
   };
 }
 
-function prepareScoutTools(config: ScoutConfig, cwd: string) {
-  const allTools = config.getTools
-    ? config.getTools()
+function prepareScoutTools(config: ScoutConfig, cwd: string): {
+  builtinTools: ReturnType<typeof createReadTool | typeof createBashTool>[];
+  customTools: ToolDefinition[];
+} {
+  const allTools = config.createTools
+    ? config.createTools(cwd)
     : [createReadTool(cwd), createBashTool(cwd)];
 
   const builtinTools = allTools.filter((tool: any) => BUILTIN_TOOL_NAMES.has(tool.name));
   const customTools = allTools
     .filter((tool: any) => !BUILTIN_TOOL_NAMES.has(tool.name))
-    .map((tool: any) => ({
+    .map((tool: any): ToolDefinition => ({
       name: tool.name,
       label: tool.label,
       description: tool.description,
       parameters: tool.parameters,
-      execute: (toolCallId: string, params: any, signal: any, onUpdate: any, _ctx: any) =>
+      execute: (toolCallId, params, signal, onUpdate) =>
         tool.execute(toolCallId, params, signal, onUpdate),
     }));
 
@@ -137,13 +151,12 @@ class ScoutWorkflow {
   private currentModel?: Model<Api>;
   private abortRequested = false;
   private abortSignalListener?: () => void;
-  private lastPublishedAt = 0;
 
   constructor(
     private readonly config: ScoutConfig,
     private readonly params: Record<string, unknown>,
     private readonly signal: AbortSignal | undefined,
-    private readonly onUpdate: ((update: any) => void) | undefined,
+    private readonly onUpdate: ((update: ScoutUpdate) => void) | undefined,
     private readonly ctx: ExtensionContext,
   ) {
     this.maxTurns = config.maxTurns;
@@ -208,7 +221,7 @@ class ScoutWorkflow {
       this.phase = "aborting";
       this.abortRequested = true;
       this.markRunAborted(run);
-      this.publishUpdate(true);
+      this.publishUpdate();
       this.phase = "finished";
       return this.buildResult();
     }
@@ -246,7 +259,7 @@ class ScoutWorkflow {
     const run = createInitialRun(this.query);
     this.currentModel = runPlan.model;
     this.runs.unshift(run);
-    this.publishUpdate(true);
+    this.publishUpdate();
     return run;
   }
 
@@ -254,13 +267,9 @@ class ScoutWorkflow {
     return this.runs[0]!;
   }
 
-  private publishUpdate(force = false): void {
+  private publishUpdate(): void {
     const run = this.currentRun();
     if (!run || !this.currentModel) return;
-
-    const now = Date.now();
-    if (!force && now - this.lastPublishedAt < 120) return;
-    this.lastPublishedAt = now;
 
     const text = run.summaryText ?? (run.status === "running" ? "(searching...)" : "(no output)");
     this.onUpdate?.({
@@ -298,7 +307,7 @@ class ScoutWorkflow {
     const run = this.currentRun();
     if (run) {
       this.markRunAborted(run);
-      this.publishUpdate(true);
+      this.publishUpdate();
     }
 
     await Promise.allSettled([...this.activeSessions].map((session) => session.abort()));
@@ -318,7 +327,7 @@ class ScoutWorkflow {
   private async runPlannedRun(runPlan: ScoutRunPlan): Promise<boolean> {
     const run = this.startRun(runPlan);
 
-    let scoutSession: any;
+    let scoutSession: AgentSession | undefined;
     let stopObservingSession: (() => void) | undefined;
 
     try {
@@ -365,7 +374,7 @@ class ScoutWorkflow {
   private async createSession(
     runPlan: ScoutRunPlan,
     resourceLoader: DefaultResourceLoader,
-  ): Promise<{ session: any }> {
+  ): Promise<{ session: AgentSession }> {
     const { builtinTools, customTools } = prepareScoutTools(this.config, this.ctx.cwd);
     return createAgentSession({
       cwd: this.ctx.cwd,
@@ -379,16 +388,16 @@ class ScoutWorkflow {
     });
   }
 
-  private observeSession(run: ScoutRunDetails, session: any): () => void {
-    return session.subscribe((event: any) => {
+  private observeSession(run: ScoutRunDetails, session: AgentSession): () => void {
+    return session.subscribe((event: AgentSessionEvent) => {
       switch (event.type) {
         case "turn_end": {
           run.turns += 1;
-          const items = extractDisplayItems(session.state.messages as any[]);
+          const items = extractDisplayItems(session.state.messages);
           run.displayItems = items.length > MAX_DISPLAY_ITEMS
             ? items.slice(items.length - MAX_DISPLAY_ITEMS)
             : items;
-          this.publishUpdate(true);
+          this.publishUpdate();
           break;
         }
         case "tool_execution_start": {
@@ -401,7 +410,7 @@ class ScoutWorkflow {
           if (run.displayItems.length > MAX_DISPLAY_ITEMS) {
             run.displayItems.splice(0, run.displayItems.length - MAX_DISPLAY_ITEMS);
           }
-          this.publishUpdate(true);
+          this.publishUpdate();
           break;
         }
         case "tool_execution_end": {
@@ -414,22 +423,22 @@ class ScoutWorkflow {
               break;
             }
           }
-          this.publishUpdate(true);
+          this.publishUpdate();
           break;
         }
       }
     });
   }
 
-  private completeSuccessfulRun(run: ScoutRunDetails, session: any): void {
-    run.displayItems = extractDisplayItems(session.state.messages as any[]);
-    run.summaryText = getLastAssistantText(session.state.messages as any[]).trim();
+  private completeSuccessfulRun(run: ScoutRunDetails, session: AgentSession): void {
+    run.displayItems = extractDisplayItems(session.state.messages);
+    run.summaryText = getLastAssistantText(session.state.messages).trim();
     if (!run.summaryText) {
       run.summaryText = this.wasAborted() ? "Aborted" : "(no output)";
     }
     run.status = this.wasAborted() ? "aborted" : "done";
     run.endedAt = Date.now();
-    this.publishUpdate(true);
+    this.publishUpdate();
   }
 
   private completeFailedRun(run: ScoutRunDetails, message: string): void {
@@ -437,7 +446,7 @@ class ScoutWorkflow {
     run.error = this.wasAborted() ? undefined : message;
     run.summaryText = message;
     run.endedAt = Date.now();
-    this.publishUpdate(true);
+    this.publishUpdate();
   }
 
   private buildResult(): ScoutExecutionResult {
@@ -461,7 +470,7 @@ export async function executeScout(
   config: ScoutConfig,
   params: Record<string, unknown>,
   signal: AbortSignal | undefined,
-  onUpdate: ((update: any) => void) | undefined,
+  onUpdate: ((update: ScoutUpdate) => void) | undefined,
   ctx: ExtensionContext,
 ): Promise<ScoutExecutionResult> {
   const restoreMaxListeners = bumpDefaultEventTargetMaxListeners();
