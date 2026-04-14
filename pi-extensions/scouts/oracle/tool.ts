@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 import { executeScout } from "../execute.ts";
-import { renderScoutCall, renderScoutResult } from "../render.ts";
+import { ScoutCall, ScoutResult } from "../render.ts";
 import type { ScoutDetails } from "../types.ts";
 import { validateQuery } from "../validate.ts";
 import { buildOracleConfig, OracleParams } from "./config.ts";
@@ -21,10 +21,10 @@ export const ORACLE_TOOL: ToolDefinition<any, ScoutDetails> = {
   },
 
   renderCall(args: any, theme: any, context: any) {
-    return renderScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
+    return new ScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
   },
 
   renderResult(result: any, options: any, theme: any) {
-    return renderScoutResult("oracle", result, options, theme);
+    return new ScoutResult(result, options, theme);
   },
 };

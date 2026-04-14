@@ -7,31 +7,14 @@
 import { Type } from "@sinclair/typebox";
 import type { ToolDefinition, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
+import { buildParallelCombinedText, buildParallelDetails } from "./display.ts";
 import { executeScout } from "./execute.ts";
-import { renderParallelResult, renderScoutCall } from "./render.ts";
-import type { ScoutConfig, ScoutDetails, ScoutStatus } from "./types.ts";
-import { computeOverallStatus } from "./display.ts";
+import { ParallelScoutsResult, ScoutCall } from "./render.ts";
+import type { ParallelDetails, ParallelScoutResult, ScoutConfig } from "./types.ts";
 import { ModelParam } from "./validate.ts";
 import { FINDER_CONFIG } from "./finder/config.ts";
 import { LIBRARIAN_CONFIG } from "./librarian/config.ts";
 import { buildSpecialistConfig } from "./specialist/config.ts";
-
-// Types
-
-export interface ParallelScoutResult {
-  scout: string;
-  details: ScoutDetails;
-  content: Array<{ type: "text"; text: string }>;
-  isError: boolean;
-}
-
-export interface ParallelDetails {
-  mode: "parallel";
-  status: ScoutStatus;
-  results: ParallelScoutResult[];
-}
-
-// Parallel execution engine
 
 interface ParallelTask {
   scout: string;
@@ -51,7 +34,7 @@ async function executeParallelScouts(
 }> {
   const results: ParallelScoutResult[] = tasks.map((t) => ({
     scout: t.scout,
-    details: { status: "running" as ScoutStatus, runs: [] },
+    details: { mode: "single", status: "running", runs: [] },
     content: [{ type: "text" as const, text: "(running...)" }],
     isError: false,
   }));
@@ -62,26 +45,9 @@ async function executeParallelScouts(
     if (!force && now - lastUpdate < 150) return;
     lastUpdate = now;
 
-    const statuses = results.map((r) => r.details.status);
-    const overallStatus: ScoutStatus = statuses.every((s) => s === "done")
-      ? "done"
-      : statuses.some((s) => s === "running")
-        ? "running"
-        : statuses.some((s) => s === "error")
-          ? "error"
-          : "done";
-
-    const combinedText = results
-      .map((r) => `[${r.scout}] ${r.content[0]?.text ?? "(no output)"}`)
-      .join("\n\n");
-
     onUpdate?.({
-      content: [{ type: "text", text: combinedText }],
-      details: {
-        mode: "parallel",
-        status: overallStatus,
-        results,
-      } satisfies ParallelDetails,
+      content: [{ type: "text", text: buildParallelCombinedText(results) }],
+      details: buildParallelDetails(results),
     });
   };
 
@@ -92,7 +58,7 @@ async function executeParallelScouts(
     if (!config) {
       results[i] = {
         scout: task.scout,
-        details: { status: "error", runs: [] },
+        details: { mode: "single", status: "error", runs: [] },
         content: [{ type: "text" as const, text: `Unknown scout: ${task.scout}` }],
         isError: true,
       };
@@ -127,28 +93,12 @@ async function executeParallelScouts(
 
   await Promise.allSettled(promises);
 
-  const overallStatus = results.every((r) => r.details.status === "done")
-    ? "done" as ScoutStatus
-    : results.some((r) => r.details.status === "error")
-      ? "error" as ScoutStatus
-      : "done" as ScoutStatus;
-
-  const combinedText = results
-    .map((r) => `[${r.scout}] ${r.content[0]?.text ?? "(no output)"}`)
-    .join("\n\n");
-
   return {
-    content: [{ type: "text", text: combinedText }],
-    details: {
-      mode: "parallel",
-      status: overallStatus,
-      results,
-    },
+    content: [{ type: "text", text: buildParallelCombinedText(results) }],
+    details: buildParallelDetails(results),
     isError: results.some((r) => r.isError),
   };
 }
-
-// Error helper
 
 const emptyParallelDetails: ParallelDetails = { mode: "parallel", status: "error", results: [] };
 
@@ -159,8 +109,6 @@ function makeParallelError(text: string) {
     isError: true as const,
   };
 }
-
-// Config resolution
 
 const VALID_SCOUTS = ["finder", "librarian", "specialist"];
 
@@ -184,8 +132,6 @@ async function resolveParallelConfig(
 
   return buildSpecialistConfig(skillName, cwd, { tools: task.tools as any });
 }
-
-// Tool definition
 
 const ScoutsParams = Type.Object({
   tasks: Type.Array(
@@ -287,10 +233,10 @@ export const SCOUTS_TOOL: ToolDefinition<any, ParallelDetails> = {
       ? [...new Set(p.tasks.map((t) => t.scout === "specialist" ? `specialist:${t.skill ?? "?"}` : t.scout))].join(", ")
       : "";
     const info = `${count} task${count === 1 ? "" : "s"}${scouts ? ` (${scouts})` : ""}`;
-    return renderScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
+    return new ScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
   },
 
   renderResult(result: any, options: any, theme: any) {
-    return renderParallelResult(result, options, theme);
+    return new ParallelScoutsResult(result, options, theme);
   },
 };

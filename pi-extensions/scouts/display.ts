@@ -3,7 +3,7 @@
 // Shared between execute (which produces display items) and render
 // (which consumes them).
 
-import type { DisplayItem, ScoutRunDetails, ScoutStatus } from "./types.ts";
+import type { DisplayItem, ParallelDetails, ParallelScoutResult, ScoutRunDetails, ScoutStatus } from "./types.ts";
 
 export const MAX_DISPLAY_ITEMS = 120;
 
@@ -13,6 +13,27 @@ export function computeOverallStatus(runs: ScoutRunDetails[]): ScoutStatus {
   if (runs.some((r) => r.status === "error")) return "error";
   if (runs.every((r) => r.status === "aborted")) return "aborted";
   return "done";
+}
+
+export function buildParallelCombinedText(results: ParallelScoutResult[]): string {
+  return results
+    .map((r) => `[${r.scout}] ${r.content[0]?.text ?? "(no output)"}`)
+    .join("\n\n");
+}
+
+export function buildParallelDetails(results: ParallelScoutResult[]): ParallelDetails {
+  let status: ScoutStatus = "done";
+  if (results.some((r) => r.details.status === "running")) {
+    status = "running";
+  } else if (results.some((r) => r.details.status === "error")) {
+    status = "error";
+  }
+
+  return {
+    mode: "parallel",
+    status,
+    results,
+  };
 }
 
 // Extract the last assistant text block from session messages

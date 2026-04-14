@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 import { executeScout } from "../execute.ts";
-import { renderScoutCall, renderScoutResult } from "../render.ts";
+import { ScoutCall, ScoutResult } from "../render.ts";
 import type { ScoutDetails } from "../types.ts";
 import { makeErrorResult } from "../validate.ts";
 import { buildSpecialistConfig, SpecialistParams } from "./config.ts";
@@ -50,10 +50,10 @@ export const SPECIALIST_TOOL: ToolDefinition<any, ScoutDetails> = {
     const task = (p?.task ?? "").trim();
     const expanded = context?.expanded ?? false;
     const preview = expanded ? task : (task.length > 60 ? task.slice(0, 57) + "..." : task);
-    return renderScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
+    return new ScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
   },
 
   renderResult(result: any, options: any, theme: any) {
-    return renderScoutResult("specialist", result, options, theme);
+    return new ScoutResult(result, options, theme);
   },
 };

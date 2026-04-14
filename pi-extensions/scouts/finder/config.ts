@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 
 import type { ScoutConfig } from "../types.ts";
-import { FAST_MODELS } from "../models.ts";
 import { ModelParam } from "../validate.ts";
 import { buildFinderSystemPrompt, buildFinderUserPrompt } from "./prompt.ts";
 
@@ -22,8 +21,7 @@ export const FinderParams = Type.Object({
 export const FINDER_CONFIG: ScoutConfig = {
   name: "finder",
   maxTurns: 6,
-  defaultModel: "claude-haiku-4-5",
-  familyModelCandidates: FAST_MODELS,
+  workload: "fast",
   buildSystemPrompt: buildFinderSystemPrompt,
   buildUserPrompt: buildFinderUserPrompt,
 };

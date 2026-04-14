@@ -1,11 +1,10 @@
 import { readFileSync } from "node:fs";
+import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { createBashTool, createEditTool, createReadTool, createWriteTool, DefaultResourceLoader, type Skill } from "@mariozechner/pi-coding-agent";
 import { parse as parseYaml } from "yaml";
 
 import type { ScoutConfig } from "../types.ts";
-import type { ThinkingLevel } from "../models.ts";
-import { HEAVY_MODELS } from "../models.ts";
 import { ModelParam } from "../validate.ts";
 import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./prompt.ts";
 
@@ -96,10 +95,8 @@ export async function buildSpecialistConfig(
   return {
     name: configName,
     maxTurns: 16,
-    defaultModel: frontmatterModel || "anthropic/claude-sonnet-4-6",
-    familyModelCandidates: frontmatterModel
-      ? undefined
-      : HEAVY_MODELS,
+    configuredModel: frontmatterModel,
+    workload: frontmatterModel ? undefined : "deep",
     defaultThinkingLevel: (fm["thinking-level"] as ThinkingLevel) || undefined,
     buildSystemPrompt: (maxTurns) => buildSpecialistSystemPrompt(content, maxTurns, match.baseDir),
     buildUserPrompt: buildSpecialistUserPrompt,

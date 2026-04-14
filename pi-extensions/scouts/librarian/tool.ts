@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 import { executeScout } from "../execute.ts";
-import { renderScoutCall, renderScoutResult } from "../render.ts";
+import { ScoutCall, ScoutResult } from "../render.ts";
 import type { ScoutDetails } from "../types.ts";
 import { validateQuery } from "../validate.ts";
 import { LIBRARIAN_CONFIG, LibrarianParams } from "./config.ts";
@@ -23,10 +23,10 @@ export const LIBRARIAN_TOOL: ToolDefinition<any, ScoutDetails> = {
     const a = args as Record<string, unknown>;
     const repos = Array.isArray(a?.repos) ? a.repos.length : 0;
     const owners = Array.isArray(a?.owners) ? a.owners.length : 0;
-    return renderScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
+    return new ScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
   },
 
   renderResult(result: any, options: any, theme: any) {
-    return renderScoutResult("librarian", result, options, theme);
+    return new ScoutResult(result, options, theme);
   },
 };

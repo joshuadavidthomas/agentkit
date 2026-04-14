@@ -10,7 +10,7 @@ export const ModelParam = Type.Optional(
     description: [
       "Advanced model override. Usually omit this.",
       "Only set it when the user explicitly requested a specific model/provider, or when a prior scout attempt failed and you need a deliberate retry.",
-      "If omitted, the scout prefers an exact provider override when configured, otherwise a shared model-family stack based on the current session model, then its generic default.",
+      "If omitted, the scout preserves the current session provider when possible and chooses the configured model for that scout's workload.",
       "Examples: 'openai/gpt-5.4', 'anthropic/claude-opus-4-6', 'gemini-3.1-pro'.",
     ].join("\n"),
   }),
@@ -20,7 +20,7 @@ export const ModelParam = Type.Optional(
 export function makeErrorResult(text: string, details?: Partial<ScoutDetails>) {
   return {
     content: [{ type: "text" as const, text }],
-    details: { status: "error" as const, runs: [], ...details } satisfies ScoutDetails,
+    details: { mode: "single", status: "error" as const, runs: [], ...details } satisfies ScoutDetails,
     isError: true as const,
   };
 }

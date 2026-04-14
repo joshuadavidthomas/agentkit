@@ -4,229 +4,343 @@
 // including running-state previews, completed summaries, and error states.
 
 import { getMarkdownTheme, keyHint } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
 import { cleanToolResult, formatToolCallParts, shorten } from "./display.ts";
-import type { ScoutDetails } from "./types.ts";
+import type { DisplayItem, ScoutDetails, ScoutResultDetails, ScoutRunDetails, ScoutStatus } from "./types.ts";
 
-// Render a scout tool call (the "calling..." state)
-export function renderScoutCall(
-  scoutName: string,
-  args: Record<string, unknown> | undefined,
-  theme: any,
-  extraInfo?: string,
-  context?: { expanded?: boolean },
-): any {
-  const query = typeof args?.query === "string" ? (args.query as string).trim() : "";
-  const expanded = context?.expanded ?? false;
-  const display = expanded ? query.replace(/\s+/g, " ").trim() : shorten(query.replace(/\s+/g, " ").trim(), 70);
+const SCOUT_STATUS_ICONS = {
+  done: { color: "success", symbol: "✓" },
+  error: { color: "error", symbol: "✗" },
+  aborted: { color: "warning", symbol: "◼" },
+  running: { color: "warning", symbol: "…" },
+} as const satisfies Record<ScoutStatus, { color: string; symbol: string }>;
 
-  const title = theme.fg("toolTitle", theme.bold(scoutName));
-  const info = extraInfo ? `\n${theme.fg("muted", extraInfo)} · ${theme.fg("muted", display)}` : "";
-  const text = title + (display && !extraInfo ? `\n${theme.fg("muted", display)}` : info);
-  return new Text(text, 0, 0);
+function scoutStatusIcon(theme: any, status: ScoutStatus): string {
+  const icon = SCOUT_STATUS_ICONS[status];
+  return theme.fg(icon.color, icon.symbol);
 }
 
-// Render a single scout result
-export function renderScoutResult(
-  _scoutName: string,
-  result: any,
-  options: { expanded: boolean; isPartial: boolean },
-  theme: any,
-): any {
-  const details = result.details as ScoutDetails | undefined;
-  if (!details) {
-    const text = result.content[0];
-    return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+class ScoutToolRow implements Component {
+  constructor(
+    private readonly item: Extract<DisplayItem, { type: "tool" }>,
+    private readonly expanded: boolean,
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const c = new Container();
+    const { label, summary } = formatToolCallParts(this.item.name, this.item.args);
+
+    let itemStatus: ScoutStatus = "running";
+    if (this.item.isError) {
+      itemStatus = "error";
+    } else if (this.item.result) {
+      itemStatus = "done";
+    }
+    const itemIcon = scoutStatusIcon(this.theme, itemStatus);
+
+    c.addChild(new Text(`${itemIcon} ${this.theme.fg("toolTitle", label)} ${this.theme.fg("dim", summary)}`, 0, 0));
+
+    if (this.expanded && this.item.result) {
+      const cleaned = cleanToolResult(this.item.result);
+      if (cleaned) {
+        c.addChild(new Spacer(1));
+        c.addChild(new Text(this.theme.fg("dim", cleaned), 2, 0));
+        c.addChild(new Spacer(1));
+      }
+    }
+
+    return c.render(width);
+  }
+}
+
+class ScoutTextBlock implements Component {
+  constructor(
+    private readonly item: Extract<DisplayItem, { type: "text" }>,
+    private readonly isFinalText: boolean,
+    private readonly expanded: boolean,
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const text = this.item.text.trim();
+    if (!text) return [];
+
+    if (!this.isFinalText) {
+      const firstLine = text.split("\n")[0]!;
+      return new Text(this.theme.fg("dim", shorten(firstLine, 120)), 0, 0).render(width);
+    }
+
+    const c = new Container();
+    c.addChild(new Spacer(1));
+
+    const mdTheme = getMarkdownTheme();
+    if (this.expanded) {
+      c.addChild(new Markdown(this.item.text, 0, 0, mdTheme));
+      return c.render(width);
+    }
+
+    const lines = text.split("\n");
+    const preview = lines.slice(0, 18).join("\n");
+    c.addChild(new Markdown(preview, 0, 0, mdTheme));
+    if (lines.length > 18) {
+      c.addChild(new Text(this.theme.fg("dim", keyHint("app.tools.expand", "to expand")), 0, 0));
+    }
+
+    return c.render(width);
+  }
+}
+
+class ScoutResultHeader implements Component {
+  constructor(
+    private readonly details: ScoutDetails,
+    private readonly status: ScoutStatus,
+    private readonly run: ScoutRunDetails | undefined,
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const items = this.run?.displayItems ?? [];
+    const toolCount = items.filter((item) => item.type === "tool").length;
+    const totalTurns = this.run?.turns ?? 0;
+    const elapsed = this.run ? formatDuration(Date.now() - this.run.startedAt) : "";
+
+    const icon = this.status === "running" ? "" : scoutStatusIcon(this.theme, this.status);
+
+    const stats = this.theme.fg(
+      "dim",
+      `${this.details.subagentProvider ?? "?"}/${this.details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
+    );
+    const text = icon ? `${icon} ${stats}` : stats;
+
+    return new Text(text, 0, 0).render(width);
+  }
+}
+
+class ScoutResultBody implements Component {
+  constructor(
+    private readonly status: ScoutStatus,
+    private readonly run: ScoutRunDetails | undefined,
+    private readonly expanded: boolean,
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const items = this.run?.displayItems ?? [];
+    const c = new Container();
+
+    if (this.status === "running") {
+      this.renderRunning(c, items);
+    } else if (this.status === "error" && this.run?.error) {
+      this.renderError(c);
+    } else {
+      this.renderCompleted(c, items);
+    }
+
+    return c.render(width);
   }
 
-  const { expanded, isPartial } = options;
-  const status = isPartial ? "running" : details.status;
-  const run = details.runs[0];
-  const items = run?.displayItems ?? [];
-  const toolCount = items.filter((i) => i.type === "tool").length;
-  const totalTurns = run?.turns ?? 0;
-  const elapsed = run ? formatDuration(Date.now() - run.startedAt) : "";
-
-  const icon =
-    status === "done"
-      ? theme.fg("success", "✓")
-      : status === "error"
-        ? theme.fg("error", "✗")
-        : status === "aborted"
-          ? theme.fg("warning", "◼")
-          : "";
-
-  const stats = theme.fg(
-    "dim",
-    `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
-  );
-  const header = icon ? `${icon} ${stats}` : stats;
-
-  // Running state: compact fixed-height view with recent tool calls
-  if (status === "running") {
-    const c = new Container();
-    c.addChild(new Text(header, 0, 0));
-
+  private renderRunning(c: Container, items: DisplayItem[]): void {
     const MAX_RUNNING_TOOLS = 5;
-    const toolItems = items.filter((i): i is typeof items[0] & { type: "tool" } => i.type === "tool");
+    const toolItems: Array<Extract<DisplayItem, { type: "tool" }>> = [];
+    for (const item of items) {
+      if (item.type === "tool") toolItems.push(item);
+    }
     const hiddenCount = Math.max(0, toolItems.length - MAX_RUNNING_TOOLS);
 
     if (hiddenCount > 0) {
-      c.addChild(new Text(theme.fg("dim", `... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`), 0, 0));
+      c.addChild(new Text(this.theme.fg("dim", `... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`), 0, 0));
     }
+
     for (const item of toolItems.slice(-MAX_RUNNING_TOOLS)) {
-      const { label, summary } = formatToolCallParts(item.name, item.args);
-      const itemIcon = item.isError ? theme.fg("error", "✗") : theme.fg("accent", "▸");
-      c.addChild(
-        new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
-      );
-      if (expanded && item.result) {
-        const cleaned = cleanToolResult(item.result);
-        if (cleaned) {
-          c.addChild(new Spacer(1));
-          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
-          c.addChild(new Spacer(1));
-        }
-      }
+      c.addChild(new ScoutToolRow(item, this.expanded, this.theme));
     }
-
-    return c;
   }
 
-  // Completed/error/aborted: render items chronologically
-  const c = new Container();
-  c.addChild(new Text(header, 0, 0));
-
-  if (status === "error" && run?.error) {
+  private renderError(c: Container): void {
     c.addChild(new Spacer(1));
-    c.addChild(new Text(theme.fg("error", `Error: ${run.error}`), 0, 0));
-    return c;
+    c.addChild(new Text(this.theme.fg("error", `Error: ${this.run!.error}`), 0, 0));
   }
 
-  // Render interleaved items: tool calls inline, final text as markdown
-  let toolHeaderShown = false;
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (item.type === "tool") {
-      if (!toolHeaderShown) {
-        c.addChild(new Text(theme.fg("dim", "Tool calls"), 0, 0));
-        toolHeaderShown = true;
+  private renderCompleted(c: Container, items: DisplayItem[]): void {
+    let toolHeaderShown = false;
+    let lastTextIndex = -1;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.type === "text" && item.text.trim()) {
+        lastTextIndex = i;
+        break;
       }
-      const { label, summary } = formatToolCallParts(item.name, item.args);
-      const itemIcon = item.isError ? theme.fg("error", "✗") : theme.fg("accent", "▸");
-      c.addChild(
-        new Text(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`, 0, 0),
-      );
-      if (expanded && item.result) {
-        const cleaned = cleanToolResult(item.result);
-        if (cleaned) {
-          c.addChild(new Spacer(1));
-          c.addChild(new Text(theme.fg("dim", cleaned), 2, 0));
-          c.addChild(new Spacer(1));
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type === "tool") {
+        if (!toolHeaderShown) {
+          c.addChild(new Text(this.theme.fg("dim", "Tool calls"), 0, 0));
+          toolHeaderShown = true;
         }
+        c.addChild(new ScoutToolRow(item, this.expanded, this.theme));
+        continue;
       }
-    } else if (item.type === "text" && item.text.trim()) {
-      const isLastText = !items.slice(i + 1).some((it) => it.type === "text" && it.text.trim());
-      if (isLastText) {
-        c.addChild(new Spacer(1));
-        const mdTheme = getMarkdownTheme();
-        if (expanded) {
-          c.addChild(new Markdown(item.text, 0, 0, mdTheme));
-        } else {
-          const lines = item.text.trim().split("\n");
-          const preview = lines.slice(0, 18).join("\n");
-          c.addChild(new Markdown(preview, 0, 0, mdTheme));
-          if (lines.length > 18) {
-            c.addChild(new Text(theme.fg("dim", keyHint("app.tools.expand", "to expand")), 0, 0));
-          }
-        }
-      } else {
-        const preview = item.text.trim().split("\n")[0]!.slice(0, 120);
-        c.addChild(new Text(theme.fg("dim", `${preview}${item.text.length > 120 ? "..." : ""}`), 0, 0));
+
+      if (item.type === "text" && item.text.trim()) {
+        c.addChild(new ScoutTextBlock(item, i === lastTextIndex, this.expanded, this.theme));
       }
     }
   }
-
-  return c;
 }
 
-// Render parallel scout results
-export function renderParallelResult(
-  result: any,
-  options: { expanded: boolean; isPartial: boolean },
-  theme: any,
-): any {
-  const details = result.details;
-  if (!details || details.mode !== "parallel") {
-    const text = result.content?.[0];
-    return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+export class ScoutResult implements Component {
+  constructor(
+    private readonly result: any,
+    private readonly options: { expanded: boolean; isPartial: boolean },
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const details = this.result.details as ScoutResultDetails | undefined;
+    if (!details || details.mode !== "single") {
+      const text = this.result.content?.[0];
+      return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0).render(width);
+    }
+
+    const status = this.options.isPartial ? "running" : details.status;
+    const run = details.runs[0];
+    const c = new Container();
+
+    c.addChild(new ScoutResultHeader(details, status, run, this.theme));
+    c.addChild(new ScoutResultBody(status, run, this.options.expanded, this.theme));
+
+    return c.render(width);
   }
+}
 
-  const { expanded, isPartial } = options;
-  const parallelResults = details.results as Array<{
-    scout: string;
-    details: ScoutDetails;
-    content: Array<{ type: "text"; text: string }>;
-    isError: boolean;
-  }>;
+class ParallelScoutSection implements Component {
+  constructor(
+    private readonly result: {
+      scout: string;
+      details: ScoutDetails;
+      content: Array<{ type: "text"; text: string }>;
+      isError: boolean;
+    },
+    private readonly options: { expanded: boolean; isPartial: boolean },
+    private readonly theme: any,
+  ) { }
 
-  const anyError = parallelResults.some((r) => r.details.status === "error");
-  const anyRunning = isPartial || parallelResults.some((r) => r.details.status === "running");
+  invalidate(): void { }
 
-  const statusIcon = anyRunning
-    ? theme.fg("warning", "…")
-    : anyError
-      ? theme.fg("error", "✗")
-      : theme.fg("success", "✓");
+  render(width: number): string[] {
+    const status = this.options.isPartial ? "running" : this.result.details.status;
 
-  const doneCount = parallelResults.filter((r) => r.details.status === "done").length;
-  const total = parallelResults.length;
+    const icon = scoutStatusIcon(this.theme, status);
+    let title = `${icon} ${this.theme.fg("toolTitle", this.theme.bold(this.result.scout))}`;
 
-  const c = new Container();
-  c.addChild(new Text(
-    `${statusIcon} ${theme.fg("dim", `${doneCount}/${total} scouts completed`)}`,
-    0, 0,
-  ));
+    const run = this.result.details.runs?.[0];
+    if (run) {
+      const toolCount = (run.displayItems ?? []).filter((item) => item.type === "tool").length;
+      const duration = formatDuration(Date.now() - run.startedAt);
+      title += this.theme.fg("dim", ` • ${run.turns} turns • ${toolCount} tools • ${duration}`);
+    }
 
-  for (const pr of parallelResults) {
-    c.addChild(new Spacer(1));
+    const c = new Container();
+    c.addChild(new Text(title, 0, 0));
+    c.addChild(new ScoutResultBody(status, run, this.options.expanded, this.theme));
+    return c.render(width);
+  }
+}
 
-    const scoutDetails = pr.details;
-    const run = scoutDetails.runs?.[0];
-    const status = pr.details.status;
+export class ScoutCall implements Component {
+  constructor(
+    private readonly scoutName: string,
+    private readonly args: Record<string, unknown> | undefined,
+    private readonly theme: any,
+    private readonly extraInfo?: string,
+    private readonly context?: { expanded?: boolean },
+  ) { }
 
-    const scoutIcon =
-      status === "done"
-        ? theme.fg("success", "✓")
-        : status === "error"
-          ? theme.fg("error", "✗")
-          : status === "running"
-            ? theme.fg("warning", "…")
-            : theme.fg("dim", "○");
+  invalidate(): void { }
 
-    const scoutTitle = `${scoutIcon} ${theme.fg("toolTitle", theme.bold(pr.scout))}`;
-    const stats = run
-      ? theme.fg("dim", ` • ${run.turns} turns • ${run.displayItems.filter((i: any) => i.type === "tool").length} tools • ${formatDuration(Date.now() - run.startedAt)}`)
-      : "";
+  render(width: number): string[] {
+    const query = typeof this.args?.query === "string" ? this.args.query.trim() : "";
+    const normalizedQuery = query.replace(/\s+/g, " ").trim();
+    const display = this.context?.expanded ? normalizedQuery : shorten(normalizedQuery, 70);
 
-    c.addChild(new Text(scoutTitle + stats, 0, 0));
+    const lines = [this.theme.fg("toolTitle", this.theme.bold(this.scoutName))];
+    const detailParts: string[] = [];
+    if (this.extraInfo) detailParts.push(this.theme.fg("muted", this.extraInfo));
+    if (display) detailParts.push(this.theme.fg("muted", display));
 
-    const fakeResult = { content: pr.content, details: scoutDetails };
-    const scoutWidget = renderScoutResult(pr.scout, fakeResult, options, theme);
+    if (detailParts.length > 0) {
+      lines.push(detailParts.join(" · "));
+    }
 
-    if (scoutWidget instanceof Container) {
-      const children = (scoutWidget as any).children;
-      if (Array.isArray(children)) {
-        // Skip the first child (header) since we rendered our own
-        for (let i = 1; i < children.length; i++) {
-          c.addChild(children[i]);
-        }
+    return new Text(lines.join("\n"), 0, 0).render(width);
+  }
+}
+
+export class ParallelScoutsResult implements Component {
+  constructor(
+    private readonly result: any,
+    private readonly options: { expanded: boolean; isPartial: boolean },
+    private readonly theme: any,
+  ) { }
+
+  invalidate(): void { }
+
+  render(width: number): string[] {
+    const details = this.result.details;
+    if (!details || details.mode !== "parallel") {
+      const text = this.result.content?.[0];
+      return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0).render(width);
+    }
+
+    const parallelResults = details.results as Array<{
+      scout: string;
+      details: ScoutDetails;
+      content: Array<{ type: "text"; text: string }>;
+      isError: boolean;
+    }>;
+
+    let doneCount = 0;
+    let overallStatus: "running" | "error" | "done" = this.options.isPartial ? "running" : "done";
+    for (const result of parallelResults) {
+      const status = result.details.status;
+      if (status === "done") {
+        doneCount += 1;
+      } else if (status === "running") {
+        overallStatus = "running";
+      } else if (status === "error" && overallStatus !== "running") {
+        overallStatus = "error";
       }
     }
-  }
 
-  return c;
+    const icon = scoutStatusIcon(this.theme, overallStatus);
+
+    const c = new Container();
+    c.addChild(new Text(
+      `${icon} ${this.theme.fg("dim", `${doneCount}/${parallelResults.length} scouts completed`)}`,
+      0, 0,
+    ));
+
+    for (const pr of parallelResults) {
+      c.addChild(new Spacer(1));
+      c.addChild(new ParallelScoutSection(pr, this.options, this.theme));
+    }
+
+    return c.render(width);
+  }
 }
 
 function formatDuration(ms: number): string {

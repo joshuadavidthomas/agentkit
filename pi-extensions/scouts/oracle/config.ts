@@ -3,7 +3,6 @@ import { Type } from "@sinclair/typebox";
 import { createReadTool } from "@mariozechner/pi-coding-agent";
 
 import type { ScoutConfig } from "../types.ts";
-import { HEAVY_MODELS } from "../models.ts";
 import { ModelParam } from "../validate.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./prompt.ts";
 import { createReadOnlyBashTool } from "./tools/read-only-bash.ts";
@@ -27,8 +26,7 @@ export const OracleParams = Type.Object({
 const ORACLE_BASE_CONFIG: Omit<ScoutConfig, "getTools"> = {
   name: "oracle",
   maxTurns: 12,
-  defaultModel: "claude-opus-4-6",
-  familyModelCandidates: HEAVY_MODELS,
+  workload: "deep",
   buildSystemPrompt: buildOracleSystemPrompt,
   buildUserPrompt: buildOracleUserPrompt,
 };

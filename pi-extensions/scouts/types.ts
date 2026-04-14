@@ -1,6 +1,8 @@
 // Shared types for scout subagents.
 
-import type { ModelFamily, ThinkingLevel } from "./models.ts";
+import type { ThinkingLevel } from "@mariozechner/pi-ai";
+
+import type { ScoutWorkload } from "./models.ts";
 
 export type ScoutStatus = "running" | "done" | "error" | "aborted";
 
@@ -21,24 +23,36 @@ export interface ScoutRunDetails {
 }
 
 export interface ScoutDetails {
+  mode: "single";
   status: ScoutStatus;
   subagentProvider?: string;
   subagentModelId?: string;
   runs: ScoutRunDetails[];
 }
 
+export interface ParallelScoutResult {
+  scout: string;
+  details: ScoutDetails;
+  content: Array<{ type: "text"; text: string }>;
+  isError: boolean;
+}
+
+export interface ParallelDetails {
+  mode: "parallel";
+  status: ScoutStatus;
+  results: ParallelScoutResult[];
+}
+
+export type ScoutResultDetails = ScoutDetails | ParallelDetails;
+
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
-  /** Generic default model ID (e.g. "claude-haiku-4-5", "anthropic/claude-opus-4-6"). */
-  defaultModel?: string;
-  /** Generic default candidate list, tried in order before falling back to the current model. */
-  defaultModelCandidates?: string[];
-  /** Shared model-family candidate lists, keyed by an explicit family name. */
-  familyModelCandidates?: Partial<Record<ModelFamily, string[]>>;
-  /** Exact provider overrides, keyed by provider id in lowercase (e.g. "openai", "openai-codex"). */
-  providerModelCandidates?: Partial<Record<string, string[]>>;
-  /** Default thinking level. Overrides the model-selection default when set. */
+  /** Optional fixed model for this scout config. Used before workload resolution. */
+  configuredModel?: string;
+  /** Optional scout workload. Drives provider-preserving profile selection when no explicit model override is set. */
+  workload?: ScoutWorkload;
+  /** Default thinking level. Overrides the selected model's default when set. */
   defaultThinkingLevel?: ThinkingLevel;
   buildSystemPrompt: (maxTurns: number) => string;
   buildUserPrompt: (params: Record<string, unknown>) => string;

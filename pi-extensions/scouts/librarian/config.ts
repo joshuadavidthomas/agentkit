@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 
 import type { ScoutConfig } from "../types.ts";
-import { FAST_MODELS } from "../models.ts";
 import { ModelParam } from "../validate.ts";
 import { buildLibrarianSystemPrompt, buildLibrarianUserPrompt } from "./prompt.ts";
 import { createGrepGitHubTool } from "./tools/grep-app.ts";
@@ -45,8 +44,7 @@ export const LibrarianParams = Type.Object({
 export const LIBRARIAN_CONFIG: ScoutConfig = {
   name: "librarian",
   maxTurns: 12,
-  defaultModel: "claude-haiku-4-5",
-  familyModelCandidates: FAST_MODELS,
+  workload: "balanced",
   buildSystemPrompt: buildLibrarianSystemPrompt,
   buildUserPrompt: buildLibrarianUserPrompt,
   getTools: () => [
