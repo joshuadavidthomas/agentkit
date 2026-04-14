@@ -8,6 +8,7 @@ A custom provider extension for pi coding agent that routes requests through [Cl
 - **Multiple upstream providers** - Access OpenAI, Anthropic, Workers AI, and more through a single gateway
 - **Dynamic routing** - Configure fallbacks, rate limits, and A/B tests in the Cloudflare dashboard
 - **Caching** - Automatic response caching for faster requests and cost savings
+- **Session affinity for prompt caching** - Automatically sends `x-session-affinity` using pi's session ID plus model ID so Cloudflare can reuse cached prompt prefixes within a model-specific session
 - **Unified billing** - Option to use Cloudflare's unified billing or BYOK (Bring Your Own Key)
 - **Dedicated config file** - Store gateway configuration in `~/.pi/agent/cloudflare-ai-gateway.json`
 - **Flexible auth** - API key can be set via `auth.json`, environment variable, or omitted for BYOK
@@ -136,6 +137,19 @@ The extension includes models from multiple providers:
 
 ### Caching
 Enable caching in your gateway settings for faster responses and cost savings.
+
+### Prompt caching and session affinity
+For OpenAI-compatible requests routed through Cloudflare AI Gateway, this extension automatically forwards a composite of pi's stable session ID and the active model ID as the `x-session-affinity` header. This helps Cloudflare route requests from the same pi session and model to the same backend instance, which improves prefix-cache hit rates for providers that support prompt caching while avoiding affinity collisions across different models.
+
+This is most useful for long-running agent sessions where each turn resends a large shared prompt prefix, such as system prompts, tool definitions, and conversation history.
+
+To maximize cache hits:
+- Keep static content at the start of the prompt
+- Avoid putting timestamps in system prompts
+- Reuse the same tool definitions across requests in a session
+- Check provider usage metadata for cached token counts when available
+
+Note: prompt caching behavior depends on the upstream model and provider behind your gateway. Cloudflare Workers AI models support prefix caching when the prompt prefix stays stable.
 
 ### Dynamic Routing
 Configure complex routing scenarios:

@@ -18,7 +18,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 // Resolve the brave-search skill directory relative to this extension
 function getBraveSearchDir(): string {
-  return path.resolve(import.meta.dirname, "../../skills/brave-search");
+  return path.resolve(import.meta.dirname, "../../../../skills/brave-search");
 }
 
 function execScript(
@@ -48,7 +48,7 @@ function execScript(
         resolve({
           stdout: stdout ?? "",
           stderr: stderr ?? "",
-          exitCode: error ? (error as any).code ?? 1 : 0,
+          exitCode: error ? (error as NodeJS.ErrnoException).code ? Number((error as NodeJS.ErrnoException).code) || 1 : 1 : 0,
         });
       },
     );
@@ -77,11 +77,9 @@ function toolOk(text: string) {
 }
 
 // JSDOM's CSS parser can't handle modern CSS and spams "Could not parse CSS
-// stylesheet" to the console.  We only need the DOM for Readability extraction,
-// so silence those warnings with a virtual console that swallows errors.
+// stylesheet" to the console. Silence those warnings with a virtual console.
 function quietConsole(): VirtualConsole {
   const vc = new VirtualConsole();
-  // Forward everything *except* jsdom's internal css-parse errors
   vc.on("error", () => {});
   vc.on("warn", () => {});
   vc.on("info", () => {});
@@ -136,7 +134,6 @@ async function fetchWebContent(
 
   const html = await response.text();
 
-  // Primary: Readability extraction
   const virtualConsole = quietConsole();
   const dom = new JSDOM(html, { url, virtualConsole });
   const article = new Readability(dom.window.document).parse();
@@ -148,7 +145,6 @@ async function fetchWebContent(
     };
   }
 
-  // Fallback: strip non-content elements, find main content area
   const fallbackDom = new JSDOM(html, { url, virtualConsole });
   const doc = fallbackDom.window.document;
   doc

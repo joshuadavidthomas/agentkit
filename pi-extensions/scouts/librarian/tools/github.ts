@@ -5,7 +5,7 @@
 // small model never has to compose pipelines or remember API quirks.
 
 import { execFile } from "node:child_process";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 // gh CLI helper
@@ -14,6 +14,23 @@ interface GhResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+}
+
+interface GitHubSearchHit {
+  path?: string;
+  repository?: {
+    nameWithOwner?: string;
+    fullName?: string;
+    name?: string;
+  };
+  textMatches?: Array<{ fragment?: string }>;
+}
+
+interface GitHubRepositorySearchResult {
+  fullName?: string;
+  description?: string;
+  language?: string;
+  stargazersCount?: number;
 }
 
 function execGh(
@@ -38,7 +55,7 @@ function execGh(
         resolve({
           stdout: stdout ?? "",
           stderr: stderr ?? "",
-          exitCode: error ? (error as any).code ?? 1 : 0,
+          exitCode: error ? (error as NodeJS.ErrnoException).code ? Number((error as NodeJS.ErrnoException).code) || 1 : 1 : 0,
         });
       },
     );
@@ -162,7 +179,6 @@ export function createReadRepoFileTool(): AgentTool<typeof readGitHubSchema> {
         );
       }
 
-      // GitHub base64 content has embedded newlines — strip them before decoding
       const contentB64 = parsed.content.replace(/\n/g, "");
       const decoded = Buffer.from(contentB64, "base64").toString("utf-8");
       const allLines = decoded.split("\n");
@@ -243,7 +259,6 @@ export function createSearchGitHubTool(): AgentTool<typeof searchGitHubSchema> {
     async execute(_toolCallId, params, signal) {
       const limit = params.limit ?? 30;
 
-      // Build the query with qualifiers
       let query = params.pattern;
       if (params.path) query += ` path:${params.path}`;
       if (params.language) query += ` language:${params.language}`;
@@ -265,7 +280,7 @@ export function createSearchGitHubTool(): AgentTool<typeof searchGitHubSchema> {
         return toolError(`Search failed: ${msg}`);
       }
 
-      let hits: any[];
+      let hits: GitHubSearchHit[];
       try {
         hits = JSON.parse(result.stdout);
       } catch {
@@ -410,7 +425,6 @@ const globGitHubSchema = Type.Object({
   ),
 });
 
-// Simple glob-to-regex converter for common patterns.
 function globToRegex(pattern: string): RegExp {
   let regex = "";
   let i = 0;
@@ -419,7 +433,6 @@ function globToRegex(pattern: string): RegExp {
     const ch = pattern[i];
 
     if (ch === "*" && pattern[i + 1] === "*") {
-      // ** matches any path segment(s)
       if (pattern[i + 2] === "/") {
         regex += "(?:.*/)?";
         i += 3;
@@ -428,7 +441,6 @@ function globToRegex(pattern: string): RegExp {
         i += 2;
       }
     } else if (ch === "*") {
-      // * matches anything except /
       regex += "[^/]*";
       i++;
     } else if (ch === "?") {
@@ -535,7 +547,6 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
     async execute(_toolCallId, params, signal) {
       const limit = params.limit ?? 30;
 
-      // Build search query
       const queryParts: string[] = [];
       if (params.pattern) queryParts.push(params.pattern);
       if (params.organization) queryParts.push(`org:${params.organization}`);
@@ -561,7 +572,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
         return toolError(`Repository search failed: ${msg}`);
       }
 
-      let repos: any[];
+      let repos: GitHubRepositorySearchResult[];
       try {
         repos = JSON.parse(result.stdout);
       } catch {
@@ -572,7 +583,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
         return toolOk("No repositories found matching the criteria.");
       }
 
-      const lines = repos.map((r: any) => {
+      const lines = repos.map((r) => {
         const stars = r.stargazersCount ? ` ⭐${r.stargazersCount}` : "";
         const lang = r.language ? ` [${r.language}]` : "";
         const desc = r.description ? ` — ${r.description}` : "";
@@ -588,8 +599,7 @@ export function createSearchReposTool(): AgentTool<typeof listRepositoriesSchema
 }
 
 // Factory to create all GitHub tools at once
-
-export function createGitHubTools(): AgentTool<any>[] {
+export function createGitHubTools() {
   return [
     createReadRepoFileTool(),
     createSearchGitHubTool(),

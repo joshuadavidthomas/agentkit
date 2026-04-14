@@ -4,6 +4,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Convert compound engineering agents to pi skills (generates skills/compound-engineering/)
+if [[ -x "$REPO_DIR/scripts/convert-compound-engineering.sh" ]]; then
+    bash "$REPO_DIR/scripts/convert-compound-engineering.sh"
+fi
+
 # Unified skills directory
 SKILLS_DIR="$HOME/.agents/skills"
 
@@ -39,6 +44,34 @@ if [[ -d "$PI_AGENTS_DIR" ]]; then
             rm "$PI_AGENTS_DIR/$retired"
             echo "Removed retired agent: $retired"
         fi
+    done
+fi
+
+# Pi prompt templates
+PI_PROMPTS_DIR="$HOME/.pi/agent/prompts"
+PI_PROMPTS_SRC="$REPO_DIR/pi-prompts"
+
+if [[ -d "$PI_PROMPTS_SRC" ]]; then
+    mkdir -p "$PI_PROMPTS_DIR"
+
+    # Remove stale prompt links from this repo
+    for existing in "$PI_PROMPTS_DIR"/*; do
+        [[ -L "$existing" ]] || continue
+        target=$(readlink "$existing")
+        [[ "$target" == "$PI_PROMPTS_SRC/"* ]] || continue
+
+        prompt_name=$(basename "$existing")
+        if [[ ! -f "$PI_PROMPTS_SRC/$prompt_name" ]]; then
+            rm "$existing"
+            echo "Removed stale prompt link: $prompt_name"
+        fi
+    done
+
+    for prompt in "$PI_PROMPTS_SRC"/*.md; do
+        [[ -e "$prompt" ]] || continue
+        prompt_name=$(basename "$prompt")
+        ln -sfn "$prompt" "$PI_PROMPTS_DIR/$prompt_name"
+        echo "Linked $prompt_name -> $PI_PROMPTS_DIR/"
     done
 fi
 

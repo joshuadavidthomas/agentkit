@@ -7,7 +7,6 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 const GREP_APP_API = "https://grep.app/api/search";
-const DEFAULT_TIMEOUT_MS = 15_000;
 
 const searchCodeSchema = Type.Object({
   query: Type.String({
@@ -76,8 +75,6 @@ interface GrepAppResponse {
 
 // Strip HTML from grep.app snippets to produce clean, line-numbered text.
 function stripSnippetHtml(html: string): string {
-  // Extract line number + code pairs from the table structure.
-  // Each row: <tr data-line="N"><td><div class="lineno">N</div></td><td>...code...</td></tr>
   const lines: string[] = [];
   const rowRe = /<tr[^>]*data-line="(\d+)"[^>]*>[\s\S]*?<\/tr>/g;
   let match: RegExpExecArray | null;
@@ -86,16 +83,11 @@ function stripSnippetHtml(html: string): string {
     const lineNo = match[1];
     let rowHtml = match[0];
 
-    // Remove the lineno cell entirely
     rowHtml = rowHtml.replace(/<td><div class="lineno">\d+<\/div><\/td>/, "");
-
-    // Replace jump markers with ellipsis indicator
     rowHtml = rowHtml.replace(/<div class="jump"><\/div>/g, "");
 
-    // Strip all remaining HTML tags
     let code = rowHtml.replace(/<[^>]+>/g, "");
 
-    // Decode common HTML entities
     code = code
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
@@ -105,7 +97,6 @@ function stripSnippetHtml(html: string): string {
       .replace(/&#x27;/g, "'")
       .replace(/&nbsp;/g, " ");
 
-    // Trim trailing whitespace but preserve leading (indentation)
     code = code.replace(/\s+$/, "");
 
     if (code || lineNo) {
@@ -114,7 +105,6 @@ function stripSnippetHtml(html: string): string {
   }
 
   if (lines.length === 0) {
-    // Fallback: strip all tags if table parsing fails
     let plain = html.replace(/<[^>]+>/g, "");
     plain = plain
       .replace(/&amp;/g, "&")
@@ -181,16 +171,13 @@ function formatFacets(facets: GrepAppResponse["facets"]): string {
 function formatResults(data: GrepAppResponse): string {
   const sections: string[] = [];
 
-  // Header
   sections.push(
     `Found ${data.hits.total} results in ${data.time}ms`,
   );
 
-  // Facets
   const facets = formatFacets(data.facets);
   if (facets) sections.push(facets);
 
-  // Hits
   const hits = data.hits.hits;
   if (hits.length === 0) {
     sections.push("No matching code found.");

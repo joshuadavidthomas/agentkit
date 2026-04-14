@@ -130,17 +130,22 @@ Non-blocking — the command still runs, but a warning is prepended to the tool 
 Scout subagent system — spins up focused small-model sessions with purpose-built tool sets, returning structured results with custom TUI rendering. Originally vendored from [pi-finder](https://github.com/default-anton/pi-finder) and [pi-librarian](https://github.com/default-anton/pi-librarian), now significantly expanded.
 
 Features:
-- **Model tier system**: Each scout has a default tier (`fast` or `capable`) overridable per-call via `modelTier` parameter
-- **Usage-aware model selection**: Checks provider utilization via [vibeusage](https://github.com/joshuadavidthomas/vibeusage), deprioritizing providers above 85% and skipping those above 95%
+- **Family-aware scout model stacks with optional provider overrides**: Each scout has sensible fallback candidates. When `model` is omitted, scouts prefer an exact provider override when configured, otherwise a shared model-family stack based on the current session model, then a generic fallback. Callers should usually omit `model` unless the user explicitly asked for a specific model/provider or a retry needs a deliberate override
 - **Interleaved TUI rendering**: Tool calls and text rendered chronologically with collapsible markdown output
 - **Turn budget enforcement**: Blocks tool use on the final turn to force a summary response
 
 Registers four tools:
 
-- **finder** (fast): Read-only workspace scout — locates files, directories, and components when exact locations are unknown
-- **librarian** (fast, overridable to capable): External research scout — searches GitHub repos and the web, fetches code and documentation
-- **oracle** (capable): Deep code analysis scout — traces data flow, analyzes architecture, finds patterns with precise file:line references. Read-only (restricted bash allowlist)
+- **finder**: Read-only workspace scout — locates files, directories, and components when exact locations are unknown
+- **librarian**: External research scout — searches GitHub repos and the web, fetches code and documentation
+- **oracle**: Deep code analysis scout — traces data flow, analyzes architecture, finds patterns with precise file:line references. Read-only (restricted bash allowlist)
 - **scouts**: Parallel dispatch — runs multiple scouts concurrently for independent research tasks
+
+Model override note:
+- The optional `model` field is an advanced override.
+- Callers should usually omit it.
+- When omitted, scouts prefer exact provider overrides when configured, otherwise a shared model-family stack based on the current session model, then generic scout defaults.
+- Only set it when the user explicitly requested a specific model/provider, or when a previous scout attempt failed and a deliberate retry is warranted.
 
 #### [skill-requires-path](./pi-extensions/skill-requires-path/)
 

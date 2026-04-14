@@ -8,11 +8,12 @@
  *   npx tsx test.ts openai/gpt-4o-mini           # Test GPT-4o-mini
  */
 
-import { type Api, type Context, type Model, streamSimple } from "@mariozechner/pi-ai";
+import { type Context, type Model } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { type ModelConfig, getModels } from "./models.js";
+import { streamCloudflareAIGateway } from "./stream.js";
 
 interface CloudflareConfig {
 	accountId: string;
@@ -57,6 +58,7 @@ const AI_GATEWAY_BASE_URL =
 	CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_AI_GATEWAY_NAME
 		? `https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${CLOUDFLARE_AI_GATEWAY_NAME}`
 		: "";
+const SESSION_ID = process.env.CLOUDFLARE_AI_GATEWAY_SESSION_ID ?? "pi-cloudflare-ai-gateway-test";
 
 async function main() {
 	const modelId = process.argv[2] || "openai/gpt-4o";
@@ -84,10 +86,10 @@ async function main() {
 		process.exit(1);
 	}
 
-	const model: Model<Api> = {
+	const model: Model<"openai-completions"> = {
 		id: cfg.id,
 		name: cfg.name,
-		api: "openai-completions" as Api,
+		api: "openai-completions",
 		provider: "cloudflare-ai-gateway",
 		baseUrl: AI_GATEWAY_BASE_URL,
 		reasoning: cfg.reasoning,
@@ -103,12 +105,14 @@ async function main() {
 
 	console.log(`Model: ${model.id}`);
 	console.log(`Gateway: ${AI_GATEWAY_BASE_URL}/compat/chat/completions`);
+	console.log(`Session affinity: ${SESSION_ID}:${model.id}`);
 	console.log("---");
 
 	try {
-		const stream = streamSimple(model, context, {
+		const stream = streamCloudflareAIGateway(model, context, {
 			apiKey: CLOUDFLARE_AI_GATEWAY_TOKEN,
 			maxTokens: 100,
+			sessionId: SESSION_ID,
 		});
 
 		for await (const event of stream) {
