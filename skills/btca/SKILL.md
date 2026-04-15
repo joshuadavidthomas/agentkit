@@ -1,6 +1,11 @@
 ---
 name: btca
-description: Query codebases semantically using LLMs. Use when asking questions about libraries, frameworks, or source code — searches actual source, not outdated docs.
+description: >
+  Query codebases semantically using LLMs via the btca CLI. Clones repos locally,
+  searches source code with AI, and answers with file citations. Supports git and
+  local resources, multi-resource queries, and configurable models.
+  Trigger terms: search source code, query codebase, how does X work in library,
+  framework internals, source code question, btca ask, code search, library docs.
 ---
 
 # btca (Better Context App)
@@ -158,6 +163,16 @@ btca serve --port 8080  # Starts server in foreground
 ```
 
 Always use `btca ask` for CLI usage.
+
+## Error Recovery
+
+| Problem | Action |
+|---------|--------|
+| `btca: command not found` | Run `bun add -g btca opencode-ai` then retry |
+| Auth failure / 401 | Run `opencode auth` to refresh credentials |
+| Clone timeout on large repo | Add `searchPath` to limit scope; increase `providerTimeoutMs` |
+| No results for query | Broaden question; verify resource name with `btca config resources list` |
+| Model rate limit | Switch to a free model: `btca config model --provider opencode --model big-pickle` |
 
 ## Uninstall
 
