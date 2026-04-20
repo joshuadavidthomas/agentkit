@@ -1,6 +1,7 @@
 {
   "name": "scouts",
   "private": true,
+  "type": "module",
   "pi": {
     "extensions": ["./index.ts"]
   }
