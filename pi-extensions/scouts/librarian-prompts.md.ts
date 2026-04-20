@@ -51,13 +51,9 @@ Typical GitHub workflow:
 3. Iterate: listRepoDirectory or findRepoFiles to explore structure, readRepoFile for details
 
 Typical web workflow:
-1. webSearch once with a sharp query to find relevant pages
+1. webSearch to find relevant pages
 2. webFetch to read the most promising results
-3. Only run another webSearch if the first search clearly missed the target
-
-Be frugal with web search calls. Prefer tightening one query over spraying many near-duplicate searches.
-Prefer webFetch after you already have a promising URL instead of repeating webSearch.
-Avoid \`content\` on webSearch unless you truly need content for several results at once.
+3. Iterate: refine search terms, fetch additional pages
 
 grepGitHub and searchGitHub results are leads, not proof. Always readRepoFile the actual file before citing specific code.
 webSearch results include snippets but may be incomplete. Use webFetch to get full content when needed.
