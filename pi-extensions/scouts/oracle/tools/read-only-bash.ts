@@ -73,11 +73,7 @@ export function createReadOnlyBashTool(cwd: string) {
 
       const check = isReadOnly(command);
       if (!check.ok) {
-        return {
-          content: [{ type: "text" as const, text: `Blocked: ${check.reason}. Oracle operates in read-only mode.` }],
-          details: {},
-          isError: true,
-        };
+        throw new Error(`Blocked: ${check.reason}. Oracle operates in read-only mode.`);
       }
 
       return baseTool.execute(toolCallId, params, signal, onUpdate);

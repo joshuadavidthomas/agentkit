@@ -68,12 +68,8 @@ function execGh(
   });
 }
 
-function toolError(text: string) {
-  return {
-    content: [{ type: "text" as const, text }],
-    details: {},
-    isError: true,
-  };
+function toolError(text: string): never {
+  throw new Error(text);
 }
 
 function toolOk(text: string, details: Record<string, unknown> = {}) {

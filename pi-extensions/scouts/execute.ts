@@ -413,6 +413,18 @@ class ScoutWorkflow {
           this.publishUpdate();
           break;
         }
+        case "tool_execution_update": {
+          for (let i = run.displayItems.length - 1; i >= 0; i--) {
+            const item = run.displayItems[i];
+            if (item.type === "tool" && item.toolCallId === event.toolCallId) {
+              const text = extractToolResultText(event.partialResult);
+              if (text) item.result = text;
+              break;
+            }
+          }
+          this.publishUpdate();
+          break;
+        }
         case "tool_execution_end": {
           for (let i = run.displayItems.length - 1; i >= 0; i--) {
             const item = run.displayItems[i];

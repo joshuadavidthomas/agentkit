@@ -53,7 +53,11 @@ export const SPECIALIST_TOOL: ToolDefinition<typeof SpecialistParams, ScoutDetai
     return new ScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
   },
 
-  renderResult(result, options, theme) {
-    return new ScoutResult(result, options, theme);
+  renderResult(result, options, theme, context) {
+    const component = context.lastComponent instanceof ScoutResult
+      ? context.lastComponent
+      : new ScoutResult(result, options, theme);
+    component.update(result, options, theme, context.invalidate);
+    return component;
   },
 };

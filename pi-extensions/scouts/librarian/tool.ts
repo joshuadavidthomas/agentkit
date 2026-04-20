@@ -26,7 +26,11 @@ export const LIBRARIAN_TOOL: ToolDefinition<typeof LibrarianParams, ScoutDetails
     return new ScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
   },
 
-  renderResult(result, options, theme) {
-    return new ScoutResult(result, options, theme);
+  renderResult(result, options, theme, context) {
+    const component = context.lastComponent instanceof ScoutResult
+      ? context.lastComponent
+      : new ScoutResult(result, options, theme);
+    component.update(result, options, theme, context.invalidate);
+    return component;
   },
 };

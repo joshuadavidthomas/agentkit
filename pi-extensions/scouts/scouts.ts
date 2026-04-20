@@ -243,7 +243,11 @@ export const SCOUTS_TOOL: ToolDefinition<typeof ScoutsParams, ParallelDetails> =
     return new ScoutCall("scouts", args as Record<string, unknown>, theme, info, context);
   },
 
-  renderResult(result, options, theme) {
-    return new ParallelScoutsResult(result, options, theme);
+  renderResult(result, options, theme, context) {
+    const component = context.lastComponent instanceof ParallelScoutsResult
+      ? context.lastComponent
+      : new ParallelScoutsResult(result, options, theme);
+    component.update(result, options, theme, context.invalidate);
+    return component;
   },
 };

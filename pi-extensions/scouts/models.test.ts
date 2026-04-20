@@ -30,7 +30,7 @@ function resolveForMainSession(currentModel: Model<Api>, workload: ScoutWorkload
 
 describe("scout model selection from a main session", () => {
   it("github-copilot main session resolves a single route-local model for each scout workload", () => {
-    const currentModel = getCurrentModel("github-copilot", "claude-sonnet-4.6");
+    const currentModel = getCurrentModel("github-copilot", "gpt-5.4");
 
     const fast = resolveForMainSession(currentModel, "fast");
     const balanced = resolveForMainSession(currentModel, "balanced");
@@ -38,11 +38,13 @@ describe("scout model selection from a main session", () => {
 
     expect(fast).not.toBeNull();
     expect(fast?.model.provider).toBe("github-copilot");
-    expect(fast?.model.id).toBe("claude-haiku-4.5");
+    expect(fast?.model.id).toBe("gpt-5-mini");
+    expect(fast?.thinkingLevel).toBe("low");
 
     expect(balanced).not.toBeNull();
     expect(balanced?.model.provider).toBe("github-copilot");
-    expect(balanced?.model.id).toBe("claude-sonnet-4.6");
+    expect(balanced?.model.id).toBe("gpt-5.4-mini");
+    expect(balanced?.thinkingLevel).toBe("low");
 
     expect(deep).not.toBeNull();
     expect(deep?.model.provider).toBe("github-copilot");

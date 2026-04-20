@@ -23,7 +23,11 @@ export const FINDER_TOOL: ToolDefinition<typeof FinderParams, ScoutDetails> = {
     return new ScoutCall("finder", args as Record<string, unknown>, theme, undefined, context);
   },
 
-  renderResult(result, options, theme) {
-    return new ScoutResult(result, options, theme);
+  renderResult(result, options, theme, context) {
+    const component = context.lastComponent instanceof ScoutResult
+      ? context.lastComponent
+      : new ScoutResult(result, options, theme);
+    component.update(result, options, theme, context.invalidate);
+    return component;
   },
 };

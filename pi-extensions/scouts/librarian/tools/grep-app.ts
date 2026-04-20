@@ -228,12 +228,7 @@ export function createGrepGitHubTool(): AgentTool<typeof searchCodeSchema, Searc
 
         if (!response.ok) {
           const body = await response.text().catch(() => "");
-          const text = `grep.app returned HTTP ${response.status}: ${body.slice(0, 200)}`;
-          return {
-            content: [{ type: "text", text }],
-            details: { totalHits: 0, responseTimeMs: 0, hitsReturned: 0 },
-            isError: true,
-          };
+          throw new Error(`grep.app returned HTTP ${response.status}: ${body.slice(0, 200)}`);
         }
 
         const data = (await response.json()) as GrepAppResponse;
@@ -249,22 +244,12 @@ export function createGrepGitHubTool(): AgentTool<typeof searchCodeSchema, Searc
         };
       } catch (error) {
         if (signal?.aborted) {
-          return {
-            content: [{ type: "text", text: "Search aborted." }],
-            details: { totalHits: 0, responseTimeMs: 0, hitsReturned: 0 },
-            isError: true,
-          };
+          throw new Error("Search aborted.");
         }
 
         const message =
           error instanceof Error ? error.message : String(error);
-        return {
-          content: [
-            { type: "text", text: `grep.app search failed: ${message}` },
-          ],
-          details: { totalHits: 0, responseTimeMs: 0, hitsReturned: 0 },
-          isError: true,
-        };
+        throw new Error(`grep.app search failed: ${message}`);
       }
     },
   };

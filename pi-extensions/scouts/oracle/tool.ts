@@ -24,7 +24,11 @@ export const ORACLE_TOOL: ToolDefinition<typeof OracleParams, ScoutDetails> = {
     return new ScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
   },
 
-  renderResult(result, options, theme) {
-    return new ScoutResult(result, options, theme);
+  renderResult(result, options, theme, context) {
+    const component = context.lastComponent instanceof ScoutResult
+      ? context.lastComponent
+      : new ScoutResult(result, options, theme);
+    component.update(result, options, theme, context.invalidate);
+    return component;
   },
 };

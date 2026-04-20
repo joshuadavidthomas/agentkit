@@ -93,11 +93,15 @@ export function shorten(text: string, max: number): string {
   return `${text.slice(0, max)}…`;
 }
 
-// Clean tool result text for display (strip budget lines, truncate)
-export function cleanToolResult(raw: string): string {
+// Clean tool result text for display (strip budget lines, optionally truncate)
+export function cleanToolResult(raw: string, maxLines?: number): string {
   const cleaned = raw.replace(/\n*\[turn budget\][^\n]*/g, "").trimEnd();
+  if (maxLines === undefined) return cleaned;
+
   const lines = cleaned.split("\n");
-  return lines.length > 30 ? lines.slice(0, 30).join("\n") + `\n... (${lines.length - 30} more lines)` : cleaned;
+  return lines.length > maxLines
+    ? lines.slice(0, maxLines).join("\n") + `\n... (${lines.length - maxLines} more lines)`
+    : cleaned;
 }
 
 // Path shortening utilities
