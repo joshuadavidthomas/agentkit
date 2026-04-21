@@ -12,7 +12,7 @@
 
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { execSync } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
@@ -157,7 +157,6 @@ function refreshVibeusage(vibeProvider: string): void {
   if (vibeusageFetching) return;
   vibeusageFetching = true;
 
-  const { execFile } = require("node:child_process") as typeof import("node:child_process");
   execFile(
     "vibeusage",
     ["statusline", "-p", vibeProvider],

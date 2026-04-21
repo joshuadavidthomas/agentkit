@@ -31,11 +31,57 @@ import {
 import { join } from "node:path";
 import type {
 	CumulativeStats,
+	ExitPatterns,
 	IterationStats,
 	LoopConfig,
 	LoopState,
 	LoopStatus,
 } from "./types.ts";
+
+function fmtDuration(ms: number): string {
+	const secs = Math.round(ms / 1000);
+	if (secs < 60) return `${secs}s`;
+	const mins = Math.floor(secs / 60);
+	const remainSecs = secs % 60;
+	if (mins < 60) return `${mins}m${remainSecs}s`;
+	const hours = Math.floor(mins / 60);
+	const remainMins = mins % 60;
+	return `${hours}h${remainMins}m`;
+}
+
+function fmtCost(cost: number): string {
+	return `$${cost.toFixed(3)}`;
+}
+
+function fmtTokens(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return String(n);
+}
+
+const DEFAULT_EXIT_PATTERNS: ExitPatterns = {
+	exit: [
+		"no issues found",
+		"no issues remaining",
+		"no remaining issues",
+		"no further issues",
+		"no problems found",
+		"no changes needed",
+		"no changes necessary",
+		"nothing to fix",
+		"everything looks good",
+		"no improvements needed",
+	],
+	continueWorking: [
+		"fixed",
+		"corrected",
+		"resolved",
+		"applied fix",
+		"made changes",
+		"applied changes",
+		"refactored",
+	],
+};
 
 export interface LoopEngineCallbacks {
 	/** Typed session event forwarded for TUI rendering */
@@ -46,6 +92,8 @@ export interface LoopEngineCallbacks {
 	onIterationEnd?: (iteration: number, stats: IterationStats) => void;
 	/** Fired when loop status changes (running, stopped, completed, error) */
 	onStatusChange?: (status: LoopStatus, error?: string) => void;
+	/** Fired after the loop ends with a summary of what happened */
+	onLoopSummary?: (summary: string) => void;
 }
 
 /** Dependencies from the parent pi session needed to create child sessions */
@@ -84,7 +132,13 @@ export class LoopEngine {
 
 	// Control flow
 	private stopRequested = false;
+	private navigating = false;
+	private exitDetected = false;
+	private costCeilingHit = false;
 	private pendingFollowup?: string;
+
+	// Tree context mode — rolling branch point for accumulated summaries
+	private branchPoint: string | null = null;
 
 	// Filesystem
 	private eventsStream: WriteStream | null = null;
@@ -113,6 +167,8 @@ export class LoopEngine {
 			startedAt: this.startedAt.toISOString(),
 			updatedAt: new Date().toISOString(),
 			error: this.error,
+			exitDetected: this.exitDetected || undefined,
+			costCeilingHit: this.costCeilingHit || undefined,
 		};
 	}
 
@@ -151,6 +207,17 @@ export class LoopEngine {
 			return;
 		}
 
+		// In tree mode, create an anchor entry as the root of the iteration tree.
+		// After each iteration, navigateTree summarizes the abandoned branch and
+		// creates a new child of the branch point. Summaries accumulate along the
+		// path so each iteration sees all prior context.
+		if (this.config.contextMode === "tree") {
+			this.branchPoint = this.session.sessionManager.appendCustomEntry(
+				"ralph_loop_anchor",
+				{ name: this.config.name },
+			);
+		}
+
 		// Subscribe to events for rendering and telemetry
 		this.unsubscribe = this.session.subscribe((event) => {
 			this.eventsStream?.write(JSON.stringify(event) + "\n");
@@ -183,6 +250,7 @@ export class LoopEngine {
 		}
 
 		if (this.session) {
+			this.session.abortBranchSummary();
 			this.session.abort().catch(() => {});
 		}
 		this.setStatus("stopped");
@@ -211,9 +279,17 @@ export class LoopEngine {
 		this.pendingFollowup = message;
 	}
 
-	private async runIterations(): Promise<void> {
-		const taskPath = join(this.ralphDir, this.config.taskFile);
+	/** Resolve the task file path for the current iteration, cycling through roleSequence if set */
+	private resolveTaskPath(): string {
+		const seq = this.config.roleSequence;
+		if (seq && seq.length > 0) {
+			const idx = (this.iteration - 1) % seq.length;
+			return join(this.ralphDir, seq[idx]);
+		}
+		return join(this.ralphDir, this.config.taskFile);
+	}
 
+	private async runIterations(): Promise<void> {
 		for (
 			this.iteration = 1;
 			this.config.maxIterations === 0 ||
@@ -226,7 +302,7 @@ export class LoopEngine {
 			this.callbacks.onIterationStart?.(this.iteration);
 
 			// Re-read task each iteration — the agent may have updated it
-			const taskContent = readFileSync(taskPath, "utf-8").trim();
+			const taskContent = readFileSync(this.resolveTaskPath(), "utf-8").trim();
 			const prompt = this.pendingFollowup
 				? `${taskContent}\n\n---\n\n${this.pendingFollowup}`
 				: taskContent;
@@ -252,23 +328,156 @@ export class LoopEngine {
 
 			// Check stop conditions
 			if (this.stopRequested) break;
+			if (this.checkExitDetection()) {
+				this.exitDetected = true;
+				break;
+			}
+			if (
+				this.config.costCeiling > 0 &&
+				this.cumulativeStats.cost >= this.config.costCeiling
+			) {
+				this.costCeilingHit = true;
+				break;
+			}
 			if (
 				this.config.maxIterations > 0 &&
 				this.iteration >= this.config.maxIterations
 			)
 				break;
 
-			// Fresh context for next iteration
-			await this.session!.newSession();
+			// Context management for next iteration
+			if (this.config.contextMode === "tree" && this.branchPoint) {
+				await this.navigateTreeBranch();
+			} else {
+				await this.session!.newSession();
+			}
 		}
 
 		this.setStatus(this.stopRequested ? "stopped" : "completed");
 		this.writeState();
+		this.emitLoopSummary();
+	}
+
+	private emitLoopSummary(): void {
+		if (!this.callbacks.onLoopSummary) return;
+
+		const s = this.cumulativeStats;
+		const lines: string[] = [];
+
+		// Header
+		lines.push(`**Loop "${this.config.name}" — ${this.status}**`);
+		lines.push("");
+
+		// Reason for stopping
+		if (this.exitDetected) {
+			lines.push("Stopped: agent signaled completion (clean exit)");
+		} else if (this.costCeilingHit) {
+			lines.push(
+				`Stopped: cost ceiling reached ($${this.config.costCeiling})`,
+			);
+		} else if (this.stopRequested) {
+			lines.push("Stopped: user requested stop");
+		} else if (
+			this.config.maxIterations > 0 &&
+			s.iterations >= this.config.maxIterations
+		) {
+			lines.push(
+				`Stopped: reached max iterations (${this.config.maxIterations})`,
+			);
+		} else if (this.error) {
+			lines.push(`Stopped: error — ${this.error}`);
+		}
+
+		// Stats table
+		lines.push("");
+		lines.push("| Metric | Value |");
+		lines.push("|--------|-------|");
+		lines.push(`| Iterations | ${s.iterations} |`);
+		lines.push(`| Duration | ${fmtDuration(s.durationMs)} |`);
+		lines.push(`| Cost | ${fmtCost(s.cost)} |`);
+		lines.push(`| Turns | ${s.turns} |`);
+		lines.push(
+			`| Tokens | ${fmtTokens(s.tokensIn)} in / ${fmtTokens(s.tokensOut)} out |`,
+		);
+
+		this.callbacks.onLoopSummary(lines.join("\n"));
+	}
+
+	/**
+	 * Navigate back to the current branch point with an LLM-generated summary.
+	 * The summary captures what happened in the completed iteration. Each summary
+	 * becomes a child of the previous one, so context accumulates across iterations.
+	 * Falls back to fresh context if navigation fails.
+	 */
+	private async navigateTreeBranch(): Promise<void> {
+		this.navigating = true;
+		try {
+			const result = await this.session!.navigateTree(
+				this.branchPoint!,
+				{
+					summarize: true,
+					customInstructions:
+						"Summarize the key findings, actions taken, and current state from this iteration.",
+				},
+			);
+
+			if (result.cancelled || result.aborted) {
+				// Navigation was cancelled — fall back to fresh context
+				await this.session!.newSession();
+				this.branchPoint =
+					this.session!.sessionManager.appendCustomEntry(
+						"ralph_loop_anchor",
+						{ name: this.config.name },
+					);
+			} else if (result.summaryEntry) {
+				// Advance branch point to the new summary so next iteration
+				// branches from here, keeping all prior summaries in the path
+				this.branchPoint = result.summaryEntry.id;
+			}
+		} catch {
+			// Summarization failed — fall back to fresh context
+			await this.session!.newSession();
+			this.branchPoint =
+				this.session!.sessionManager.appendCustomEntry(
+					"ralph_loop_anchor",
+					{ name: this.config.name },
+				);
+		} finally {
+			this.navigating = false;
+		}
+	}
+
+	/**
+	 * Check if the agent's last message signals completion.
+	 * Uses dual-signal detection: exit only when an exit phrase is found
+	 * AND no continue-working phrase is found. This prevents premature exit
+	 * after the agent fixes issues (it should get one more verification pass).
+	 */
+	private checkExitDetection(): boolean {
+		if (!this.config.exitDetection) return false;
+
+		const text = this.session!.getLastAssistantText()?.toLowerCase() ?? "";
+		if (!text) return false;
+
+		const patterns =
+			this.config.exitDetection === true
+				? DEFAULT_EXIT_PATTERNS
+				: this.config.exitDetection;
+
+		const hasExit = patterns.exit.some((p) =>
+			text.includes(p.toLowerCase()),
+		);
+		if (!hasExit) return false;
+
+		const hasContinue = patterns.continueWorking.some((p) =>
+			text.includes(p.toLowerCase()),
+		);
+		return !hasContinue;
 	}
 
 	private handleEvent(event: AgentSessionEvent): void {
-		// Don't forward events after stop/kill — prevents rendering after abort
-		if (this.stopRequested) return;
+		// Don't forward events after stop/kill or during tree navigation (summary generation)
+		if (this.stopRequested || this.navigating) return;
 
 		// Forward to extension for rendering
 		this.callbacks.onEvent(event);
