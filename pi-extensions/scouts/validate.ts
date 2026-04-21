@@ -2,7 +2,7 @@
 
 import { Type } from "@sinclair/typebox";
 
-import type { ScoutDetails } from "./types.ts";
+import { createErrorScoutDetails } from "./state.ts";
 
 // Shared parameter: model override — used by all scout tools
 export const ModelParam = Type.Optional(
@@ -17,10 +17,10 @@ export const ModelParam = Type.Optional(
 );
 
 // Build a standardized error result
-export function makeErrorResult(text: string, details?: Partial<ScoutDetails>) {
+export function makeErrorResult(text: string, query = "") {
   return {
     content: [{ type: "text" as const, text }],
-    details: { mode: "single", status: "error" as const, runs: [], ...details } satisfies ScoutDetails,
+    details: createErrorScoutDetails(query, text),
     isError: true as const,
   };
 }
@@ -32,7 +32,7 @@ export function validateQuery(params: unknown): ReturnType<typeof makeErrorResul
     : undefined;
   const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
   if (!query) {
-    return makeErrorResult("Invalid parameters: expected `query` to be a non-empty string.");
+    return makeErrorResult("Invalid parameters: expected `query` to be a non-empty string.", query);
   }
   return null;
 }

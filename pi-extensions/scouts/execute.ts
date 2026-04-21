@@ -23,6 +23,8 @@ import {
 
 import { extractDisplayItems, extractToolResultText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
 import { resolveDiversityModel, resolveWorkloadModel } from "./models.ts";
+import { createScoutResourceLoader } from "./resources.ts";
+import { computeOverallStatus, createInitialRun } from "./state.ts";
 import type { ScoutConfig, ScoutDetails } from "./types.ts";
 
 type ScoutRunDetails = ScoutDetails["runs"][number];
@@ -59,7 +61,8 @@ export function createTurnBudgetExtension(maxTurns: number): ExtensionFactory {
 // EventTarget max listeners management for nested sessions
 const DEFAULT_EVENTTARGET_MAX_LISTENERS = 100;
 const EVENTTARGET_MAX_LISTENERS_STATE_KEY = Symbol.for("pi.eventTargetMaxListenersState");
-const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+type BuiltinToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
+const BUILTIN_TOOL_NAMES = new Set<BuiltinToolName>(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
 type EventTargetMaxListenersState = { depth: number; savedDefault?: number };
 type ScoutExecutionResult = {
@@ -104,25 +107,17 @@ export function bumpDefaultEventTargetMaxListeners(): () => void {
   };
 }
 
-function createInitialRun(query: string): ScoutRunDetails {
-  return {
-    status: "running",
-    query,
-    turns: 0,
-    displayItems: [],
-    startedAt: Date.now(),
-  };
-}
-
 function prepareScoutTools(config: ScoutConfig, cwd: string): {
-  builtinTools: ReturnType<typeof createReadTool | typeof createBashTool>[];
+  builtinTools: BuiltinToolName[];
   customTools: ToolDefinition[];
 } {
   const allTools = config.createTools
     ? config.createTools(cwd)
     : [createReadTool(cwd), createBashTool(cwd)];
 
-  const builtinTools = allTools.filter((tool: any) => BUILTIN_TOOL_NAMES.has(tool.name));
+  const builtinTools = allTools
+    .filter((tool: any): tool is { name: BuiltinToolName } => BUILTIN_TOOL_NAMES.has(tool.name))
+    .map((tool) => tool.name);
   const customTools = allTools
     .filter((tool: any) => !BUILTIN_TOOL_NAMES.has(tool.name))
     .map((tool: any): ToolDefinition => ({
@@ -144,10 +139,11 @@ class ScoutWorkflow {
   private readonly systemPrompt: string;
   private readonly runPlans: ScoutRunPlan[];
   private readonly activeSessions = new Set<AbortableSession>();
-  private readonly runs: ScoutRunDetails[] = [];
+  private readonly runs: ScoutRunDetails[];
   private readonly planningError?: string;
 
   private phase: ScoutWorkflowPhase = "planning";
+  private startedRunCount = 0;
   private currentModel?: Model<Api>;
   private abortRequested = false;
   private abortSignalListener?: () => void;
@@ -163,6 +159,7 @@ class ScoutWorkflow {
     this.query = String(params.query ?? "");
     this.userPrompt = config.buildUserPrompt(params);
     this.systemPrompt = config.buildSystemPrompt(this.maxTurns);
+    this.runs = [createInitialRun(this.query)];
 
     const explicitModelId = typeof params.model === "string" ? params.model.trim() : undefined;
     const configuredModel = config.configuredModel?.trim();
@@ -232,7 +229,7 @@ class ScoutWorkflow {
     }
 
     if (this.signal?.aborted) {
-      const run = this.startRun(this.runPlans[0]!);
+      const run = this.currentRun();
       this.phase = "aborting";
       this.abortRequested = true;
       this.markRunAborted(run);
@@ -257,7 +254,7 @@ class ScoutWorkflow {
   }
 
   private buildPlanningErrorResult(): ScoutExecutionResult {
-    const run = createInitialRun(this.query);
+    const run = this.currentRun();
     run.status = "error";
     run.error = this.planningError;
     run.summaryText = this.planningError;
@@ -265,15 +262,29 @@ class ScoutWorkflow {
 
     return {
       content: [{ type: "text", text: this.planningError! }],
-      details: { mode: "single", status: "error", runs: [run] } satisfies ScoutDetails,
+      details: { mode: "single", status: "error", runs: this.runs } satisfies ScoutDetails,
       isError: true,
     };
   }
 
   private startRun(runPlan: ScoutRunPlan): ScoutRunDetails {
-    const run = createInitialRun(this.query);
+    const run = this.startedRunCount === 0
+      ? this.currentRun()
+      : createInitialRun(this.query);
+
+    if (this.startedRunCount > 0) {
+      this.runs.unshift(run);
+    }
+
+    this.startedRunCount += 1;
     this.currentModel = runPlan.model;
-    this.runs.unshift(run);
+    run.status = "running";
+    run.turns = 0;
+    run.displayItems = [];
+    run.summaryText = undefined;
+    run.error = undefined;
+    run.startedAt = Date.now();
+    run.endedAt = undefined;
     this.publishUpdate();
     return run;
   }
@@ -286,12 +297,13 @@ class ScoutWorkflow {
     const run = this.currentRun();
     if (!run || !this.currentModel) return;
 
-    const text = run.summaryText ?? (run.status === "running" ? "(searching...)" : "(no output)");
+    const status = computeOverallStatus(this.runs);
+    const text = run.summaryText ?? (status === "running" ? "(searching...)" : "(no output)");
     this.onUpdate?.({
       content: [{ type: "text", text }],
       details: {
         mode: "single",
-        status: run.status,
+        status,
         subagentProvider: this.currentModel.provider,
         subagentModelId: this.currentModel.id,
         runs: this.runs,
@@ -371,19 +383,14 @@ class ScoutWorkflow {
     return index >= 0 && index < this.runPlans.length - 1;
   }
 
-  private async createResourceLoader(): Promise<DefaultResourceLoader> {
-    const resourceLoader = new DefaultResourceLoader({
-      noExtensions: true,
-      additionalExtensionPaths: [],
+  private createResourceLoader(): Promise<DefaultResourceLoader> {
+    return createScoutResourceLoader({
+      cwd: this.ctx.cwd,
       noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
       extensionFactories: [createTurnBudgetExtension(this.maxTurns)],
       systemPromptOverride: () => this.systemPrompt,
       skillsOverride: () => ({ skills: [], diagnostics: [] }),
     });
-    await resourceLoader.reload();
-    return resourceLoader;
   }
 
   private async createSession(
@@ -478,16 +485,17 @@ class ScoutWorkflow {
 
   private buildResult(): ScoutExecutionResult {
     const run = this.currentRun();
+    const status = computeOverallStatus(this.runs);
     return {
-      content: [{ type: "text", text: run?.summaryText ?? "(no output)" }],
+      content: [{ type: "text", text: run.summaryText ?? "(no output)" }],
       details: {
         mode: "single",
-        status: run?.status ?? "error",
+        status,
         runs: this.runs,
         subagentProvider: this.currentModel?.provider,
         subagentModelId: this.currentModel?.id,
       } satisfies ScoutDetails,
-      isError: run?.status === "error",
+      isError: status === "error",
     };
   }
 }
