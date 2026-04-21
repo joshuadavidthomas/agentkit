@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { createBashTool, createEditTool, createReadTool, createWriteTool, DefaultResourceLoader, type Skill } from "@mariozechner/pi-coding-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import { parse as parseYaml } from "yaml";
 
+import { loadScoutSkills } from "../resources.ts";
 import type { ScoutConfig } from "../types.ts";
 import { ModelParam } from "../validate.ts";
 import { buildSpecialistSystemPrompt, buildSpecialistUserPrompt } from "./prompt.ts";
@@ -56,9 +57,7 @@ export async function buildSpecialistConfig(
     return { error: "Specialist requires a skill name." };
   }
 
-  const resourceLoader = new DefaultResourceLoader({ cwd, noExtensions: true, noPromptTemplates: true, noThemes: true });
-  await resourceLoader.reload();
-  const allSkills = resourceLoader.getSkills().skills;
+  const allSkills = await loadScoutSkills(cwd);
   const match = allSkills.find((s) => s.name === trimmed);
 
   if (!match) {
