@@ -398,6 +398,7 @@ class ScoutWorkflow {
     resourceLoader: DefaultResourceLoader,
   ): Promise<{ session: AgentSession }> {
     const { builtinTools, customTools } = prepareScoutTools(this.config, this.ctx.cwd);
+    const activeToolNames = [...builtinTools, ...customTools.map((tool) => tool.name)];
     return createAgentSession({
       cwd: this.ctx.cwd,
       modelRegistry: this.ctx.modelRegistry,
@@ -405,7 +406,7 @@ class ScoutWorkflow {
       sessionManager: SessionManager.inMemory(this.ctx.cwd),
       model: runPlan.model,
       thinkingLevel: runPlan.thinkingLevel,
-      tools: builtinTools,
+      tools: activeToolNames,
       customTools,
     });
   }
