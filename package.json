@@ -1,7 +1,7 @@
 {
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.64.0",
-    "@mariozechner/pi-coding-agent": "^0.64.0",
+    "@mariozechner/pi-ai": "^0.68.0",
+    "@mariozechner/pi-coding-agent": "^0.68.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^25.0.10",
     "@types/turndown": "^5.0.6",

@@ -107,14 +107,16 @@ export function bumpDefaultEventTargetMaxListeners(): () => void {
 }
 
 function prepareScoutTools(config: ScoutConfig, cwd: string): {
-  builtinTools: ReturnType<typeof createReadTool | typeof createBashTool>[];
+  builtinTools: string[];
   customTools: ToolDefinition[];
 } {
   const allTools = config.createTools
     ? config.createTools(cwd)
     : [createReadTool(cwd), createBashTool(cwd)];
 
-  const builtinTools = allTools.filter((tool: any) => BUILTIN_TOOL_NAMES.has(tool.name));
+  const builtinTools = allTools
+    .filter((tool: any) => BUILTIN_TOOL_NAMES.has(tool.name))
+    .map((tool: any) => tool.name);
   const customTools = allTools
     .filter((tool: any) => !BUILTIN_TOOL_NAMES.has(tool.name))
     .map((tool: any): ToolDefinition => ({
