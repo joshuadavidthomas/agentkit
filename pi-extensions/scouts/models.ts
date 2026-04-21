@@ -80,6 +80,13 @@ export const ORACLE_FAMILY_PARTNERS: Record<string, string[]> = {
   zai: ["openai"],
 };
 
+// Family-level provider preference. Internal policy-driven scout resolution uses
+// this order when it wants a model family; explicit user-qualified overrides
+// like `anthropic/claude-opus-4-6` still stay exact.
+export const PRIMARY_PROVIDERS_BY_FAMILY: Record<string, string[]> = {
+  anthropic: ["claude-bridge", "anthropic"],
+};
+
 export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
   targetsByProvider: {
     openai: {
@@ -93,6 +100,11 @@ export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
       deep: { modelId: "gpt-5.4", thinkingLevel: "xhigh" },
     },
     anthropic: {
+      fast: { modelId: "claude-haiku-4-5", thinkingLevel: "low" },
+      balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
+      deep: { modelId: "claude-opus-4-6", thinkingLevel: "high" },
+    },
+    "claude-bridge": {
       fast: { modelId: "claude-haiku-4-5", thinkingLevel: "low" },
       balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
       deep: { modelId: "claude-opus-4-6", thinkingLevel: "high" },
@@ -161,6 +173,32 @@ function resolveTarget(
   };
 }
 
+function hasAvailableProvider(modelRegistry: ModelRegistry, provider: string): boolean {
+  const normalizedProvider = provider.toLowerCase();
+  return modelRegistry.getAvailable().some((model) => model.provider.toLowerCase() === normalizedProvider);
+}
+
+function resolvePreferredProviderTarget(
+  modelRegistry: ModelRegistry,
+  currentModel: Model<Api> | undefined,
+  target: ModelTarget,
+  provider: string,
+): ResolvedWorkloadModel | null {
+  const providers = PRIMARY_PROVIDERS_BY_FAMILY[provider] ?? [provider];
+
+  for (const candidateProvider of providers) {
+    if (!hasAvailableProvider(modelRegistry, candidateProvider)) continue;
+
+    const match = resolveTarget(modelRegistry, currentModel, {
+      ...target,
+      provider: candidateProvider,
+    });
+    if (match) return match;
+  }
+
+  return null;
+}
+
 // Resolve a model from a partner family for cross-family diversity.
 // Prefers the current session's provider when it can serve the partner family
 // (keeps auth/billing lane), otherwise uses the partner family's native
@@ -195,10 +233,12 @@ export function resolveDiversityModel(
 
   const crossProviderTarget = policy.targetsByProvider[partnerFamily]?.[workload];
   if (crossProviderTarget) {
-    const match = resolveTarget(modelRegistry, currentModel, {
-      ...crossProviderTarget,
-      provider: partnerFamily,
-    });
+    const match = resolvePreferredProviderTarget(
+      modelRegistry,
+      currentModel,
+      crossProviderTarget,
+      partnerFamily,
+    );
     if (match) return match;
   }
 
@@ -223,12 +263,14 @@ export function resolveWorkloadModel(
 
   const target = policy.targetsByProvider[provider]?.[plan.workload];
   if (target) {
-    const selectedModel = resolveTarget(modelRegistry, currentModel, { ...target, provider });
+    const selectedModel = resolvePreferredProviderTarget(modelRegistry, currentModel, target, provider);
     if (selectedModel) return selectedModel;
   }
 
   const fallback = policy.fallbackByWorkload[plan.workload];
-  const fallbackMatch = resolveTarget(modelRegistry, currentModel, fallback);
+  const fallbackMatch = fallback.provider
+    ? resolvePreferredProviderTarget(modelRegistry, currentModel, fallback, fallback.provider)
+    : resolveTarget(modelRegistry, currentModel, fallback);
 
   if (!fallbackMatch) return null;
 

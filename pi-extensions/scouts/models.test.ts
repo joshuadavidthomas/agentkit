@@ -19,15 +19,53 @@ const authStorage = AuthStorage.inMemory({
 });
 
 const registry = ModelRegistry.inMemory(authStorage);
+registry.registerProvider("claude-bridge", {
+  baseUrl: "https://claude-bridge.test",
+  apiKey: "test-claude-bridge",
+  api: "anthropic-messages",
+  models: [
+    {
+      id: "claude-haiku-4-5",
+      name: "Claude Haiku 4.5 (Claude Bridge)",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+      contextWindow: 200000,
+      maxTokens: 64000,
+    },
+    {
+      id: "claude-sonnet-4-6",
+      name: "Claude Sonnet 4.6 (Claude Bridge)",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+      contextWindow: 200000,
+      maxTokens: 64000,
+    },
+    {
+      id: "claude-opus-4-6",
+      name: "Claude Opus 4.6 (Claude Bridge)",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+      contextWindow: 200000,
+      maxTokens: 64000,
+    },
+  ],
+});
 
-function getCurrentModel(provider: string, modelId: string): Model<Api> {
-  const model = registry.find(provider, modelId);
+function getCurrentModel(provider: string, modelId: string, modelRegistry: ModelRegistry = registry): Model<Api> {
+  const model = modelRegistry.find(provider, modelId);
   expect(model).toBeDefined();
   return model!;
 }
 
-function resolveForMainSession(currentModel: Model<Api>, workload: ScoutWorkload) {
-  return resolveWorkloadModel(registry, currentModel, {
+function resolveForMainSession(
+  currentModel: Model<Api>,
+  workload: ScoutWorkload,
+  modelRegistry: ModelRegistry = registry,
+) {
+  return resolveWorkloadModel(modelRegistry, currentModel, {
     provider: currentModel.provider,
     workload,
   });
@@ -57,20 +95,37 @@ describe("scout model selection from a main session", () => {
     expect(deep?.thinkingLevel).toBe("xhigh");
   });
 
-  it("anthropic main session stays on anthropic and resolves the provider's fast/balanced/deep choices", () => {
+  it("anthropic main session prefers claude-bridge for anthropic-family workload defaults", () => {
     const currentModel = getCurrentModel("anthropic", "claude-sonnet-4-6");
 
     const fast = resolveForMainSession(currentModel, "fast");
     const balanced = resolveForMainSession(currentModel, "balanced");
     const deep = resolveForMainSession(currentModel, "deep");
 
-    expect(fast?.model.provider).toBe("anthropic");
+    expect(fast?.model.provider).toBe("claude-bridge");
     expect(fast?.model.id).toBe("claude-haiku-4-5");
 
-    expect(balanced?.model.provider).toBe("anthropic");
+    expect(balanced?.model.provider).toBe("claude-bridge");
     expect(balanced?.model.id).toBe("claude-sonnet-4-6");
 
-    expect(deep?.model.provider).toBe("anthropic");
+    expect(deep?.model.provider).toBe("claude-bridge");
+    expect(deep?.model.id).toBe("claude-opus-4-6");
+  });
+
+  it("claude-bridge main session keeps using claude-bridge workload mappings", () => {
+    const currentModel = getCurrentModel("claude-bridge", "claude-sonnet-4-6");
+
+    const fast = resolveForMainSession(currentModel, "fast");
+    const balanced = resolveForMainSession(currentModel, "balanced");
+    const deep = resolveForMainSession(currentModel, "deep");
+
+    expect(fast?.model.provider).toBe("claude-bridge");
+    expect(fast?.model.id).toBe("claude-haiku-4-5");
+
+    expect(balanced?.model.provider).toBe("claude-bridge");
+    expect(balanced?.model.id).toBe("claude-sonnet-4-6");
+
+    expect(deep?.model.provider).toBe("claude-bridge");
     expect(deep?.model.id).toBe("claude-opus-4-6");
   });
 
@@ -110,12 +165,30 @@ describe("scout model selection from a main session", () => {
     expect(deep?.model.id).toBe("gemini-3.1-pro-preview");
   });
 
-  it("uses the single workload fallback when the chosen provider has no configured mapping", () => {
+  it("uses claude-bridge first when the chosen provider falls back to anthropic-family defaults", () => {
     const currentModel = getCurrentModel("mistral", "devstral-medium-latest");
 
     const fast = resolveForMainSession(currentModel, "fast");
     const balanced = resolveForMainSession(currentModel, "balanced");
     const deep = resolveForMainSession(currentModel, "deep");
+
+    expect(fast?.model.provider).toBe("claude-bridge");
+    expect(fast?.model.id).toBe("claude-haiku-4-5");
+
+    expect(balanced?.model.provider).toBe("claude-bridge");
+    expect(balanced?.model.id).toBe("claude-sonnet-4-6");
+
+    expect(deep?.model.provider).toBe("claude-bridge");
+    expect(deep?.model.id).toBe("claude-opus-4-6");
+  });
+
+  it("falls back to anthropic when claude-bridge is not installed or not available", () => {
+    const registryWithoutClaudeBridge = ModelRegistry.inMemory(authStorage);
+    const currentModel = getCurrentModel("anthropic", "claude-sonnet-4-6", registryWithoutClaudeBridge);
+
+    const fast = resolveForMainSession(currentModel, "fast", registryWithoutClaudeBridge);
+    const balanced = resolveForMainSession(currentModel, "balanced", registryWithoutClaudeBridge);
+    const deep = resolveForMainSession(currentModel, "deep", registryWithoutClaudeBridge);
 
     expect(fast?.model.provider).toBe("anthropic");
     expect(fast?.model.id).toBe("claude-haiku-4-5");
@@ -137,31 +210,31 @@ describe("scout model selection from a main session", () => {
     expect(result?.thinkingLevel).toBe("xhigh");
   });
 
-  it("oracle diversity: openai session partners with anthropic", () => {
+  it("oracle diversity: openai session prefers claude-bridge for anthropic partner models", () => {
     const current = getCurrentModel("openai", "gpt-5.4");
     const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
 
     expect(result).not.toBeNull();
-    expect(result?.model.provider).toBe("anthropic");
+    expect(result?.model.provider).toBe("claude-bridge");
     expect(result?.model.id).toBe("claude-opus-4-6");
     expect(result?.thinkingLevel).toBe("high");
   });
 
-  it("oracle diversity: openai-codex session partners with anthropic", () => {
+  it("oracle diversity: openai-codex session prefers claude-bridge for anthropic partner models", () => {
     const current = getCurrentModel("openai-codex", "gpt-5.4");
     const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
 
     expect(result).not.toBeNull();
-    expect(result?.model.provider).toBe("anthropic");
+    expect(result?.model.provider).toBe("claude-bridge");
     expect(result?.model.id).toBe("claude-opus-4-6");
   });
 
-  it("oracle diversity: google session partners with openai or anthropic", () => {
+  it("oracle diversity: google session partners with openai or the preferred anthropic provider", () => {
     const current = getCurrentModel("google", "gemini-2.5-pro");
     const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
 
     expect(result).not.toBeNull();
-    expect(["openai", "anthropic"]).toContain(result?.model.provider);
+    expect(["openai", "claude-bridge"]).toContain(result?.model.provider);
   });
 
   it("oracle diversity: unknown family returns null so caller falls back in-family", () => {
@@ -183,6 +256,21 @@ describe("scout model selection from a main session", () => {
     expect(result).not.toBeNull();
     expect(result?.model.provider).toBe("openai-codex");
     expect(result?.model.id).toBe("gpt-5.2-codex");
+    expect(result?.thinkingLevel).toBeUndefined();
+  });
+
+  it("keeps an explicit anthropic provider override exact instead of rerouting it to claude-bridge", () => {
+    const currentModel = getCurrentModel("openai", "gpt-5.4");
+
+    const result = resolveWorkloadModel(registry, currentModel, {
+      provider: currentModel.provider,
+      workload: "deep",
+      explicitModelId: "anthropic/claude-opus-4-6",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.model.provider).toBe("anthropic");
+    expect(result?.model.id).toBe("claude-opus-4-6");
     expect(result?.thinkingLevel).toBeUndefined();
   });
 });
