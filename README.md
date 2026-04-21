@@ -42,6 +42,12 @@ Custom provider that routes AI models through [Cloudflare AI Gateway](https://de
 
 Model definitions are sourced from [models.dev](https://models.dev) (65+ models), cached locally at `~/.cache/pi/cloudflare-ai-gateway-models.json`, and refreshed hourly in the background. An embedded snapshot provides offline/first-run support. Configure via `~/.pi/agent/cloudflare-ai-gateway.json` with your account ID and gateway name.
 
+#### [custom-provider-claude-agent-sdk](./pi-extensions/custom-provider-claude-agent-sdk/)
+
+Custom provider that wraps Anthropic's Claude Agent SDK so you can keep using pi's TUI while Claude runs its own built-in tools and agent loop underneath. Registers the provider as `claude-agent-sdk`.
+
+Persists the SDK `session_id` inside the current pi session so later prompts resume the same Claude Agent session. Streams assistant text back through pi's provider pipeline and shows recent SDK tool activity in a widget using pi's built-in tool rendering components. Requires `ANTHROPIC_API_KEY`.
+
 #### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 
 Vendored from [vedang/agents](https://github.com/vedang/agents).
