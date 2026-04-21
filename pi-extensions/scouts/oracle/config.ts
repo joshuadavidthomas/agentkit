@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 
 import { createReadTool } from "@mariozechner/pi-coding-agent";
 
+import { ORACLE_FAMILY_PARTNERS } from "../models.ts";
 import type { ScoutConfig } from "../types.ts";
 import { ModelParam } from "../validate.ts";
 import { buildOracleSystemPrompt, buildOracleUserPrompt } from "./prompt.ts";
@@ -27,6 +28,7 @@ const ORACLE_BASE_CONFIG: Omit<ScoutConfig, "createTools"> = {
   name: "oracle",
   maxTurns: 12,
   workload: "deep",
+  diversityPartners: ORACLE_FAMILY_PARTNERS,
   buildSystemPrompt: buildOracleSystemPrompt,
   buildUserPrompt: buildOracleUserPrompt,
 };

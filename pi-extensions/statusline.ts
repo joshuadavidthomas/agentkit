@@ -28,6 +28,7 @@ const NERD_FONT_MAP = {
 } as const;
 
 const PROVIDER_MAP = {
+  "claude-bridge": "claude-code",
   "github-copilot": "copilot",
   "google-antigravity": "google",
   "openai-codex": "openai",
@@ -36,6 +37,7 @@ const PROVIDER_MAP = {
 // Maps pi model provider IDs to vibeusage provider IDs
 const VIBEUSAGE_PROVIDER_MAP: Record<string, string> = {
   "anthropic": "claude",
+  "claude-bridge": "claude",
   "github-copilot": "copilot",
   "google": "gemini",
   "google-antigravity": "antigravity",
@@ -378,6 +380,10 @@ function getVcsStatus(): VcsStatus | null {
   return status;
 }
 
+function formatModelName(name: string): string {
+  return name.toLowerCase().replace(/^claude[-\s]+/, "");
+}
+
 function formatTokens(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}m`;
   if (count >= 1_000) return `${Math.floor(count / 1_000)}k`;
@@ -446,9 +452,9 @@ export default function (pi: ExtensionAPI) {
 
           // Model: "󰚩 claude-sonnet-4 from anthropic" (bold blue)
           if (model) {
-            const modelName = model.name || model.id;
+            const modelName = formatModelName(model.name || model.id);
             line1Parts.push(
-              theme.fg("accent", theme.bold(`${NERD_FONT_MAP["ROBOT"]} ${modelName.toLowerCase()}`)) +
+              theme.fg("accent", theme.bold(`${NERD_FONT_MAP["ROBOT"]} ${modelName}`)) +
               theme.fg("dim", " from ") +
               theme.fg("muted", PROVIDER_MAP[model.provider as keyof typeof PROVIDER_MAP] || model.provider)
             );

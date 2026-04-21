@@ -3,7 +3,12 @@ import { describe, expect, it } from "bun:test";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
-import { resolveWorkloadModel, type ScoutWorkload } from "./models.ts";
+import {
+  ORACLE_FAMILY_PARTNERS,
+  resolveDiversityModel,
+  resolveWorkloadModel,
+  type ScoutWorkload,
+} from "./models.ts";
 
 const authStorage = AuthStorage.inMemory({
   openai: { type: "api_key", key: "test-openai" },
@@ -120,6 +125,50 @@ describe("scout model selection from a main session", () => {
 
     expect(deep?.model.provider).toBe("anthropic");
     expect(deep?.model.id).toBe("claude-opus-4-6");
+  });
+
+  it("oracle diversity: anthropic session partners with openai", () => {
+    const current = getCurrentModel("anthropic", "claude-opus-4-6");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(result?.model.provider).toBe("openai");
+    expect(result?.model.id).toBe("gpt-5.4");
+    expect(result?.thinkingLevel).toBe("xhigh");
+  });
+
+  it("oracle diversity: openai session partners with anthropic", () => {
+    const current = getCurrentModel("openai", "gpt-5.4");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(result?.model.provider).toBe("anthropic");
+    expect(result?.model.id).toBe("claude-opus-4-6");
+    expect(result?.thinkingLevel).toBe("high");
+  });
+
+  it("oracle diversity: openai-codex session partners with anthropic", () => {
+    const current = getCurrentModel("openai-codex", "gpt-5.4");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(result?.model.provider).toBe("anthropic");
+    expect(result?.model.id).toBe("claude-opus-4-6");
+  });
+
+  it("oracle diversity: google session partners with openai or anthropic", () => {
+    const current = getCurrentModel("google", "gemini-2.5-pro");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(["openai", "anthropic"]).toContain(result?.model.provider);
+  });
+
+  it("oracle diversity: unknown family returns null so caller falls back in-family", () => {
+    const current = getCurrentModel("mistral", "devstral-medium-latest");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).toBeNull();
   });
 
   it("lets an explicit override bypass the main-session provider choice", () => {
