@@ -22,7 +22,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { extractDisplayItems, extractToolResultText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
-import { resolveWorkloadModel } from "./models.ts";
+import { resolveDiversityModel, resolveWorkloadModel } from "./models.ts";
 import type { ScoutConfig, ScoutDetails } from "./types.ts";
 
 type ScoutRunDetails = ScoutDetails["runs"][number];
@@ -180,6 +180,21 @@ class ScoutWorkflow {
         resolvedRunPlan = {
           model: explicitMatch.model,
           thinkingLevel: config.defaultThinkingLevel ?? explicitMatch.thinkingLevel,
+        };
+      }
+    }
+
+    if (!resolvedRunPlan && config.diversityPartners && config.workload && ctx.model) {
+      const diversityMatch = resolveDiversityModel(
+        ctx.modelRegistry,
+        ctx.model,
+        config.workload,
+        config.diversityPartners,
+      );
+      if (diversityMatch) {
+        resolvedRunPlan = {
+          model: diversityMatch.model,
+          thinkingLevel: config.defaultThinkingLevel ?? diversityMatch.thinkingLevel,
         };
       }
     }
