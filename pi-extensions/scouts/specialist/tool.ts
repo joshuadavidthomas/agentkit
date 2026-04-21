@@ -26,22 +26,27 @@ export const SPECIALIST_TOOL: ToolDefinition<typeof SpecialistParams, ScoutDetai
       return makeErrorResult("Missing required parameter: task");
     }
 
-    const configOrError = await buildSpecialistConfig(skillName, ctx.cwd, {
-      configName: "specialist",
-      tools: p.tools as SpecialistTool[] | undefined,
-    });
+    try {
+      const configOrError = await buildSpecialistConfig(skillName, ctx.cwd, {
+        configName: "specialist",
+        tools: p.tools as SpecialistTool[] | undefined,
+      });
 
-    if ("error" in configOrError) {
-      return makeErrorResult(configOrError.error);
+      if ("error" in configOrError) {
+        return makeErrorResult(configOrError.error, task);
+      }
+
+      return executeScout(
+        configOrError,
+        { ...p, task, query: task },
+        signal,
+        onUpdate,
+        ctx,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return makeErrorResult(`Specialist setup failed: ${message}`, task);
     }
-
-    return executeScout(
-      configOrError,
-      { ...p, task, query: task },
-      signal,
-      onUpdate,
-      ctx,
-    );
   },
 
   renderCall(args, theme, context) {
