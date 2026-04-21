@@ -61,7 +61,8 @@ export function createTurnBudgetExtension(maxTurns: number): ExtensionFactory {
 // EventTarget max listeners management for nested sessions
 const DEFAULT_EVENTTARGET_MAX_LISTENERS = 100;
 const EVENTTARGET_MAX_LISTENERS_STATE_KEY = Symbol.for("pi.eventTargetMaxListenersState");
-const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+type BuiltinToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
+const BUILTIN_TOOL_NAMES = new Set<BuiltinToolName>(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 
 type EventTargetMaxListenersState = { depth: number; savedDefault?: number };
 type ScoutExecutionResult = {
@@ -107,7 +108,7 @@ export function bumpDefaultEventTargetMaxListeners(): () => void {
 }
 
 function prepareScoutTools(config: ScoutConfig, cwd: string): {
-  builtinTools: string[];
+  builtinTools: BuiltinToolName[];
   customTools: ToolDefinition[];
 } {
   const allTools = config.createTools
@@ -115,8 +116,8 @@ function prepareScoutTools(config: ScoutConfig, cwd: string): {
     : [createReadTool(cwd), createBashTool(cwd)];
 
   const builtinTools = allTools
-    .filter((tool: any) => BUILTIN_TOOL_NAMES.has(tool.name))
-    .map((tool: any) => tool.name);
+    .filter((tool: any): tool is { name: BuiltinToolName } => BUILTIN_TOOL_NAMES.has(tool.name))
+    .map((tool) => tool.name);
   const customTools = allTools
     .filter((tool: any) => !BUILTIN_TOOL_NAMES.has(tool.name))
     .map((tool: any): ToolDefinition => ({
