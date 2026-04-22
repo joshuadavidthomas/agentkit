@@ -1,4 +1,14 @@
-import { DefaultResourceLoader, getAgentDir, type Skill } from "@mariozechner/pi-coding-agent";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+import {
+  DefaultResourceLoader,
+  getAgentDir,
+  type LoadExtensionsResult,
+  type ResourceLoader,
+  type Skill,
+} from "@mariozechner/pi-coding-agent";
+import { loadExtensions } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/loader.js";
 
 type ResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
 type ScoutResourceLoaderOptions = Omit<ResourceLoaderOptions, "cwd" | "agentDir" | "noExtensions" | "noPromptTemplates" | "noThemes"> & {
@@ -7,19 +17,57 @@ type ScoutResourceLoaderOptions = Omit<ResourceLoaderOptions, "cwd" | "agentDir"
   allowExtensions?: boolean;
 };
 
+function resolveClaudeBridgeExtensionPath(): string | undefined {
+  const candidate = resolve(dirname(process.execPath), "../lib/node_modules/pi-claude-bridge");
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+function withOnlyExtensions(
+  base: DefaultResourceLoader,
+  cwd: string,
+  extensionPath: string,
+  extensions: LoadExtensionsResult,
+): ResourceLoader {
+  return {
+    getExtensions: () => extensions,
+    getSkills: () => base.getSkills(),
+    getPrompts: () => base.getPrompts(),
+    getThemes: () => base.getThemes(),
+    getAgentsFiles: () => base.getAgentsFiles(),
+    getSystemPrompt: () => base.getSystemPrompt(),
+    getAppendSystemPrompt: () => base.getAppendSystemPrompt(),
+    extendResources: (paths) => base.extendResources(paths),
+    reload: async () => {
+      await base.reload();
+      extensions = await loadExtensions([extensionPath], cwd);
+    },
+  };
+}
+
 export async function createScoutResourceLoader(
   options: ScoutResourceLoaderOptions,
-): Promise<DefaultResourceLoader> {
+): Promise<ResourceLoader> {
   const { agentDir = getAgentDir(), allowExtensions = false, ...rest } = options;
-  const resourceLoader = new DefaultResourceLoader({
-    noExtensions: !allowExtensions,
+  const baseResourceLoader = new DefaultResourceLoader({
+    noExtensions: true,
     noPromptTemplates: true,
     noThemes: true,
     ...rest,
     agentDir,
   });
-  await resourceLoader.reload();
-  return resourceLoader;
+  await baseResourceLoader.reload();
+
+  if (!allowExtensions) {
+    return baseResourceLoader;
+  }
+
+  const claudeBridgeExtensionPath = resolveClaudeBridgeExtensionPath();
+  if (!claudeBridgeExtensionPath) {
+    return baseResourceLoader;
+  }
+
+  const extensions = await loadExtensions([claudeBridgeExtensionPath], options.cwd);
+  return withOnlyExtensions(baseResourceLoader, options.cwd, claudeBridgeExtensionPath, extensions);
 }
 
 export async function loadScoutSkills(cwd: string): Promise<Skill[]> {
