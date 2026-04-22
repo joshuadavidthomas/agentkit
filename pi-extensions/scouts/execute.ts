@@ -14,11 +14,11 @@ import type {
   ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import {
-  DefaultResourceLoader,
   SessionManager,
   createAgentSession,
   createBashTool,
   createReadTool,
+  type ResourceLoader,
 } from "@mariozechner/pi-coding-agent";
 
 import { extractDisplayItems, extractToolResultText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
@@ -387,7 +387,7 @@ class ScoutWorkflow {
     return index >= 0 && index < this.runPlans.length - 1;
   }
 
-  private createResourceLoader(runPlan: ScoutRunPlan): Promise<DefaultResourceLoader> {
+  private createResourceLoader(runPlan: ScoutRunPlan): Promise<ResourceLoader> {
     return createScoutResourceLoader({
       cwd: this.ctx.cwd,
       noSkills: true,
@@ -400,7 +400,7 @@ class ScoutWorkflow {
 
   private async createSession(
     runPlan: ScoutRunPlan,
-    resourceLoader: DefaultResourceLoader,
+    resourceLoader: ResourceLoader,
   ): Promise<{ session: AgentSession }> {
     const { builtinTools, customTools } = prepareScoutTools(this.config, this.ctx.cwd);
     const activeToolNames = [...builtinTools, ...customTools.map((tool) => tool.name)];
