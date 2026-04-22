@@ -78,6 +78,10 @@ type ScoutRunPlan = {
 };
 type AbortableSession = Pick<AgentSession, "abort">;
 
+function shouldLoadScoutExtensions(provider: string | undefined): boolean {
+  return provider?.toLowerCase() === "claude-bridge";
+}
+
 function getEventTargetMaxListenersState(): EventTargetMaxListenersState {
   const g = globalThis as typeof globalThis & {
     [EVENTTARGET_MAX_LISTENERS_STATE_KEY]?: EventTargetMaxListenersState;
@@ -358,7 +362,7 @@ class ScoutWorkflow {
     let stopObservingSession: (() => void) | undefined;
 
     try {
-      const resourceLoader = await this.createResourceLoader();
+      const resourceLoader = await this.createResourceLoader(runPlan);
       const { session } = await this.createSession(runPlan, resourceLoader);
       scoutSession = session;
       this.activeSessions.add(scoutSession as AbortableSession);
@@ -383,10 +387,11 @@ class ScoutWorkflow {
     return index >= 0 && index < this.runPlans.length - 1;
   }
 
-  private createResourceLoader(): Promise<DefaultResourceLoader> {
+  private createResourceLoader(runPlan: ScoutRunPlan): Promise<DefaultResourceLoader> {
     return createScoutResourceLoader({
       cwd: this.ctx.cwd,
       noSkills: true,
+      allowExtensions: shouldLoadScoutExtensions(runPlan.model.provider),
       extensionFactories: [createTurnBudgetExtension(this.maxTurns)],
       systemPromptOverride: () => this.systemPrompt,
       skillsOverride: () => ({ skills: [], diagnostics: [] }),
