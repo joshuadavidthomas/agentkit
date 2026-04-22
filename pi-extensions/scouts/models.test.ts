@@ -210,6 +210,67 @@ describe("scout model selection from a main session", () => {
     expect(result?.thinkingLevel).toBe("xhigh");
   });
 
+  it("oracle diversity: claude-bridge session partners with openai instead of staying on claude-bridge", () => {
+    const current = getCurrentModel("claude-bridge", "claude-opus-4-6");
+    const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(result?.model.provider).toBe("openai");
+    expect(result?.model.id).toBe("gpt-5.4");
+    expect(result?.thinkingLevel).toBe("xhigh");
+  });
+
+  it("oracle diversity: claude-bridge session falls back to another openai-family provider before staying in-family", () => {
+    const partialAuthStorage = AuthStorage.inMemory({
+      "openai-codex": { type: "api_key", key: "test-openai-codex" },
+      anthropic: { type: "api_key", key: "test-anthropic" },
+      google: { type: "api_key", key: "test-google" },
+      "github-copilot": { type: "api_key", key: "test-github-copilot" },
+    });
+    const partialRegistry = ModelRegistry.inMemory(partialAuthStorage);
+    partialRegistry.registerProvider("claude-bridge", {
+      baseUrl: "https://claude-bridge.test",
+      apiKey: "test-claude-bridge",
+      api: "anthropic-messages",
+      models: [
+        {
+          id: "claude-haiku-4-5",
+          name: "Claude Haiku 4.5 (Claude Bridge)",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+          contextWindow: 200000,
+          maxTokens: 64000,
+        },
+        {
+          id: "claude-sonnet-4-6",
+          name: "Claude Sonnet 4.6 (Claude Bridge)",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+          contextWindow: 200000,
+          maxTokens: 64000,
+        },
+        {
+          id: "claude-opus-4-6",
+          name: "Claude Opus 4.6 (Claude Bridge)",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+          contextWindow: 200000,
+          maxTokens: 64000,
+        },
+      ],
+    });
+
+    const current = getCurrentModel("claude-bridge", "claude-opus-4-6", partialRegistry);
+    const result = resolveDiversityModel(partialRegistry, current, "deep", ORACLE_FAMILY_PARTNERS);
+
+    expect(result).not.toBeNull();
+    expect(["openai-codex", "github-copilot"]).toContain(result?.model.provider);
+    expect(result?.model.id).toBe("gpt-5.4");
+  });
+
   it("oracle diversity: openai session prefers claude-bridge for anthropic partner models", () => {
     const current = getCurrentModel("openai", "gpt-5.4");
     const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);

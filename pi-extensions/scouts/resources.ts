@@ -1,17 +1,18 @@
 import { DefaultResourceLoader, getAgentDir, type Skill } from "@mariozechner/pi-coding-agent";
 
 type ResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
-type IsolatedScoutResourceLoaderOptions = Omit<ResourceLoaderOptions, "cwd" | "agentDir" | "noExtensions" | "noPromptTemplates" | "noThemes"> & {
+type ScoutResourceLoaderOptions = Omit<ResourceLoaderOptions, "cwd" | "agentDir" | "noExtensions" | "noPromptTemplates" | "noThemes"> & {
   cwd: string;
   agentDir?: string;
+  allowExtensions?: boolean;
 };
 
 export async function createScoutResourceLoader(
-  options: IsolatedScoutResourceLoaderOptions,
+  options: ScoutResourceLoaderOptions,
 ): Promise<DefaultResourceLoader> {
-  const { agentDir = getAgentDir(), ...rest } = options;
+  const { agentDir = getAgentDir(), allowExtensions = false, ...rest } = options;
   const resourceLoader = new DefaultResourceLoader({
-    noExtensions: true,
+    noExtensions: !allowExtensions,
     noPromptTemplates: true,
     noThemes: true,
     ...rest,

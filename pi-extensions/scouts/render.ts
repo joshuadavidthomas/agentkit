@@ -32,6 +32,14 @@ function getResultText(result: { content?: Array<{ type?: string; text?: string 
   return text?.text ?? "(no output)";
 }
 
+function getScoutDetails(result: ScoutToolResult): ScoutDetails | undefined {
+  return result.details;
+}
+
+function getParallelDetails(result: ParallelScoutsToolResult): ParallelDetails | undefined {
+  return result.details;
+}
+
 class ScoutToolRow implements Component {
   constructor(
     private readonly item: Extract<DisplayItem, { type: "tool" }>,
@@ -233,7 +241,8 @@ export class ScoutResult implements Component {
   }
 
   private syncLiveTimer(invalidate?: () => void): void {
-    const shouldTick = this.options.isPartial && this.result.details.status === "running";
+    const details = getScoutDetails(this.result);
+    const shouldTick = this.options.isPartial && details?.status === "running";
     if (shouldTick && invalidate && !this.liveInterval) {
       this.liveInterval = setInterval(() => invalidate(), 500);
       return;
@@ -246,10 +255,10 @@ export class ScoutResult implements Component {
   }
 
   render(width: number): string[] {
-    const details = this.result.details;
-    const status = details.status;
-    const run = details.runs?.[0];
-    if (!run) {
+    const details = getScoutDetails(this.result);
+    const status = details?.status;
+    const run = details?.runs?.[0];
+    if (!details || !status || !run) {
       return new Text(getResultText(this.result), 0, 0).render(width);
     }
     const headerLines = new ScoutResultHeader(details, status, run, this.options.isPartial, this.theme).render(width);
@@ -315,7 +324,8 @@ export class ParallelScoutsResult implements Component {
   }
 
   private syncLiveTimer(invalidate?: () => void): void {
-    const shouldTick = this.options.isPartial && this.result.details.status === "running";
+    const details = getParallelDetails(this.result);
+    const shouldTick = this.options.isPartial && details?.status === "running";
     if (shouldTick && invalidate && !this.liveInterval) {
       this.liveInterval = setInterval(() => invalidate(), 500);
       return;
@@ -331,21 +341,27 @@ export class ParallelScoutsResult implements Component {
     const cached = this.cachedSectionBodies.get(index);
     if (cached && cached.width === width) return cached.lines;
 
-    const run = result.details.runs?.[0];
-    const lines = run
-      ? new ScoutResultBody(result.details.status, run, this.options.expanded, this.theme).render(width)
+    const details = result.details;
+    const run = details?.runs?.[0];
+    const status = details?.status;
+    const lines = run && status
+      ? new ScoutResultBody(status, run, this.options.expanded, this.theme).render(width)
       : new Text(getResultText(result), 0, 0).render(width);
     this.cachedSectionBodies.set(index, { width, lines });
     return lines;
   }
 
   render(width: number): string[] {
-    const details = this.result.details;
+    const details = getParallelDetails(this.result);
+    if (!details) {
+      return new Text(getResultText(this.result), 0, 0).render(width);
+    }
+
     const parallelResults = details.results;
 
     let doneCount = 0;
     for (const result of parallelResults) {
-      if (result.details.status === "done") {
+      if (result.details?.status === "done") {
         doneCount += 1;
       }
     }
@@ -358,13 +374,14 @@ export class ParallelScoutsResult implements Component {
 
     for (let index = 0; index < parallelResults.length; index++) {
       const result = parallelResults[index]!;
-      const status = result.details.status;
-      const run = result.details.runs?.[0];
+      const status = result.details?.status;
+      const run = result.details?.runs?.[0];
       const toolCount = (run?.displayItems ?? []).filter((item) => item.type === "tool").length;
-      const duration = run
+      const duration = run && status
         ? formatElapsed(run.startedAt, run.endedAt, this.options.isPartial && status === "running")
         : "";
-      const title = `${scoutStatusIcon(this.theme, status)} ${this.theme.fg("toolTitle", this.theme.bold(result.scout))}${run ? this.theme.fg("dim", ` • ${run.turns} turns • ${toolCount} tools • ${duration}`) : ""}`;
+      const titleStatus = status ? scoutStatusIcon(this.theme, status) : this.theme.fg("muted", "?");
+      const title = `${titleStatus} ${this.theme.fg("toolTitle", this.theme.bold(result.scout))}${run ? this.theme.fg("dim", ` • ${run.turns} turns • ${toolCount} tools • ${duration}`) : ""}`;
 
       lines.push("");
       lines.push(...new Text(title, 0, 0).render(width));

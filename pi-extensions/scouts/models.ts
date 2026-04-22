@@ -85,6 +85,7 @@ export const ORACLE_FAMILY_PARTNERS: Record<string, string[]> = {
 // like `anthropic/claude-opus-4-6` still stay exact.
 export const PRIMARY_PROVIDERS_BY_FAMILY: Record<string, string[]> = {
   anthropic: ["claude-bridge", "anthropic"],
+  openai: ["openai", "openai-codex", "github-copilot"],
 };
 
 export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
