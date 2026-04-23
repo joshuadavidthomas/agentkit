@@ -97,18 +97,18 @@ export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
     },
     "openai-codex": {
       fast: { modelId: "gpt-5.4-mini", thinkingLevel: "low" },
-      balanced: { modelId: "gpt-5.4", thinkingLevel: "medium" },
-      deep: { modelId: "gpt-5.4", thinkingLevel: "xhigh" },
+      balanced: { modelId: "gpt-5.5", thinkingLevel: "medium" },
+      deep: { modelId: "gpt-5.5", thinkingLevel: "high" },
     },
     anthropic: {
       fast: { modelId: "claude-haiku-4-5", thinkingLevel: "low" },
       balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
-      deep: { modelId: "claude-opus-4-6", thinkingLevel: "high" },
+      deep: { modelId: "claude-opus-4-7", thinkingLevel: "high" },
     },
     "claude-bridge": {
       fast: { modelId: "claude-haiku-4-5", thinkingLevel: "low" },
       balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
-      deep: { modelId: "claude-opus-4-6", thinkingLevel: "high" },
+      deep: { modelId: "claude-opus-4-7", thinkingLevel: "high" },
     },
     google: {
       fast: { modelId: "gemini-2.5-flash", thinkingLevel: "low" },
@@ -129,7 +129,7 @@ export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
   fallbackByWorkload: {
     fast: { provider: "anthropic", modelId: "claude-haiku-4-5", thinkingLevel: "low" },
     balanced: { provider: "anthropic", modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
-    deep: { provider: "anthropic", modelId: "claude-opus-4-6", thinkingLevel: "high" },
+    deep: { provider: "anthropic", modelId: "claude-opus-4-7", thinkingLevel: "high" },
   },
 };
 
