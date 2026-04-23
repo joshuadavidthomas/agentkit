@@ -1,0 +1,52 @@
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
+export const SESSION_ENTRY_TYPE = "claude-agent-sdk-v3-session";
+
+export interface SessionEntryData {
+  sdkSessionId: string | null;
+  syncedThroughEntryId: string | null;
+  lastClaudeModelId: string | null;
+}
+
+interface SessionEntryLike {
+  id: string;
+  type: string;
+  customType?: string;
+  data?: unknown;
+}
+
+export interface SessionManagerLike {
+  getBranch(): SessionEntryLike[];
+}
+
+export function loadSessionEntry(sessionManager: SessionManagerLike): SessionEntryData {
+  let data: SessionEntryData = {
+    sdkSessionId: null,
+    syncedThroughEntryId: null,
+    lastClaudeModelId: null,
+  };
+
+  for (const entry of sessionManager.getBranch()) {
+    if (entry.type !== "custom" || entry.customType !== SESSION_ENTRY_TYPE) continue;
+    data = normalizeSessionEntryData(entry.data);
+  }
+
+  return data;
+}
+
+export function appendSessionEntry(pi: ExtensionAPI, data: SessionEntryData) {
+  pi.appendEntry<SessionEntryData>(SESSION_ENTRY_TYPE, data);
+}
+
+function normalizeSessionEntryData(value: unknown): SessionEntryData {
+  if (!value || typeof value !== "object") {
+    return { sdkSessionId: null, syncedThroughEntryId: null, lastClaudeModelId: null };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    sdkSessionId: typeof record.sdkSessionId === "string" ? record.sdkSessionId : null,
+    syncedThroughEntryId: typeof record.syncedThroughEntryId === "string" ? record.syncedThroughEntryId : null,
+    lastClaudeModelId: typeof record.lastClaudeModelId === "string" ? record.lastClaudeModelId : null,
+  };
+}

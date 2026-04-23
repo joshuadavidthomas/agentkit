@@ -1,0 +1,368 @@
+import { query, type SDKMessage, type SDKResultMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  calculateCost,
+  createAssistantMessageEventStream,
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  type Context,
+  type ImageContent,
+  type Model,
+  type SimpleStreamOptions,
+  type StopReason,
+  type TextContent,
+  type ThinkingContent,
+} from "@mariozechner/pi-ai";
+import { ClaudeSession } from "./session.js";
+import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
+
+export function createEmptyOutput(model: Model<Api>): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+}
+
+function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
+  for (let i = context.messages.length - 1; i >= 0; i--) {
+    const message = context.messages[i];
+    if (message.role !== "user") continue;
+
+    if (typeof message.content === "string") {
+      return message.content;
+    }
+
+    const blocks = message.content.flatMap<PromptBlock>((item) => {
+      if (item.type === "text") {
+        return [{ type: "text", text: item.text }];
+      }
+
+      if (isSupportedImage(item)) {
+        return [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: item.mimeType,
+              data: item.data,
+            },
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    if (blocks.length === 0) continue;
+
+    if (blocks.every((block): block is PromptTextBlock => block.type === "text")) {
+      return blocks.map((block) => block.text).join("\n");
+    }
+
+    return blocks;
+  }
+
+  throw new Error("No user prompt found in context");
+}
+
+function isSupportedImage(item: ImageContent): item is ImageContent & { mimeType: PromptImageBlock["source"]["media_type"] } {
+  return ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(item.mimeType);
+}
+
+async function* singleSdkUserMessage(content: PromptBlock[]): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: "user",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+    shouldQuery: true,
+  };
+}
+
+function toSdkPrompt(prompt: string | PromptBlock[]): string | AsyncIterable<SDKUserMessage> {
+  return typeof prompt === "string" ? prompt : singleSdkUserMessage(prompt);
+}
+
+function mergePromptWithHandoff(prompt: string | PromptBlock[], handoff: string | undefined): string | PromptBlock[] {
+  if (!handoff) return prompt;
+
+  const prefix = `${handoff}\n\nCurrent user message:\n`;
+  if (typeof prompt === "string") {
+    return `${prefix}${prompt}`;
+  }
+
+  return [{ type: "text", text: prefix }, ...prompt];
+}
+
+function mapStopReason(reason: string | null): Extract<StopReason, "stop" | "length" | "toolUse"> {
+  if (reason === "max_tokens") return "length";
+  if (reason === "tool_use") return "toolUse";
+  return "stop";
+}
+
+function updateUsage(model: Model<Api>, output: AssistantMessage, result: SDKResultMessage) {
+  const usage = result.usage as {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+
+  output.usage.input = usage.input_tokens ?? 0;
+  output.usage.output = usage.output_tokens ?? 0;
+  output.usage.cacheRead = usage.cache_read_input_tokens ?? 0;
+  output.usage.cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  output.usage.totalTokens =
+    output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+  calculateCost(model, output.usage);
+}
+
+function handleStreamEvent(event: unknown, state: StreamState) {
+  if (!event || typeof event !== "object") return;
+
+  const streamEvent = event as {
+    type?: string;
+    index?: number;
+    content_block?: { type?: string };
+    delta?: { type?: string; text?: string; thinking?: string };
+  };
+
+  if (streamEvent.type === "message_start") {
+    state.blockIndex.clear();
+    return;
+  }
+
+  if (streamEvent.type === "content_block_start" && typeof streamEvent.index === "number") {
+    if (streamEvent.content_block?.type === "text") {
+      state.output.content.push({ type: "text", text: "" });
+      const contentIndex = state.output.content.length - 1;
+      state.blockIndex.set(streamEvent.index, contentIndex);
+      state.stream.push({ type: "text_start", contentIndex, partial: state.output });
+      return;
+    }
+
+    if (streamEvent.content_block?.type === "thinking") {
+      state.output.content.push({ type: "thinking", thinking: "", thinkingSignature: "" } as ThinkingContent);
+      const contentIndex = state.output.content.length - 1;
+      state.blockIndex.set(streamEvent.index, contentIndex);
+      state.stream.push({ type: "thinking_start", contentIndex, partial: state.output });
+    }
+    return;
+  }
+
+  if (streamEvent.type === "content_block_delta" && typeof streamEvent.index === "number") {
+    const contentIndex = state.blockIndex.get(streamEvent.index);
+    if (contentIndex === undefined) return;
+
+    const block = state.output.content[contentIndex];
+    if (streamEvent.delta?.type === "text_delta" && block?.type === "text") {
+      const delta = streamEvent.delta.text ?? "";
+      block.text += delta;
+      state.stream.push({ type: "text_delta", contentIndex, delta, partial: state.output });
+      return;
+    }
+
+    if (streamEvent.delta?.type === "thinking_delta" && block?.type === "thinking") {
+      const delta = streamEvent.delta.thinking ?? "";
+      block.thinking += delta;
+      state.stream.push({ type: "thinking_delta", contentIndex, delta, partial: state.output });
+    }
+    return;
+  }
+
+  if (streamEvent.type === "content_block_stop" && typeof streamEvent.index === "number") {
+    const contentIndex = state.blockIndex.get(streamEvent.index);
+    if (contentIndex === undefined) return;
+
+    const block = state.output.content[contentIndex];
+    if (block?.type === "text") {
+      state.stream.push({ type: "text_end", contentIndex, content: block.text, partial: state.output });
+    } else if (block?.type === "thinking") {
+      state.stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: state.output });
+    }
+  }
+}
+
+function backfillAssistantContent(message: Extract<SDKMessage, { type: "assistant" }>, state: StreamState) {
+  const blocks = (message.message as { content?: unknown }).content;
+  if (!Array.isArray(blocks)) return;
+
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    const item = block as Record<string, unknown>;
+
+    if (item.type === "text" && typeof item.text === "string") {
+      const alreadyPresent = state.output.content.some((existing) => existing.type === "text" && existing.text === item.text);
+      if (!alreadyPresent) {
+        state.output.content.push({ type: "text", text: item.text });
+      }
+      continue;
+    }
+
+    if (item.type === "thinking" && state.output.content.length === 0) {
+      state.output.content.push({
+        type: "thinking",
+        thinking: typeof item.thinking === "string" ? item.thinking : "",
+        thinkingSignature: typeof item.signature === "string" ? item.signature : "",
+      } as ThinkingContent);
+    }
+  }
+}
+
+function completeFromResult(result: SDKResultMessage, state: StreamState) {
+  if (state.finished) return;
+
+  state.finished = true;
+  updateUsage(state.model, state.output, result);
+
+  if (result.is_error) {
+    const resultText = "result" in result && result.result.trim() ? result.result : undefined;
+    state.output.stopReason = "error";
+    state.output.errorMessage = resultText ?? (result.subtype === "success" ? "Unknown Claude Agent SDK error" : result.errors.join("\n"));
+    if (resultText && !state.output.content.some((block) => block.type === "text" && block.text === resultText)) {
+      state.output.content.push({ type: "text", text: resultText });
+    }
+    state.stream.push({ type: "error", reason: "error", error: state.output });
+    state.stream.end();
+    return;
+  }
+
+  const hasText = state.output.content.some((block) => block.type === "text" && block.text.trim().length > 0);
+  if (!hasText && "result" in result && result.result.trim()) {
+    state.output.content.push({ type: "text", text: result.result });
+  }
+
+  const doneReason = mapStopReason(result.stop_reason);
+  state.output.stopReason = doneReason;
+  state.stream.push({ type: "done", reason: doneReason, message: state.output });
+  state.stream.end();
+}
+
+function failStream(error: unknown, state: StreamState, aborted: boolean) {
+  if (state.finished) return;
+
+  state.finished = true;
+  state.output.stopReason = aborted ? "aborted" : "error";
+  state.output.errorMessage = error instanceof Error ? error.message : String(error);
+  state.stream.push({ type: "error", reason: state.output.stopReason, error: state.output });
+  state.stream.end();
+}
+
+function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk-v3",
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+  };
+
+  if (apiKey && apiKey !== "ANTHROPIC_API_KEY") {
+    env.ANTHROPIC_API_KEY = apiKey;
+  }
+
+  return env;
+}
+
+function createAbortController(signal?: AbortSignal): AbortController {
+  const abortController = new AbortController();
+  if (!signal) return abortController;
+
+  if (signal.aborted) {
+    abortController.abort(signal.reason);
+    return abortController;
+  }
+
+  signal.addEventListener("abort", () => abortController.abort(signal.reason), { once: true });
+  return abortController;
+}
+
+export function streamClaudeAgentSdk(
+  pi: ExtensionAPI,
+  session: ClaudeSession,
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  const state: StreamState = {
+    model,
+    output: createEmptyOutput(model),
+    stream,
+    blockIndex: new Map(),
+    finished: false,
+  };
+
+  stream.push({ type: "start", partial: state.output });
+
+  void (async () => {
+    const abortController = createAbortController(options?.signal);
+
+    try {
+      const prompt = mergePromptWithHandoff(extractLatestUserPrompt(context), session.prepareForTurn(pi));
+      const sdkQuery = query({
+        prompt: toSdkPrompt(prompt),
+        options: {
+          abortController,
+          cwd: process.cwd(),
+          model: model.id,
+          resume: session.sdkSessionId ?? undefined,
+          tools: [],
+          allowedTools: [],
+          disallowedTools: [],
+          includePartialMessages: true,
+          settingSources: [],
+          systemPrompt: {
+            type: "preset",
+            preset: "claude_code",
+            append: context.systemPrompt,
+          },
+          env: createSdkEnv(options?.apiKey),
+        },
+      });
+
+      for await (const message of sdkQuery) {
+        const sdkSessionId = (message as { session_id?: unknown }).session_id;
+        if (typeof sdkSessionId === "string") {
+          session.captureSdkSessionId(pi, sdkSessionId, model.id);
+        }
+
+        if (message.type === "stream_event") {
+          handleStreamEvent(message.event, state);
+          continue;
+        }
+
+        if (message.type === "assistant") {
+          backfillAssistantContent(message, state);
+          continue;
+        }
+
+        if (message.type === "result") {
+          completeFromResult(message, state);
+        }
+      }
+
+      if (!state.finished) {
+        state.finished = true;
+        state.output.stopReason = "stop";
+        state.stream.push({ type: "done", reason: "stop", message: state.output });
+        state.stream.end();
+      }
+    } catch (error) {
+      failStream(error, state, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+    }
+  })();
+
+  return stream;
+}

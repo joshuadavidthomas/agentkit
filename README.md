@@ -48,6 +48,10 @@ Custom provider that wraps Anthropic's Claude Agent SDK so you can keep using pi
 
 Persists the SDK `session_id` inside the current pi session so later prompts resume the same Claude Agent session. Streams assistant text back through pi's provider pipeline and shows recent SDK tool activity in a widget using pi's built-in tool rendering components. Requires `ANTHROPIC_API_KEY`.
 
+#### [custom-provider-claude-agent-sdk-v3](./pi-extensions/custom-provider-claude-agent-sdk-v3/)
+
+Third-pass Claude Agent SDK provider prototype using the SDK's stable `query()` API. It registers `claude-agent-sdk-v3`, streams no-tool Claude turns through pi, preserves pi's system prompt, and persists the SDK session id for later resume.
+
 #### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 
 Vendored from [vedang/agents](https://github.com/vedang/agents).
