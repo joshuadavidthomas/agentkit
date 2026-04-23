@@ -12,16 +12,21 @@ type ToolResultLike = Pick<AgentToolResult<unknown>, "content"> | ToolResultMess
 
 export const MAX_DISPLAY_ITEMS = 120;
 
+export function getAssistantText(message: AgentMessage | AssistantMessage | undefined): string {
+  if (!message || !isAssistantMessage(message)) return "";
+
+  const blocks: string[] = [];
+  for (const part of message.content) {
+    if (part.type === "text") blocks.push(part.text);
+  }
+  return blocks.join("");
+}
+
 // Extract the last assistant text block from session messages
 export function getLastAssistantText(messages: readonly AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (!isAssistantMessage(msg)) continue;
-    const blocks: string[] = [];
-    for (const part of msg.content) {
-      if (part.type === "text") blocks.push(part.text);
-    }
-    if (blocks.length > 0) return blocks.join("");
+    const text = getAssistantText(messages[i]);
+    if (text) return text;
   }
   return "";
 }

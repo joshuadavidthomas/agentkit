@@ -5,6 +5,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import type { ScoutWorkload } from "./models.ts";
 
 type ScoutStatus = "running" | "done" | "error" | "aborted";
+type ScoutActivityPhase = "thinking" | "calling_tools" | "writing_summary";
 
 // Scout-local timeline projection derived from pi message/tool-result types.
 export type DisplayItem =
@@ -16,6 +17,8 @@ interface ScoutRunDetails {
   query: string;
   turns: number;
   displayItems: DisplayItem[];
+  activityPhase?: ScoutActivityPhase;
+  activityText?: string;
   summaryText?: string;
   error?: string;
   startedAt: number;

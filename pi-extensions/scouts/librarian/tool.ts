@@ -20,10 +20,7 @@ export const LIBRARIAN_TOOL: ToolDefinition<typeof LibrarianParams, ScoutDetails
   },
 
   renderCall(args, theme, context) {
-    const a = args as Record<string, unknown>;
-    const repos = Array.isArray(a?.repos) ? a.repos.length : 0;
-    const owners = Array.isArray(a?.owners) ? a.owners.length : 0;
-    return new ScoutCall("librarian", a, theme, `repos:${repos} owners:${owners}`, context);
+    return new ScoutCall("librarian", args as Record<string, unknown>, theme, undefined, context);
   },
 
   renderResult(result, options, theme, context) {

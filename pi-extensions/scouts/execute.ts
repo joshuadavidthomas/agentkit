@@ -21,7 +21,7 @@ import {
   type ResourceLoader,
 } from "@mariozechner/pi-coding-agent";
 
-import { extractDisplayItems, extractToolResultText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
+import { extractDisplayItems, extractToolResultText, getAssistantText, getLastAssistantText, MAX_DISPLAY_ITEMS } from "./display.ts";
 import { resolveDiversityModel, resolveWorkloadModel } from "./models.ts";
 import { createScoutResourceLoader } from "./resources.ts";
 import { computeOverallStatus, createInitialRun } from "./state.ts";
@@ -63,6 +63,7 @@ const DEFAULT_EVENTTARGET_MAX_LISTENERS = 100;
 const EVENTTARGET_MAX_LISTENERS_STATE_KEY = Symbol.for("pi.eventTargetMaxListenersState");
 type BuiltinToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
 const BUILTIN_TOOL_NAMES = new Set<BuiltinToolName>(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+const SINGLE_SCOUT_UPDATE_INTERVAL_MS = 150;
 
 type EventTargetMaxListenersState = { depth: number; savedDefault?: number };
 type ScoutExecutionResult = {
@@ -151,6 +152,7 @@ class ScoutWorkflow {
   private currentModel?: Model<Api>;
   private abortRequested = false;
   private abortSignalListener?: () => void;
+  private lastUpdateAt = 0;
 
   constructor(
     private readonly config: ScoutConfig,
@@ -237,7 +239,7 @@ class ScoutWorkflow {
       this.phase = "aborting";
       this.abortRequested = true;
       this.markRunAborted(run);
-      this.publishUpdate();
+      this.publishUpdate(true);
       this.phase = "finished";
       return this.buildResult();
     }
@@ -285,11 +287,13 @@ class ScoutWorkflow {
     run.status = "running";
     run.turns = 0;
     run.displayItems = [];
+    run.activityPhase = "thinking";
+    run.activityText = undefined;
     run.summaryText = undefined;
     run.error = undefined;
     run.startedAt = Date.now();
     run.endedAt = undefined;
-    this.publishUpdate();
+    this.publishUpdate(true);
     return run;
   }
 
@@ -297,9 +301,15 @@ class ScoutWorkflow {
     return this.runs[0]!;
   }
 
-  private publishUpdate(): void {
+  private publishUpdate(force = false): void {
     const run = this.currentRun();
     if (!run || !this.currentModel) return;
+
+    const now = Date.now();
+    if (!force && now - this.lastUpdateAt < SINGLE_SCOUT_UPDATE_INTERVAL_MS) {
+      return;
+    }
+    this.lastUpdateAt = now;
 
     const status = computeOverallStatus(this.runs);
     const text = run.summaryText ?? (status === "running" ? "(searching...)" : "(no output)");
@@ -338,7 +348,7 @@ class ScoutWorkflow {
     const run = this.currentRun();
     if (run) {
       this.markRunAborted(run);
-      this.publishUpdate();
+      this.publishUpdate(true);
     }
 
     await Promise.allSettled([...this.activeSessions].map((session) => session.abort()));
@@ -425,10 +435,51 @@ class ScoutWorkflow {
           run.displayItems = items.length > MAX_DISPLAY_ITEMS
             ? items.slice(items.length - MAX_DISPLAY_ITEMS)
             : items;
+          if (event.toolResults.length > 0) {
+            run.activityPhase = "thinking";
+            run.activityText = undefined;
+          }
           this.publishUpdate();
           break;
         }
+        case "message_update": {
+          if (event.message.role !== "assistant") break;
+
+          if (event.assistantMessageEvent.type.startsWith("thinking")) {
+            run.activityPhase = "thinking";
+            run.activityText = undefined;
+            this.publishUpdate();
+            break;
+          }
+
+          if (event.assistantMessageEvent.type.startsWith("toolcall")) {
+            run.activityPhase = "calling_tools";
+            run.activityText = undefined;
+            this.publishUpdate();
+            break;
+          }
+
+          if (event.assistantMessageEvent.type.startsWith("text")) {
+            run.activityPhase = "writing_summary";
+            const text = getAssistantText(event.message).trim();
+            if (text) run.activityText = text;
+            this.publishUpdate();
+          }
+          break;
+        }
+        case "message_end": {
+          if (event.message.role !== "assistant") break;
+          const text = getAssistantText(event.message).trim();
+          if (text) {
+            run.activityPhase = "writing_summary";
+            run.activityText = text;
+            this.publishUpdate();
+          }
+          break;
+        }
         case "tool_execution_start": {
+          run.activityPhase = "calling_tools";
+          run.activityText = undefined;
           run.displayItems.push({
             type: "tool",
             name: event.toolName,
@@ -442,6 +493,8 @@ class ScoutWorkflow {
           break;
         }
         case "tool_execution_update": {
+          run.activityPhase = "calling_tools";
+          run.activityText = undefined;
           for (let i = run.displayItems.length - 1; i >= 0; i--) {
             const item = run.displayItems[i];
             if (item.type === "tool" && item.toolCallId === event.toolCallId) {
@@ -454,6 +507,8 @@ class ScoutWorkflow {
           break;
         }
         case "tool_execution_end": {
+          run.activityPhase = "calling_tools";
+          run.activityText = undefined;
           for (let i = run.displayItems.length - 1; i >= 0; i--) {
             const item = run.displayItems[i];
             if (item.type === "tool" && item.toolCallId === event.toolCallId) {
@@ -472,21 +527,25 @@ class ScoutWorkflow {
 
   private completeSuccessfulRun(run: ScoutRunDetails, session: AgentSession): void {
     run.displayItems = extractDisplayItems(session.state.messages);
+    run.activityPhase = undefined;
+    run.activityText = undefined;
     run.summaryText = getLastAssistantText(session.state.messages).trim();
     if (!run.summaryText) {
       run.summaryText = this.wasAborted() ? "Aborted" : "(no output)";
     }
     run.status = this.wasAborted() ? "aborted" : "done";
     run.endedAt = Date.now();
-    this.publishUpdate();
+    this.publishUpdate(true);
   }
 
   private completeFailedRun(run: ScoutRunDetails, message: string): void {
+    run.activityPhase = undefined;
+    run.activityText = undefined;
     run.status = this.wasAborted() ? "aborted" : "error";
     run.error = this.wasAborted() ? undefined : message;
     run.summaryText = message;
     run.endedAt = Date.now();
-    this.publishUpdate();
+    this.publishUpdate(true);
   }
 
   private buildResult(): ScoutExecutionResult {

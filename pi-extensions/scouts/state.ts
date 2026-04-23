@@ -11,6 +11,7 @@ export function createInitialRun(query: string): ScoutRunDetails {
     query,
     turns: 0,
     displayItems: [],
+    activityPhase: "thinking",
     startedAt: Date.now(),
   };
 }
