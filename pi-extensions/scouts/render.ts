@@ -62,17 +62,19 @@ class RunningStatusText extends Text {
   private theme?: Theme;
   private run?: ScoutRunDetails;
   private hasToolCalls = false;
+  private suffix?: string;
   private requestRender?: () => void;
 
   constructor() {
     super("", 0, 0);
   }
 
-  update(run: ScoutRunDetails, hasToolCalls: boolean, theme: Theme, requestRender?: () => void): void {
+  update(run: ScoutRunDetails, hasToolCalls: boolean, theme: Theme, requestRender?: () => void, suffix?: string): void {
     this.run = run;
     this.hasToolCalls = hasToolCalls;
     this.theme = theme;
     this.requestRender = requestRender;
+    this.suffix = suffix;
     this.updateDisplay();
     this.syncTimer();
   }
@@ -106,7 +108,9 @@ class RunningStatusText extends Text {
 
   private updateDisplay(): void {
     if (!this.run || !this.theme) return;
-    this.setText(`${getRunningSpinner(this.theme, this.frameIndex)} ${this.theme.fg("dim", getRunningStatusLabel(this.run, this.hasToolCalls))}`);
+    const status = `${getRunningSpinner(this.theme, this.frameIndex)} ${this.theme.fg("dim", getRunningStatusLabel(this.run, this.hasToolCalls))}`;
+    const suffix = this.suffix ? ` ${this.theme.fg("dim", "•")} ${this.suffix}` : "";
+    this.setText(`${status}${suffix}`);
   }
 }
 
@@ -190,6 +194,12 @@ class ScoutToolListComponent extends Container {
   }
 }
 
+function stripLeadingSummaryHeading(text: string): string {
+  return text
+    .trim()
+    .replace(/^(?:#{1,6}[ \t]*)?Summary[ \t]*\r?\n(?:[ \t]*\r?\n)*/i, "");
+}
+
 class ScoutTextBlockComponent extends Container {
   update(
     item: Extract<DisplayItem, { type: "text" }>,
@@ -199,7 +209,9 @@ class ScoutTextBlockComponent extends Container {
   ): void {
     this.clear();
 
-    const text = item.text.trim();
+    const text = isFinalText
+      ? stripLeadingSummaryHeading(item.text)
+      : item.text.trim();
     if (!text) return;
 
     if (!isFinalText) {
@@ -208,11 +220,9 @@ class ScoutTextBlockComponent extends Container {
       return;
     }
 
-    this.addChild(new Spacer(1));
-
     const mdTheme = getMarkdownTheme();
     if (expanded) {
-      this.addChild(new Markdown(item.text, 0, 0, mdTheme));
+      this.addChild(new Markdown(text, 0, 0, mdTheme));
       return;
     }
 
@@ -246,51 +256,57 @@ class ScoutTextListComponent extends Container {
   }
 }
 
-class ScoutResultHeaderComponent extends Text {
-  constructor() {
-    super("", 0, 0);
-  }
+class ScoutResultHeaderComponent extends Container {
+  private runningStatusText = new RunningStatusText();
+  private lineText = new Text("", 0, 0);
 
-  update(details: ScoutDetails, status: ScoutStatus, run: ScoutRunDetails, theme: Theme): void {
+  update(details: ScoutDetails, status: ScoutStatus, run: ScoutRunDetails, theme: Theme, requestRender?: () => void): void {
     const items = run.displayItems;
     const toolCount = items.filter((item) => item.type === "tool").length;
     const totalTurns = run.turns;
     const elapsed = formatElapsed(run.startedAt, run.endedAt, status === "running");
-    const icon = status === "running" ? "" : scoutStatusIcon(theme, status);
     const stats = theme.fg(
       "dim",
       `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
     );
 
-    this.setText(icon ? `${icon} ${stats}` : stats);
-  }
-}
+    this.clear();
+    if (status === "running") {
+      this.runningStatusText.update(run, toolCount > 0, theme, requestRender, stats);
+      this.addChild(this.runningStatusText);
+      return;
+    }
 
-class ScoutResultBodyComponent extends Container {
-  private runningStatusText = new RunningStatusText();
-  private hiddenCountText = new Text("", 0, 0);
-  private sectionLabelText = new Text("", 0, 0);
-  private expandHintText = new Text("", 0, 0);
-  private errorSpacer = new Spacer(1);
-  private errorText = new Text("", 0, 0);
-  private toolList = new ScoutToolListComponent();
-  private textList = new ScoutTextListComponent();
+    this.runningStatusText.stop();
+    this.lineText.setText(`${scoutStatusIcon(theme, status)} ${stats}`);
+    this.addChild(this.lineText);
+  }
 
   stop(): void {
     this.runningStatusText.stop();
   }
+}
 
-  update(status: ScoutStatus, run: ScoutRunDetails, expanded: boolean, theme: Theme, requestRender?: () => void): void {
+class ScoutResultBodyComponent extends Container {
+  private topSpacer = new Spacer(1);
+  private hiddenCountText = new Text("", 0, 0);
+  private sectionLabelText = new Text("", 0, 0);
+  private summarySpacer = new Spacer(1);
+  private summaryLabelText = new Text("", 0, 0);
+  private expandHintText = new Text("", 0, 0);
+  private errorText = new Text("", 0, 0);
+  private toolList = new ScoutToolListComponent();
+  private textList = new ScoutTextListComponent();
+
+  update(status: ScoutStatus, run: ScoutRunDetails, expanded: boolean, theme: Theme): void {
     this.clear();
 
     const toolItems = run.displayItems.filter((item): item is Extract<DisplayItem, { type: "tool" }> => item.type === "tool");
     const textItems = run.displayItems.filter((item): item is Extract<DisplayItem, { type: "text" }> => item.type === "text" && !!item.text.trim());
 
     if (status === "running") {
-      this.runningStatusText.update(run, toolItems.length > 0, theme, requestRender);
-      this.addChild(this.runningStatusText);
-
       if (toolItems.length > 0) {
+        this.addChild(this.topSpacer);
         const maxRunningTools = 5;
         const hiddenCount = Math.max(0, toolItems.length - maxRunningTools);
         if (hiddenCount > 0) {
@@ -307,16 +323,15 @@ class ScoutResultBodyComponent extends Container {
       return;
     }
 
-    this.runningStatusText.stop();
-
     if (status === "error" && run.error) {
       this.errorText.setText(theme.fg("error", `Error: ${run.error}`));
-      this.addChild(this.errorSpacer);
+      this.addChild(this.topSpacer);
       this.addChild(this.errorText);
       return;
     }
 
     if (toolItems.length > 0) {
+      this.addChild(this.topSpacer);
       this.sectionLabelText.setText(theme.fg("dim", "Tool calls"));
       this.addChild(this.sectionLabelText);
       this.toolList.update(toolItems, expanded, theme);
@@ -327,13 +342,23 @@ class ScoutResultBodyComponent extends Container {
       }
     }
 
-    this.textList.update(textItems, expanded, theme);
-    this.addChild(this.textList);
+    if (textItems.length > 0) {
+      if (toolItems.length > 0) {
+        this.addChild(this.summarySpacer);
+      } else {
+        this.addChild(this.topSpacer);
+      }
+      this.summaryLabelText.setText(theme.fg("dim", "Summary"));
+      this.addChild(this.summaryLabelText);
+      this.textList.update(textItems, expanded, theme);
+      this.addChild(this.textList);
+    }
   }
 }
 
 class ScoutDetailsComponent extends Container {
   private header = new ScoutResultHeaderComponent();
+  private promptText = new Text("", 0, 0);
   private body = new ScoutResultBodyComponent();
 
   constructor() {
@@ -343,7 +368,7 @@ class ScoutDetailsComponent extends Container {
   }
 
   stop(): void {
-    this.body.stop();
+    this.header.stop();
   }
 
   update(
@@ -354,8 +379,16 @@ class ScoutDetailsComponent extends Container {
     theme: Theme,
     requestRender?: () => void,
   ): void {
-    this.header.update(details, status, run, theme);
-    this.body.update(status, run, options.expanded, theme, requestRender);
+    const prompt = run.query.trim();
+
+    this.header.update(details, status, run, theme, requestRender);
+    this.promptText.setText(theme.fg("muted", prompt));
+    this.body.update(status, run, options.expanded, theme);
+
+    this.clear();
+    this.addChild(this.header);
+    if (prompt) this.addChild(this.promptText);
+    this.addChild(this.body);
   }
 }
 
@@ -407,32 +440,25 @@ export class ScoutResult extends Container {
   }
 }
 
+type ScoutCallOptions = {
+  theme: Theme;
+  titleSuffix?: string;
+};
+
 export class ScoutCall implements Component {
   constructor(
     private readonly scoutName: string,
-    private readonly args: Record<string, unknown> | undefined,
-    private readonly theme: Theme,
-    private readonly extraInfo?: string,
-    private readonly context?: { expanded?: boolean },
+    private readonly options: ScoutCallOptions,
   ) { }
 
   invalidate(): void { }
 
   render(width: number): string[] {
-    const query = typeof this.args?.query === "string" ? this.args.query.trim() : "";
-    const normalizedQuery = query.replace(/\s+/g, " ").trim();
-    const display = this.context?.expanded ? normalizedQuery : shorten(normalizedQuery, 70);
+    const { theme, titleSuffix } = this.options;
+    const titleParts = [theme.fg("toolTitle", theme.bold(this.scoutName))];
+    if (titleSuffix) titleParts.push(theme.fg("muted", titleSuffix));
 
-    const lines = [this.theme.fg("toolTitle", this.theme.bold(this.scoutName))];
-    const detailParts: string[] = [];
-    if (this.extraInfo) detailParts.push(this.theme.fg("muted", this.extraInfo));
-    if (display) detailParts.push(this.theme.fg("muted", display));
-
-    if (detailParts.length > 0) {
-      lines.push(detailParts.join(" · "));
-    }
-
-    return new Text(lines.join("\n"), 0, 0).render(width);
+    return new Text(titleParts.join(" "), 0, 0).render(width);
   }
 }
 

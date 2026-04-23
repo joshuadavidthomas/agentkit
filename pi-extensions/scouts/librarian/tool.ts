@@ -19,8 +19,8 @@ export const LIBRARIAN_TOOL: ToolDefinition<typeof LibrarianParams, ScoutDetails
     return executeScout(LIBRARIAN_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
   },
 
-  renderCall(args, theme, context) {
-    return new ScoutCall("librarian", args as Record<string, unknown>, theme, undefined, context);
+  renderCall(_args, theme, _context) {
+    return new ScoutCall("librarian", { theme });
   },
 
   renderResult(result, options, theme, context) {

@@ -49,13 +49,10 @@ export const SPECIALIST_TOOL: ToolDefinition<typeof SpecialistParams, ScoutDetai
     }
   },
 
-  renderCall(args, theme, context) {
-    const p = args as { skill?: string; task?: string };
+  renderCall(args, theme, _context) {
+    const p = args as { skill?: string };
     const skill = p?.skill ?? "unknown";
-    const task = (p?.task ?? "").trim();
-    const expanded = context?.expanded ?? false;
-    const preview = expanded ? task : (task.length > 60 ? task.slice(0, 57) + "..." : task);
-    return new ScoutCall("specialist", args as Record<string, unknown>, theme, `skill:${skill} · ${preview}`, context);
+    return new ScoutCall("specialist", { theme, titleSuffix: `skill:${skill}` });
   },
 
   renderResult(result, options, theme, context) {

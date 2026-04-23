@@ -19,8 +19,8 @@ export const FINDER_TOOL: ToolDefinition<typeof FinderParams, ScoutDetails> = {
     return executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
   },
 
-  renderCall(args, theme, context) {
-    return new ScoutCall("finder", args as Record<string, unknown>, theme, undefined, context);
+  renderCall(_args, theme, _context) {
+    return new ScoutCall("finder", { theme });
   },
 
   renderResult(result, options, theme, context) {

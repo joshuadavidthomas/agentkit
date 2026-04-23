@@ -20,8 +20,8 @@ export const ORACLE_TOOL: ToolDefinition<typeof OracleParams, ScoutDetails> = {
     return executeScout(config, params as Record<string, unknown>, signal, onUpdate, ctx);
   },
 
-  renderCall(args, theme, context) {
-    return new ScoutCall("oracle", args as Record<string, unknown>, theme, undefined, context);
+  renderCall(_args, theme, _context) {
+    return new ScoutCall("oracle", { theme });
   },
 
   renderResult(result, options, theme, context) {
