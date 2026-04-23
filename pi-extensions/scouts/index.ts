@@ -1,4 +1,4 @@
-// Scouts extension — registers finder, librarian, oracle, specialist, and parallel scouts tools.
+// Scouts extension — registers finder, librarian, oracle, and specialist tools.
 //
 // Finder and librarian originally vendored from pi-finder v1.2.2 and
 // pi-librarian v1.1.2, consolidated into a single extension with shared
@@ -14,12 +14,10 @@ import { FINDER_TOOL } from "./finder/tool.ts";
 import { LIBRARIAN_TOOL } from "./librarian/tool.ts";
 import { ORACLE_TOOL } from "./oracle/tool.ts";
 import { SPECIALIST_TOOL } from "./specialist/tool.ts";
-import { SCOUTS_TOOL } from "./scouts.ts";
 
 export default function scoutsExtension(pi: ExtensionAPI) {
   pi.registerTool(FINDER_TOOL);
   pi.registerTool(LIBRARIAN_TOOL);
   pi.registerTool(ORACLE_TOOL);
   pi.registerTool(SPECIALIST_TOOL);
-  pi.registerTool(SCOUTS_TOOL);
 }
