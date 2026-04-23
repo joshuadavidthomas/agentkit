@@ -37,7 +37,22 @@ function getScoutDetails(result: ScoutToolResult): ScoutDetails | undefined {
 }
 
 function getParallelDetails(result: ParallelScoutsToolResult): ParallelDetails | undefined {
-  return result.details;
+  const details = result.details;
+  if (!details || typeof details !== "object") return undefined;
+
+  const parallelDetails = details as ParallelDetails & { parallelResults?: ParallelDetails["results"] };
+  const results = Array.isArray(parallelDetails.results)
+    ? parallelDetails.results
+    : Array.isArray(parallelDetails.parallelResults)
+      ? parallelDetails.parallelResults
+      : undefined;
+
+  if (parallelDetails.mode !== "parallel" || !results) return undefined;
+
+  return {
+    ...parallelDetails,
+    results,
+  };
 }
 
 class ScoutToolRow implements Component {
