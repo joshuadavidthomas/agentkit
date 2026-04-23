@@ -1,6 +1,6 @@
 // Shared parameter schemas and validation helpers.
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { createErrorScoutDetails } from "./state.ts";
 

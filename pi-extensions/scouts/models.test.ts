@@ -267,8 +267,9 @@ describe("scout model selection from a main session", () => {
     const result = resolveDiversityModel(partialRegistry, current, "deep", ORACLE_FAMILY_PARTNERS);
 
     expect(result).not.toBeNull();
-    expect(["openai-codex", "github-copilot"]).toContain(result?.model.provider);
-    expect(result?.model.id).toBe("gpt-5.4");
+    if (!result) throw new Error("expected diversity model");
+    expect(["openai-codex", "github-copilot"]).toContain(result.model.provider);
+    expect(result.model.id).toBe("gpt-5.4");
   });
 
   it("oracle diversity: openai session prefers claude-bridge for anthropic partner models", () => {
@@ -295,7 +296,8 @@ describe("scout model selection from a main session", () => {
     const result = resolveDiversityModel(registry, current, "deep", ORACLE_FAMILY_PARTNERS);
 
     expect(result).not.toBeNull();
-    expect(["openai", "claude-bridge"]).toContain(result?.model.provider);
+    if (!result) throw new Error("expected diversity model");
+    expect(["openai", "claude-bridge"]).toContain(result.model.provider);
   });
 
   it("oracle diversity: unknown family returns null so caller falls back in-family", () => {

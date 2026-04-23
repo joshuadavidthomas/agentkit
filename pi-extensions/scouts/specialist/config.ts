@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { ThinkingLevel } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import { parse as parseYaml } from "yaml";
 

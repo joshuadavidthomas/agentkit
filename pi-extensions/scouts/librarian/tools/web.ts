@@ -14,7 +14,7 @@ import { JSDOM, VirtualConsole } from "jsdom";
 import TurndownService from "turndown";
 // @ts-ignore — turndown-plugin-gfm has no type declarations
 import { gfm } from "turndown-plugin-gfm";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 type SearchBackend = "brave" | "exa" | "firecrawl";

@@ -1,8 +1,8 @@
 /**
  * Ralph Loop Engine
  *
- * Drives the iteration loop in-process using the pi SDK (AgentSession).
- * Creates an AgentSession via createAgentSession(), manages iterations,
+ * Drives the iteration loop in-process using the pi SDK.
+ * Creates an AgentSessionRuntime, manages iterations,
  * tracks telemetry, writes filesystem artifacts (state.json, iterations/).
  *
  * No subprocess, no RPC, no JSON serialization — events are typed objects
@@ -14,9 +14,14 @@ import type { Model } from "@mariozechner/pi-ai";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
 	type ModelRegistry,
 	SessionManager,
-	createAgentSession,
+	createAgentSessionFromServices,
+	createAgentSessionRuntime,
+	createAgentSessionServices,
+	getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import {
 	createWriteStream,
@@ -56,6 +61,7 @@ export interface LoopEngineSessionDeps {
 }
 
 export class LoopEngine {
+	private runtime: AgentSessionRuntime | null = null;
 	private session: AgentSession | null = null;
 	private unsubscribe: (() => void) | null = null;
 	private status: LoopStatus = "starting";
@@ -134,28 +140,46 @@ export class LoopEngine {
 			JSON.stringify(this.config, null, 2) + "\n",
 		);
 
-		// Create AgentSession via SDK — no subprocess, in-process
+		// Create AgentSessionRuntime via SDK — no subprocess, in-process
 		try {
-			const { session } = await createAgentSession({
+			const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+				cwd,
+				agentDir,
+				sessionManager,
+				sessionStartEvent,
+			}) => {
+				const services = await createAgentSessionServices({
+					cwd,
+					agentDir,
+					authStorage: this.sessionDeps.modelRegistry.authStorage,
+					modelRegistry: this.sessionDeps.modelRegistry,
+				});
+				return {
+					...(await createAgentSessionFromServices({
+						services,
+						sessionManager,
+						sessionStartEvent,
+						model: this.sessionDeps.model,
+						thinkingLevel: this.sessionDeps.thinkingLevel,
+					})),
+					services,
+					diagnostics: services.diagnostics,
+				};
+			};
+			this.runtime = await createAgentSessionRuntime(createRuntime, {
 				cwd: this.config.cwd,
-				sessionManager: SessionManager.inMemory(),
-				modelRegistry: this.sessionDeps.modelRegistry,
-				authStorage: this.sessionDeps.modelRegistry.authStorage,
-				model: this.sessionDeps.model,
-				thinkingLevel: this.sessionDeps.thinkingLevel,
+				agentDir: getAgentDir(),
+				sessionManager: SessionManager.inMemory(this.config.cwd),
 			});
-			this.session = session;
+			this.runtime.setRebindSession(async (session) => {
+				this.bindSession(session);
+			});
+			this.bindSession(this.runtime.session);
 		} catch (err) {
 			this.error = `Failed to create agent session: ${err instanceof Error ? err.message : String(err)}`;
 			this.setStatus("error");
 			return;
 		}
-
-		// Subscribe to events for rendering and telemetry
-		this.unsubscribe = this.session.subscribe((event) => {
-			this.eventsStream?.write(JSON.stringify(event) + "\n");
-			this.handleEvent(event);
-		});
 
 		this.setStatus("running");
 		this.writeState();
@@ -163,7 +187,7 @@ export class LoopEngine {
 		try {
 			await this.runIterations();
 		} finally {
-			this.cleanup();
+			await this.cleanup();
 		}
 	}
 
@@ -209,6 +233,15 @@ export class LoopEngine {
 	/** Queue a message to be appended to the next iteration's prompt. */
 	queueForNextIteration(message: string): void {
 		this.pendingFollowup = message;
+	}
+
+	private bindSession(session: AgentSession): void {
+		this.unsubscribe?.();
+		this.session = session;
+		this.unsubscribe = session.subscribe((event) => {
+			this.eventsStream?.write(JSON.stringify(event) + "\n");
+			this.handleEvent(event);
+		});
 	}
 
 	private async runIterations(): Promise<void> {
@@ -259,7 +292,7 @@ export class LoopEngine {
 				break;
 
 			// Fresh context for next iteration
-			await this.session!.newSession();
+			await this.runtime!.newSession();
 		}
 
 		this.setStatus(this.stopRequested ? "stopped" : "completed");
@@ -365,7 +398,7 @@ export class LoopEngine {
 		this.callbacks.onStatusChange?.(status, this.error);
 	}
 
-	private cleanup(): void {
+	private async cleanup(): Promise<void> {
 		if (this.unsubscribe) {
 			this.unsubscribe();
 			this.unsubscribe = null;
@@ -374,9 +407,12 @@ export class LoopEngine {
 		this.eventsStream?.end();
 		this.eventsStream = null;
 
-		if (this.session) {
-			this.session.dispose();
-			this.session = null;
+		this.session = null;
+
+		if (this.runtime) {
+			const runtime = this.runtime;
+			this.runtime = null;
+			await runtime.dispose();
 		}
 	}
 }

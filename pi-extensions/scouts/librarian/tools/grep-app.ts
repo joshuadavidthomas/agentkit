@@ -3,7 +3,7 @@
 // Calls the grep.app REST API (https://grep.app/api/search) directly —
 // no MCP, no mcporter. Returns clean text with line numbers and facets.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 const GREP_APP_API = "https://grep.app/api/search";

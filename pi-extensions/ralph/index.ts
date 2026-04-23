@@ -38,6 +38,7 @@ import { loopDir } from "./types.ts";
 const stubTerminal: Terminal = {
 	start() {},
 	stop() {},
+	async drainInput() {},
 	write() {},
 	get columns() {
 		return process.stdout.columns ?? 120;
@@ -55,6 +56,7 @@ const stubTerminal: Terminal = {
 	clearFromCursor() {},
 	clearScreen() {},
 	setTitle() {},
+	setProgress() {},
 };
 const stubTui = new TUI(stubTerminal);
 
@@ -354,11 +356,12 @@ export default function (pi: ExtensionAPI) {
 
 		const comp = new ToolExecutionComponent(
 			toolName,
+			String(message.timestamp),
 			args,
 			{ showImages: false },
 			undefined,
 			stubTui,
-			cwd,
+			cwd ?? process.cwd(),
 		);
 		comp.setArgsComplete();
 

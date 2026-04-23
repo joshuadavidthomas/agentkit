@@ -45,7 +45,7 @@ export default function (pi: ExtensionAPI) {
     if (!isBashToolResult(event)) return;
 
     const command = event.input?.command;
-    if (!command || !hasRgReplaceFlag(command)) return;
+    if (typeof command !== "string" || !hasRgReplaceFlag(command)) return;
 
     return {
       content: [{ type: "text" as const, text: WARNING }, ...(event.content ?? [])],

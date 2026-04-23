@@ -4,7 +4,7 @@
 // Each scout gets its own ScoutDetails tracked independently, with combined
 // progress updates for the TUI.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { ToolDefinition, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 import { executeScout } from "./execute.ts";
