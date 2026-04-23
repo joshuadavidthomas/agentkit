@@ -9,7 +9,7 @@
  * Elsewhere: falls back to OSC 777 escape sequence (Ghostty, iTerm2, WezTerm, rxvt-unicode).
  */
 
-import { complete, getModel } from "@mariozechner/pi-ai";
+import { complete } from "@mariozechner/pi-ai";
 import type { TextContent, ToolCall } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { spawn } from "node:child_process";
@@ -176,7 +176,7 @@ function getLastTurnSummary(entries: SessionEntry[]): string {
  */
 async function selectSummaryModel(ctx: ExtensionContext) {
 	for (const { provider, id } of SUMMARY_MODELS) {
-		const model = getModel(provider, id);
+		const model = ctx.modelRegistry.find(provider, id);
 		if (!model) continue;
 
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);

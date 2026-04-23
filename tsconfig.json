@@ -9,8 +9,8 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node", "bun"]
   },
-  "include": ["runtimes/**/*.ts"],
+  "include": ["pi-extensions/**/*.ts"],
   "exclude": ["node_modules", "**/dist/**"]
 }

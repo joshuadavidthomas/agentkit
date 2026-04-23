@@ -1,3 +1,4 @@
+import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -60,22 +61,18 @@ export interface ZaiRuntimeSettings {
   clearThinking: boolean;
 }
 
-export interface ZaiSimpleOptions {
-  temperature?: number;
+export interface ZaiSimpleOptions extends SimpleStreamOptions {
   top_p?: number;
   topP?: number;
   clear_thinking?: boolean;
   clearThinking?: boolean;
-  apiKey?: string;
-  onPayload?: (payload: unknown) => void;
-  [key: string]: unknown;
 }
 
 export type ZaiStreamSimple = (
-  model: unknown,
-  context: unknown,
+  model: Model<Api>,
+  context: Context,
   options?: ZaiSimpleOptions,
-) => unknown;
+) => AssistantMessageEventStream;
 
 export interface ZaiProviderConfigInput {
   streamSimple: ZaiStreamSimple;
@@ -371,25 +368,23 @@ function resolveModels(
 }
 
 function routeModelToProviderEndpoint(
-  model: unknown,
+  model: Model<Api>,
   env: Record<string, string | undefined>,
-): unknown {
-  if (!model || typeof model !== "object") return model;
-
-  const modelRecord = model as Record<string, unknown>;
-  const modelId =
-    typeof modelRecord.id === "string" ? modelRecord.id.trim() : undefined;
-  if (!modelId) return model;
+): { model: Model<Api>; apiKey?: string } {
+  const modelId = model.id.trim();
+  if (!modelId) return { model };
 
   const provider = providerForModelId(modelId);
-  if (!provider) return model;
+  if (!provider) return { model };
 
   const apiKey = resolveProviderApiKey(env, provider);
-  if (!apiKey) return model;
+  if (!apiKey) return { model };
 
   return {
-    ...modelRecord,
-    baseUrl: resolveProviderBaseUrl(provider),
+    model: {
+      ...model,
+      baseUrl: resolveProviderBaseUrl(provider),
+    },
     apiKey,
   };
 }
@@ -428,18 +423,16 @@ export function createZaiStreamSimple(
   return (model, context, options) => {
     const runtime = resolveZaiRuntimeSettings(env, options);
     const callerOnPayload = options?.onPayload;
-    const routedModel = routeModelToProviderEndpoint(model, env);
-    const routedApiKey =
-      routedModel && typeof routedModel === "object"
-        ? parseOptionalString((routedModel as Record<string, unknown>).apiKey)
-        : undefined;
+    const routed = routeModelToProviderEndpoint(model, env);
+    const routedModel = routed.model;
+    const routedApiKey = parseOptionalString(routed.apiKey);
     const wrappedOptions: ZaiSimpleOptions = {
       ...options,
       // [ref:zai_custom_routed_api_key_precedence]
       apiKey: routedApiKey ?? options?.apiKey,
       temperature: runtime.temperature,
-      onPayload: (payload: unknown) => {
-        callerOnPayload?.(payload);
+      onPayload: (payload: unknown, model: Model<Api>) => {
+        callerOnPayload?.(payload, model);
         // [ref:zai_custom_payload_knobs]
         applyZaiPayloadKnobs(payload, runtime);
       },

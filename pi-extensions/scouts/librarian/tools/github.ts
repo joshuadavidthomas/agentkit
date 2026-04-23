@@ -5,7 +5,7 @@
 // small model never has to compose pipelines or remember API quirks.
 
 import { execFile } from "node:child_process";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 // gh CLI helper

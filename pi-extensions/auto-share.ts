@@ -10,10 +10,9 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 
 const COOLDOWN_MS = 10_000;
 const MANIFEST_FILENAME = "shares.json";
@@ -29,8 +28,10 @@ type ExportSessionToHtmlFn = (sm: any, state: any, options: any) => Promise<stri
 let _exportSessionToHtml: ExportSessionToHtmlFn | null = null;
 async function loadExportFn(): Promise<ExportSessionToHtmlFn> {
 	if (!_exportSessionToHtml) {
-		const dist = dirname(fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent")));
-		const mod = await import(join(dist, "core", "export-html", "index.js"));
+		const extensionDir = dirname(realpathSync(__filename));
+		const mod = await import(
+			join(extensionDir, "..", "node_modules", "@mariozechner", "pi-coding-agent", "dist", "core", "export-html", "index.js")
+		);
 		_exportSessionToHtml = mod.exportSessionToHtml;
 	}
 	return _exportSessionToHtml!;
