@@ -140,7 +140,7 @@ Registers four tools:
 - **finder** (fast): Read-only workspace scout — locates files, directories, and components when exact locations are unknown
 - **librarian** (fast, overridable to capable): External research scout — searches GitHub repos and the web, fetches code and documentation
 - **oracle** (capable): Deep code analysis scout — traces data flow, analyzes architecture, finds patterns with precise file:line references. Read-only (restricted bash allowlist)
-- **scouts**: Parallel dispatch — runs multiple scouts concurrently for independent research tasks
+- **specialist** (capable): Skill-powered domain expert — loads an installed skill and applies it to a focused task with a configurable tool set
 
 #### [skill-requires-path](./pi-extensions/skill-requires-path/)
 

@@ -9,12 +9,11 @@ import { getMarkdownTheme, keyHint, type Theme, type ToolRenderResultOptions } f
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
 import { cleanToolResult, formatToolCallParts, shorten } from "./display.ts";
-import type { DisplayItem, ParallelDetails, ScoutDetails } from "./types.ts";
+import type { DisplayItem, ScoutDetails } from "./types.ts";
 
 type ScoutStatus = ScoutDetails["status"];
 type ScoutRunDetails = ScoutDetails["runs"][number];
 type ScoutToolResult = AgentToolResult<ScoutDetails>;
-type ParallelScoutsToolResult = AgentToolResult<ParallelDetails>;
 
 const SCOUT_STATUS_ICONS = {
   done: { color: "success", symbol: "✓" },
@@ -35,25 +34,6 @@ function getResultText(result: { content?: Array<{ type?: string; text?: string 
 
 function getScoutDetails(result: ScoutToolResult): ScoutDetails | undefined {
   return result.details;
-}
-
-function getParallelDetails(result: ParallelScoutsToolResult): ParallelDetails | undefined {
-  const details = result.details;
-  if (!details || typeof details !== "object") return undefined;
-
-  const parallelDetails = details as ParallelDetails & { parallelResults?: ParallelDetails["results"] };
-  const results = Array.isArray(parallelDetails.results)
-    ? parallelDetails.results
-    : Array.isArray(parallelDetails.parallelResults)
-      ? parallelDetails.parallelResults
-      : undefined;
-
-  if (parallelDetails.mode !== "parallel" || !results) return undefined;
-
-  return {
-    ...parallelDetails,
-    results,
-  };
 }
 
 const RUNNING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
@@ -453,128 +433,6 @@ export class ScoutCall implements Component {
     }
 
     return new Text(lines.join("\n"), 0, 0).render(width);
-  }
-}
-
-class ParallelScoutSectionComponent extends Container {
-  private spacer = new Spacer(1);
-  private titleText = new Text("", 0, 0);
-  private details = new ScoutDetailsComponent();
-
-  constructor() {
-    super();
-    this.addChild(this.spacer);
-    this.addChild(this.titleText);
-    this.addChild(this.details);
-  }
-
-  stop(): void {
-    this.details.stop();
-  }
-
-  update(
-    result: ParallelDetails["results"][number],
-    options: ToolRenderResultOptions,
-    theme: Theme,
-    requestRender?: () => void,
-  ): void {
-    const details = result.details;
-    const status = details?.status;
-    const run = details?.runs?.[0];
-    const titleStatus = status ? scoutStatusIcon(theme, status) : theme.fg("muted", "?");
-
-    if (!details || !status || !run) {
-      this.details.stop();
-      this.titleText.setText(`${titleStatus} ${theme.fg("toolTitle", theme.bold(result.scout))}`);
-      return;
-    }
-
-    const toolCount = (run.displayItems ?? []).filter((item) => item.type === "tool").length;
-    const duration = formatElapsed(run.startedAt, run.endedAt, options.isPartial && status === "running");
-    const title = `${titleStatus} ${theme.fg("toolTitle", theme.bold(result.scout))}${theme.fg("dim", ` • ${run.turns} turns • ${toolCount} tools • ${duration}`)}`;
-
-    this.titleText.setText(title);
-    this.details.update(details, status, run, options, theme, requestRender);
-  }
-}
-
-export class ParallelScoutsResult extends Container {
-  private summaryText = new Text("", 0, 0);
-  private sectionsContainer = new Container();
-  private sections = new Map<number, ParallelScoutSectionComponent>();
-  private fallback = new Text("", 0, 0);
-  private showingFallback = false;
-
-  constructor(
-    private result: ParallelScoutsToolResult,
-    private options: ToolRenderResultOptions,
-    private theme: Theme,
-  ) {
-    super();
-    this.addChild(this.summaryText);
-    this.addChild(this.sectionsContainer);
-    this.update(result, options, theme);
-  }
-
-  update(result: ParallelScoutsToolResult, options: ToolRenderResultOptions, theme: Theme, invalidate?: () => void): void {
-    this.result = result;
-    this.options = options;
-    this.theme = theme;
-
-    const details = getParallelDetails(this.result);
-    if (!details) {
-      for (const section of this.sections.values()) {
-        section.stop();
-      }
-      this.fallback.setText(getResultText(this.result));
-      if (!this.showingFallback) {
-        this.clear();
-        this.addChild(this.fallback);
-        this.showingFallback = true;
-      }
-      return;
-    }
-
-    let doneCount = 0;
-    for (const result of details.results) {
-      if (result.details?.status === "done") {
-        doneCount += 1;
-      }
-    }
-
-    this.summaryText.setText(
-      `${scoutStatusIcon(this.theme, details.status)} ${this.theme.fg("dim", `${doneCount}/${details.results.length} scouts completed`)}`,
-    );
-
-    this.sectionsContainer.clear();
-    for (let index = 0; index < details.results.length; index++) {
-      const sectionResult = details.results[index]!;
-      let section = this.sections.get(index);
-      if (!section) {
-        section = new ParallelScoutSectionComponent();
-        this.sections.set(index, section);
-      }
-      section.update(sectionResult, this.options, this.theme, invalidate);
-      this.sectionsContainer.addChild(section);
-    }
-
-    for (const key of [...this.sections.keys()]) {
-      if (key >= details.results.length) {
-        this.sections.get(key)?.stop();
-        this.sections.delete(key);
-      }
-    }
-
-    if (this.showingFallback) {
-      this.clear();
-      this.addChild(this.summaryText);
-      this.addChild(this.sectionsContainer);
-      this.showingFallback = false;
-    }
-  }
-
-  override invalidate(): void {
-    super.invalidate();
   }
 }
 

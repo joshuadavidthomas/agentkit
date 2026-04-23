@@ -33,19 +33,6 @@ export interface ScoutDetails {
   runs: ScoutRunDetails[];
 }
 
-interface ParallelScoutResult {
-  scout: string;
-  details: ScoutDetails;
-  content: Array<{ type: "text"; text: string }>;
-  isError: boolean;
-}
-
-export interface ParallelDetails {
-  mode: "parallel";
-  status: ScoutStatus;
-  results: ParallelScoutResult[];
-}
-
 export interface ScoutConfig {
   name: string;
   maxTurns: number;
