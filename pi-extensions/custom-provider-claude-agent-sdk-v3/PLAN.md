@@ -1,11 +1,11 @@
 # Plan: `custom-provider-claude-agent-sdk` (v3)
 
-A pi extension that registers a `claude-agent-sdk` provider, running Claude
-Code as the LLM backend via `@anthropic-ai/claude-agent-sdk`'s stable `query()`
-API. This is the third attempt — v1 got too sprawling, v2 was paused when the
-unstable `unstable_v2_createSession` API turned out to be too limited for our
-needs. v3 starts clean on the `feature/claude-agent-provider` branch with the
-lessons from v1, v2, and `pi-claude-bridge` baked in.
+A pi extension that currently registers a `claude-agent-sdk-v3` provider,
+running Claude Code as the LLM backend via `@anthropic-ai/claude-agent-sdk`'s
+stable `query()` API. This is the third attempt — v1 got too sprawling, v2 was
+paused when the unstable `unstable_v2_createSession` API turned out to be too
+limited for our needs. v3 starts clean on the `feature/claude-agent-provider`
+branch with the lessons from v1, v2, and `pi-claude-bridge` baked in.
 
 ## Background
 
@@ -65,7 +65,7 @@ loop and uses the SDK's own tool/runtime stack instead."
 
 ## Goals
 
-- Register a `claude-agent-sdk` provider in pi. Models: Sonnet 4.5, Opus 4.7.
+- Register a `claude-agent-sdk-v3` provider in pi during iteration. Models: Sonnet 4.5, Opus 4.7.
 - `streamSimple` runs Claude Code via the SDK, streams text/thinking/tool
   events back into pi, and surfaces pi's built-in tools to CC via an
   in-process MCP server (same pattern as `pi-claude-bridge`).
@@ -97,31 +97,32 @@ registration guards beyond the minimum pi already requires.
 **`ClaudeSession`** holds:
 - `piSessionId: string`
 - `sdkSessionId: string | null` (set after first successful query)
-- `syncedThroughEntryId: number | null` (for the persistence invariant)
+- `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
 - `lastClaudeModelId: string | null`
-- `mcpServer: ReturnType<typeof createSdkMcpServer>` (per-session so
-  `pendingToolCalls` state can't leak across sessions)
+- `sessionManager?: ContinuitySessionManager` for branch-aware handoff/reset checks
+- `activeQuery: ReturnType<typeof query> | null`
+- `currentStreamState: StreamState | null`
 - `pendingToolCalls: Map<string, PendingCall>`
-- `.send(opts)` runs one `query()` turn, adapts SDK stream → pi events
-- `.close()` tears down MCP bindings
+- `pendingResults: Map<string, CallToolResult>`
+- `turnToolCallIds: string[]` + `nextToolHandlerIndex` for matching SDK MCP handlers to streamed pi tool calls
+- `.prepareForTurn(pi)` builds fresh/delta pi-session handoff and resets stale branch state
+- `.close()` tears down active queries and resolves pending MCP handlers
 
 **Provider entry:**
-- `streamSimple({ model, messages, systemPrompt, tools, signal }, emit)`:
+- `streamSimple(model, context, options)`:
   1. Resolve or create `ClaudeSession` for current pi session.
-  2. Build SDK options: `resume: sdkSessionId ?? undefined`,
-     `systemPrompt: { type: "preset", preset: "claude_code", append:
-     callerSystemPrompt }` (append, don't replace),
-     `mcpServers: { "pi-tools": session.mcpServer }`,
-     `includePartialMessages: true`,
-     `allowedTools: toolsWhitelistFromPi(tools)`.
-  3. Iterate the AsyncGenerator, translate each SDK event to pi events.
-  4. On `system.init`, capture the new `sdkSessionId` and persist it.
+  2. If `session.activeQuery` exists, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers, and return without starting a new SDK query.
+  3. Otherwise build SDK options: `resume: sdkSessionId ?? undefined`, `systemPrompt: { type: "preset", preset: "claude_code", append: callerSystemPrompt }` (append, don't replace), `mcpServers: { "pi-tools": buildPiMcpServer(context.tools, ...) }`, `includePartialMessages: true`, `allowedTools: ["mcp__pi-tools__*"]`, `disallowedTools: DISALLOWED_BUILTIN_TOOLS`, `permissionMode: "bypassPermissions"`.
+  4. Iterate the AsyncGenerator in the background, translate each SDK event to pi events.
+  5. On `system.init`, capture the new `sdkSessionId` and persist it.
 
 **Tool bridge:** same shape as `pi-claude-bridge`'s MCP bridge, scoped per
-`ClaudeSession`. pi tools → MCP tools registered in `session.mcpServer`.
-Handler awaits a Promise, stores entry in `session.pendingToolCalls`,
-resolves when pi delivers the `toolResult` in the next `streamSimple`
-turn.
+`ClaudeSession`. pi tools → MCP tools registered in a per-query SDK MCP
+server. Handler awaits a Promise, stores entry in
+`session.pendingToolCalls`, and resolves when pi delivers the `toolResult`
+in the next `streamSimple` turn. Execution stays in pi's normal tool loop so
+permissions, tool rendering, extension hooks, persistence, and retries keep
+working.
 
 **Compaction:** pi calls `completeSimple(model, { systemPrompt:
 SUMMARIZATION_SYSTEM_PROMPT, messages: [...] }, ...)`. In our
@@ -155,36 +156,63 @@ pi-extensions/custom-provider-claude-agent-sdk-v3/
 
 ## Milestones
 
-- **M1 — Skeleton.** Register provider; `streamSimple` runs a fresh
+- **M1 — Skeleton. Done.** Register provider; `streamSimple` runs a fresh
   `query()` each call (no resume, no tools). Emits text/thinking/done.
   Enough to pick the provider in pi and get a streamed text reply.
-- **M2 — Session continuity.** Add `ClaudeSession` + persistence. Capture
-  `sdkSessionId` from `system.init`, `resume` on subsequent turns, store
-  via `appendEntry`, reconstruct on `SessionStartEvent`.
-- **M3 — Tool bridge.** Per-session MCP server, `pendingToolCalls` map,
-  SDK `mcp__pi-tools__*` tool calls → pi tool requests → pi tool results
-  → MCP handler resolution.
-- **M4 — Compaction.** Honor caller's `systemPrompt` as `append`. One-shot
-  fresh `query()` for summarization. `SessionCompactEvent` resets
+- **M2 — Session continuity. Done.** Add `ClaudeSession` + persistence.
+  Capture `sdkSessionId` from `system.init`, `resume` on subsequent turns,
+  store via `appendEntry`, reconstruct on `SessionStartEvent`, track
+  `syncedThroughEntryId`, reset on branch/tree mismatch, and build v3-native
+  fresh/delta handoff.
+- **M3 — Tool bridge. Implemented and smoke-verified.** Per-session query
+  state, SDK MCP server from pi tools, `pendingToolCalls` map, SDK
+  `mcp__pi-tools__*` tool calls → pi `toolcall_*` events → pi tool results
+  → MCP handler resolution. Verified with tmux/TUI for `read`, `bash`,
+  `write`, two parallel `read` calls, abort during `bash sleep 30`,
+  cross-restart resume after a tool turn, and JSONL invariants.
+- **M4 — Compaction. Next.** Honor caller's `systemPrompt` as `append`.
+  One-shot fresh `query()` for summarization. `SessionCompactEvent` resets
   `sdkSessionId` so the next turn starts a new SDK session.
-- **M5 — Scout co-existence.** Verify parent + scout both using this
-  provider in the same process works (different pi session ids → different
-  `ClaudeSession` entries → no shared state). The bug that kicked this
-  whole thing off.
-- **M6 — Polish.** `DISALLOWED_BUILTIN_TOOLS` pruning, model metadata,
-  `AskClaude`-style reentrancy guard if needed, README.
+- **M5 — Scout co-existence. Not yet verified.** Verify parent + scout both
+  using this provider in the same process works (different pi session ids →
+  different `ClaudeSession` entries → no shared state). The bug that kicked
+  this whole thing off.
+- **M6 — Polish. Remaining.** final provider naming/collapse, model
+  metadata, README, duplicate-load behavior, portability of Claude binary
+  resolution, schema conversion breadth, and any reentrancy guard if needed.
+
+## Verified so far
+
+M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
+
+- normal TUI tool rendering for `read`, `bash`, and `write`
+- same-process continuation after tool turns
+- cross-restart resume after a tool/write turn
+- two parallel `read` tool calls matched by `toolCallId`
+- abort during `bash sleep 30` produced an error `toolResult` and recovered on the next prompt
+- JSONL had matching tool calls/results, no orphan tool results, no missing tool results, and no old `claude-agent-sdk-provider` entries when v3 was loaded only once
+
+## Caveats / follow-ups
+
+- **Duplicate v3 load:** If v3 is installed globally and also passed via `-e`, pi loads two v3 instances. That produced duplicate v3 custom entries and reset/persist churn. Clean runs with only one v3 instance behaved correctly. Document or guard before final collapse.
+- **Old v1 provider still installed:** Clean v3 runs no longer write `claude-agent-sdk-provider`, but v1 remains present in the normal extension set until final replacement.
+- **Permission UX coverage is shallow:** `write` to `/tmp` worked and used normal pi tool rendering. A destructive/guarded edit/command should still be manually or tmux-tested for confirm/deny behavior.
+- **Abort coverage is partial:** Tested abort while a pi `bash` tool was running. Still untested: abort while Claude is streaming before a tool call, while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
+- **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
+- **Schema conversion is minimal:** TypeBox/JSON schema → Zod handles common object properties, arrays, enums, constants, and primitives. It does not deeply model nested object properties, oneOf/anyOf/allOf, nullable unions, numeric bounds, or string formats.
+- **Linux binary workaround:** v3 forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
+- **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
+- **Scout/subagent coexistence:** Not yet specifically verified.
+- **Compaction:** M4 remains unimplemented.
 
 ## Open questions
 
 - Can we avoid the `{ type: "preset", preset: "claude_code" }` preset
   entirely and pass a plain system prompt through? Preset gives us CC's
-  built-in tool prompts "for free" but also pulls in behaviors we might
-  not want. Leave as preset + append for M1; revisit in M6.
-- `includePartialMessages: true` vs streaming full messages — pi's UI
-  probably wants partials; confirm against `pi-coding-agent`'s event
-  contract in M1.
-- Does pi's `tools` param on `streamSimple` already include the full
-  current whitelist, or do we need to cross-reference with the extension
-  system? Check during M3.
-- Do we need an `ACTIVE_STREAM_SIMPLE_KEY`-style guard? Only if pi can
-  register the provider twice in one process. Defer until we see it.
+  built-in behavior "for free" but also pulls in behaviors we might not
+  want. Leave as preset + append for now; revisit in M6.
+- Do we need an `ACTIVE_STREAM_SIMPLE_KEY`-style guard or other duplicate-load
+  detection? Duplicate v3 loads can happen during ad hoc testing with `-e`.
+  Decide before final provider collapse.
+- Should complex tool schemas degrade to permissive `unknown` fields, or do we
+  need fuller JSON Schema → Zod conversion for custom tools?
