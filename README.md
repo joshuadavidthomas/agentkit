@@ -80,6 +80,12 @@ The generated prompt appears in the editor for review before starting the new se
 /handoff check other places that need this fix
 ```
 
+#### [kebab-command-aliases](./pi-extensions/kebab-command-aliases.ts)
+
+Personal command-palette hygiene shim. Some pi extensions register many top-level kebab-case slash commands, which can clutter `/` autocomplete. This keeps the original commands available, but hides the kebab variants from autocomplete and exposes them as grouped subcommands instead — for example, `/example-status` becomes `/example status`.
+
+This is a personal preference: it does not matter at all, except it really does when autocomplete is part of daily muscle memory. Rather than pester extension authors or maintain forks over taste, this shim makes pi behave the way I want locally. It monkey-patches pi internals to delegate grouped subcommands to the original command handlers, so it may break across pi releases. If the patch fails, it falls back to pi's default command list and shows a warning.
+
 #### [messages](./pi-extensions/messages.ts)
 
 Whimsical working messages while the agent thinks.
