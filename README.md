@@ -98,6 +98,10 @@ Desktop notifications when the agent finishes. Uses a cheap model to summarize w
 
 Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode. Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty.
 
+#### [pi-bash-log-cleanup](./pi-extensions/pi-bash-log-cleanup.ts)
+
+Silently removes stale `/tmp/pi-bash-*` full-output logs on session start and shutdown. This keeps Pi's truncated bash-output temp files from accumulating after sessions finish. Set `PI_BASH_LOG_CLEANUP_DEBUG=1` or `DEBUG=pi-bash-log-cleanup` to write cleanup activity to `~/.pi/agent/pi-bash-log-cleanup.log`.
+
 #### [peon-ping](./pi-extensions/peon-ping/)
 
 Sound notifications for pi using [peon-ping](https://github.com/PeonPing/peon-ping) / OpenPeon sound packs. Plays themed audio clips (Warcraft III Peon, GLaDOS, Duke Nukem, StarCraft, and more) on lifecycle events:
