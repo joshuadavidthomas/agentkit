@@ -21,5 +21,9 @@ export interface StreamState {
   output: AssistantMessage;
   stream: AssistantMessageEventStream;
   blockIndex: Map<number, number>;
+  toolJsonByIndex: Map<number, string>;
   finished: boolean;
+  started: boolean;
+  sawStreamEvent: boolean;
+  sawToolCall: boolean;
 }

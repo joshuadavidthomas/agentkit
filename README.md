@@ -50,7 +50,7 @@ Persists the SDK `session_id` inside the current pi session so later prompts res
 
 #### [custom-provider-claude-agent-sdk-v3](./pi-extensions/custom-provider-claude-agent-sdk-v3/)
 
-Third-pass Claude Agent SDK provider prototype using the SDK's stable `query()` API. It registers `claude-agent-sdk-v3`, streams no-tool Claude turns through pi, preserves pi's system prompt, and persists the SDK session id for later resume.
+Third-pass Claude Agent SDK provider prototype using the SDK's stable `query()` API. It registers `claude-agent-sdk-v3`, streams Claude turns through pi, bridges pi tools through an in-process SDK MCP server, preserves pi's system prompt, and persists the SDK session id for later resume.
 
 #### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 

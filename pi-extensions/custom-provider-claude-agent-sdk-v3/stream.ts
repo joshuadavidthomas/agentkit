@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { query, type SDKMessage, type SDKResultMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
@@ -13,9 +14,31 @@ import {
   type StopReason,
   type TextContent,
   type ThinkingContent,
+  type ToolCall,
 } from "@mariozechner/pi-ai";
 import { ClaudeSession } from "./session.js";
+import {
+  buildPiMcpServer,
+  createMcpTextResult,
+  DISALLOWED_BUILTIN_TOOLS,
+  extractToolResults,
+  MCP_SERVER_NAME,
+  MCP_TOOL_PREFIX,
+  stripMcpToolName,
+} from "./tools.js";
 import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
+
+const require = createRequire(import.meta.url);
+
+function resolveClaudeExecutable(): string | undefined {
+  if (process.platform !== "linux" || process.arch !== "x64") return undefined;
+
+  try {
+    return require.resolve("@anthropic-ai/claude-agent-sdk-linux-x64/claude");
+  } catch {
+    return undefined;
+  }
+}
 
 export function createEmptyOutput(model: Model<Api>): AssistantMessage {
   return {
@@ -35,6 +58,27 @@ export function createEmptyOutput(model: Model<Api>): AssistantMessage {
     stopReason: "stop",
     timestamp: Date.now(),
   };
+}
+
+function createStreamState(model: Model<Api>, stream: AssistantMessageEventStream): StreamState {
+  return {
+    model,
+    output: createEmptyOutput(model),
+    stream,
+    blockIndex: new Map(),
+    toolJsonByIndex: new Map(),
+    finished: false,
+    started: false,
+    sawStreamEvent: false,
+    sawToolCall: false,
+  };
+}
+
+function startStream(state: StreamState) {
+  if (state.started) return;
+
+  state.started = true;
+  state.stream.push({ type: "start", partial: state.output });
 }
 
 function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
@@ -113,39 +157,83 @@ function mapStopReason(reason: string | null): Extract<StopReason, "stop" | "len
   return "stop";
 }
 
-function updateUsage(model: Model<Api>, output: AssistantMessage, result: SDKResultMessage) {
-  const usage = result.usage as {
+function updateUsage(model: Model<Api>, output: AssistantMessage, result: SDKResultMessage | { usage?: unknown }) {
+  const usage = (result.usage ?? {}) as {
     input_tokens?: number;
     output_tokens?: number;
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;
   };
 
-  output.usage.input = usage.input_tokens ?? 0;
-  output.usage.output = usage.output_tokens ?? 0;
-  output.usage.cacheRead = usage.cache_read_input_tokens ?? 0;
-  output.usage.cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  output.usage.input = usage.input_tokens ?? output.usage.input;
+  output.usage.output = usage.output_tokens ?? output.usage.output;
+  output.usage.cacheRead = usage.cache_read_input_tokens ?? output.usage.cacheRead;
+  output.usage.cacheWrite = usage.cache_creation_input_tokens ?? output.usage.cacheWrite;
   output.usage.totalTokens =
     output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
   calculateCost(model, output.usage);
 }
 
-function handleStreamEvent(event: unknown, state: StreamState) {
+function parseToolArguments(partialJson: string, fallback: Record<string, unknown>): Record<string, unknown> {
+  if (!partialJson) return fallback;
+  try {
+    return JSON.parse(partialJson) as Record<string, unknown>;
+  } catch {
+    return fallback;
+  }
+}
+
+function finishStream(state: StreamState, reason: Extract<StopReason, "stop" | "length" | "toolUse">) {
+  if (state.finished) return;
+
+  startStream(state);
+  state.finished = true;
+  state.output.stopReason = reason;
+  state.stream.push({ type: "done", reason, message: state.output });
+  state.stream.end();
+}
+
+function finishToolUse(session: ClaudeSession, state: StreamState) {
+  state.sawToolCall = true;
+  finishStream(state, "toolUse");
+  session.detachStreamState(state);
+}
+
+function failStream(error: unknown, state: StreamState, aborted: boolean) {
+  if (state.finished) return;
+
+  startStream(state);
+  state.finished = true;
+  state.output.stopReason = aborted ? "aborted" : "error";
+  state.output.errorMessage = error instanceof Error ? error.message : String(error);
+  state.stream.push({ type: "error", reason: state.output.stopReason, error: state.output });
+  state.stream.end();
+}
+
+function handleStreamEvent(event: unknown, session: ClaudeSession, state: StreamState) {
   if (!event || typeof event !== "object") return;
 
+  state.sawStreamEvent = true;
   const streamEvent = event as {
     type?: string;
     index?: number;
-    content_block?: { type?: string };
-    delta?: { type?: string; text?: string; thinking?: string };
+    message?: { usage?: unknown };
+    content_block?: { type?: string; id?: string; name?: string; input?: Record<string, unknown> };
+    delta?: { type?: string; text?: string; thinking?: string; partial_json?: string; signature?: string; stop_reason?: string | null };
+    usage?: unknown;
   };
 
   if (streamEvent.type === "message_start") {
     state.blockIndex.clear();
+    state.toolJsonByIndex.clear();
+    session.resetToolCallIds();
+    if (streamEvent.message?.usage) updateUsage(state.model, state.output, streamEvent.message);
     return;
   }
 
   if (streamEvent.type === "content_block_start" && typeof streamEvent.index === "number") {
+    startStream(state);
+
     if (streamEvent.content_block?.type === "text") {
       state.output.content.push({ type: "text", text: "" });
       const contentIndex = state.output.content.length - 1;
@@ -159,6 +247,25 @@ function handleStreamEvent(event: unknown, state: StreamState) {
       const contentIndex = state.output.content.length - 1;
       state.blockIndex.set(streamEvent.index, contentIndex);
       state.stream.push({ type: "thinking_start", contentIndex, partial: state.output });
+      return;
+    }
+
+    if (streamEvent.content_block?.type === "tool_use") {
+      const toolCallId = streamEvent.content_block.id ?? `tool-${streamEvent.index}`;
+      const rawName = streamEvent.content_block.name ?? "tool";
+      const toolCall: ToolCall = {
+        type: "toolCall",
+        id: toolCallId,
+        name: stripMcpToolName(rawName),
+        arguments: streamEvent.content_block.input ?? {},
+      };
+      state.sawToolCall = true;
+      session.registerToolCallId(toolCallId);
+      state.output.content.push(toolCall);
+      const contentIndex = state.output.content.length - 1;
+      state.blockIndex.set(streamEvent.index, contentIndex);
+      state.toolJsonByIndex.set(streamEvent.index, "");
+      state.stream.push({ type: "toolcall_start", contentIndex, partial: state.output });
     }
     return;
   }
@@ -179,6 +286,20 @@ function handleStreamEvent(event: unknown, state: StreamState) {
       const delta = streamEvent.delta.thinking ?? "";
       block.thinking += delta;
       state.stream.push({ type: "thinking_delta", contentIndex, delta, partial: state.output });
+      return;
+    }
+
+    if (streamEvent.delta?.type === "signature_delta" && block?.type === "thinking") {
+      block.thinkingSignature = `${block.thinkingSignature ?? ""}${streamEvent.delta.signature ?? ""}`;
+      return;
+    }
+
+    if (streamEvent.delta?.type === "input_json_delta" && block?.type === "toolCall") {
+      const delta = streamEvent.delta.partial_json ?? "";
+      const partialJson = `${state.toolJsonByIndex.get(streamEvent.index) ?? ""}${delta}`;
+      state.toolJsonByIndex.set(streamEvent.index, partialJson);
+      block.arguments = parseToolArguments(partialJson, block.arguments);
+      state.stream.push({ type: "toolcall_delta", contentIndex, delta, partial: state.output });
     }
     return;
   }
@@ -192,13 +313,31 @@ function handleStreamEvent(event: unknown, state: StreamState) {
       state.stream.push({ type: "text_end", contentIndex, content: block.text, partial: state.output });
     } else if (block?.type === "thinking") {
       state.stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: state.output });
+    } else if (block?.type === "toolCall") {
+      block.arguments = parseToolArguments(state.toolJsonByIndex.get(streamEvent.index) ?? "", block.arguments);
+      state.stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial: state.output });
     }
+    return;
+  }
+
+  if (streamEvent.type === "message_delta") {
+    state.output.stopReason = mapStopReason(streamEvent.delta?.stop_reason ?? null);
+    if (streamEvent.usage) updateUsage(state.model, state.output, streamEvent);
+    return;
+  }
+
+  if (streamEvent.type === "message_stop" && state.sawToolCall) {
+    finishToolUse(session, state);
   }
 }
 
-function backfillAssistantContent(message: Extract<SDKMessage, { type: "assistant" }>, state: StreamState) {
-  const blocks = (message.message as { content?: unknown }).content;
+function backfillAssistantContent(message: Extract<SDKMessage, { type: "assistant" }>, session: ClaudeSession, state: StreamState) {
+  if (state.sawStreamEvent) return;
+
+  const blocks = (message.message as { content?: unknown; usage?: unknown }).content;
   if (!Array.isArray(blocks)) return;
+
+  session.resetToolCallIds();
 
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
@@ -218,14 +357,33 @@ function backfillAssistantContent(message: Extract<SDKMessage, { type: "assistan
         thinking: typeof item.thinking === "string" ? item.thinking : "",
         thinkingSignature: typeof item.signature === "string" ? item.signature : "",
       } as ThinkingContent);
+      continue;
     }
+
+    if (item.type === "tool_use") {
+      const toolCallId = typeof item.id === "string" ? item.id : `tool-${state.output.content.length}`;
+      const rawName = typeof item.name === "string" ? item.name : "tool";
+      const args = item.input && typeof item.input === "object" && !Array.isArray(item.input) ? item.input as Record<string, unknown> : {};
+      const toolCall: ToolCall = {
+        type: "toolCall",
+        id: toolCallId,
+        name: stripMcpToolName(rawName),
+        arguments: args,
+      };
+      state.sawToolCall = true;
+      session.registerToolCallId(toolCallId);
+      state.output.content.push(toolCall);
+    }
+  }
+
+  if (state.sawToolCall) {
+    finishToolUse(session, state);
   }
 }
 
-function completeFromResult(result: SDKResultMessage, state: StreamState) {
-  if (state.finished) return;
+function completeFromResult(result: SDKResultMessage, session: ClaudeSession, state: StreamState | null) {
+  if (!state || state.finished) return;
 
-  state.finished = true;
   updateUsage(state.model, state.output, result);
 
   if (result.is_error) {
@@ -235,8 +393,8 @@ function completeFromResult(result: SDKResultMessage, state: StreamState) {
     if (resultText && !state.output.content.some((block) => block.type === "text" && block.text === resultText)) {
       state.output.content.push({ type: "text", text: resultText });
     }
-    state.stream.push({ type: "error", reason: "error", error: state.output });
-    state.stream.end();
+    failStream(state.output.errorMessage, state, false);
+    session.detachStreamState(state);
     return;
   }
 
@@ -246,19 +404,8 @@ function completeFromResult(result: SDKResultMessage, state: StreamState) {
   }
 
   const doneReason = mapStopReason(result.stop_reason);
-  state.output.stopReason = doneReason;
-  state.stream.push({ type: "done", reason: doneReason, message: state.output });
-  state.stream.end();
-}
-
-function failStream(error: unknown, state: StreamState, aborted: boolean) {
-  if (state.finished) return;
-
-  state.finished = true;
-  state.output.stopReason = aborted ? "aborted" : "error";
-  state.output.errorMessage = error instanceof Error ? error.message : String(error);
-  state.stream.push({ type: "error", reason: state.output.stopReason, error: state.output });
-  state.stream.end();
+  finishStream(state, doneReason);
+  session.detachStreamState(state);
 }
 
 function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
@@ -288,6 +435,19 @@ function createAbortController(signal?: AbortSignal): AbortController {
   return abortController;
 }
 
+function attachState(session: ClaudeSession, model: Model<Api>, stream: AssistantMessageEventStream): StreamState {
+  const state = createStreamState(model, stream);
+  session.attachStreamState(state);
+  startStream(state);
+  return state;
+}
+
+function emitOrphanToolResult(stream: AssistantMessageEventStream, model: Model<Api>) {
+  const state = createStreamState(model, stream);
+  startStream(state);
+  queueMicrotask(() => finishStream(state, "stop"));
+}
+
 export function streamClaudeAgentSdk(
   pi: ExtensionAPI,
   session: ClaudeSession,
@@ -296,31 +456,53 @@ export function streamClaudeAgentSdk(
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
-  const state: StreamState = {
-    model,
-    output: createEmptyOutput(model),
-    stream,
-    blockIndex: new Map(),
-    finished: false,
-  };
 
-  stream.push({ type: "start", partial: state.output });
+  if (session.activeQuery) {
+    attachState(session, model, stream);
+    session.deliverToolResults(extractToolResults(context));
+    return stream;
+  }
+
+  if (context.messages[context.messages.length - 1]?.role === "toolResult") {
+    emitOrphanToolResult(stream, model);
+    return stream;
+  }
+
+  const state = attachState(session, model, stream);
 
   void (async () => {
     const abortController = createAbortController(options?.signal);
+    const mcpServer = buildPiMcpServer(context.tools, (toolName) => session.handleMcpToolCall(toolName));
+    let sdkQuery: ReturnType<typeof query> | undefined;
+
+    const abortPending = () => {
+      session.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
+      try {
+        sdkQuery?.close();
+      } catch {
+        // Ignore close failures.
+      }
+    };
+
+    if (options?.signal?.aborted) {
+      abortPending();
+    } else {
+      options?.signal?.addEventListener("abort", abortPending, { once: true });
+    }
 
     try {
       const prompt = mergePromptWithHandoff(extractLatestUserPrompt(context), session.prepareForTurn(pi));
-      const sdkQuery = query({
+      sdkQuery = query({
         prompt: toSdkPrompt(prompt),
         options: {
           abortController,
           cwd: process.cwd(),
+          pathToClaudeCodeExecutable: resolveClaudeExecutable(),
           model: model.id,
           resume: session.sdkSessionId ?? undefined,
-          tools: [],
-          allowedTools: [],
-          disallowedTools: [],
+          allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
+          disallowedTools: DISALLOWED_BUILTIN_TOOLS,
+          permissionMode: "bypassPermissions",
           includePartialMessages: true,
           settingSources: [],
           systemPrompt: {
@@ -329,8 +511,10 @@ export function streamClaudeAgentSdk(
             append: context.systemPrompt,
           },
           env: createSdkEnv(options?.apiKey),
+          ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
         },
       });
+      session.beginQuery(sdkQuery);
 
       for await (const message of sdkQuery) {
         const sdkSessionId = (message as { session_id?: unknown }).session_id;
@@ -338,29 +522,43 @@ export function streamClaudeAgentSdk(
           session.captureSdkSessionId(pi, sdkSessionId, model.id);
         }
 
+        const currentState = session.currentStreamState;
+        if (!currentState) continue;
+
         if (message.type === "stream_event") {
-          handleStreamEvent(message.event, state);
+          handleStreamEvent(message.event, session, currentState);
           continue;
         }
 
         if (message.type === "assistant") {
-          backfillAssistantContent(message, state);
+          backfillAssistantContent(message, session, currentState);
           continue;
         }
 
         if (message.type === "result") {
-          completeFromResult(message, state);
+          completeFromResult(message, session, currentState);
         }
       }
 
-      if (!state.finished) {
-        state.finished = true;
-        state.output.stopReason = "stop";
-        state.stream.push({ type: "done", reason: "stop", message: state.output });
-        state.stream.end();
+      const currentState = session.currentStreamState;
+      if (currentState && !currentState.finished) {
+        finishStream(currentState, "stop");
+        session.detachStreamState(currentState);
       }
     } catch (error) {
-      failStream(error, state, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+      const currentState = session.currentStreamState ?? state;
+      failStream(error, currentState, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+      session.detachStreamState(currentState);
+    } finally {
+      options?.signal?.removeEventListener("abort", abortPending);
+      if (sdkQuery) {
+        session.finishQuery(sdkQuery);
+        try {
+          sdkQuery.close();
+        } catch {
+          // Ignore close failures.
+        }
+      }
     }
   })();
 
