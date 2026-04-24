@@ -253,15 +253,23 @@ export default function (pi: ExtensionAPI) {
 		doExport(pi, ctx, false);
 	});
 
-	pi.on("session_before_switch", async (_event, ctx) => {
-		// Final export of the outgoing session before switching away
-		await doExport(pi, ctx, true);
-		gistId = null;
-		lastExportTime = 0;
+	pi.on("session_before_switch", (_event, ctx) => {
+		// Final export of the outgoing session before switching away.
+		// Fire-and-forget so session switching remains responsive.
+		void doExport(pi, ctx, true).finally(() => {
+			gistId = null;
+			lastExportTime = 0;
+		});
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
-		await doExport(pi, ctx, true);
+	pi.on("session_shutdown", async (event, ctx) => {
+		if (event.reason === "quit") {
+			await doExport(pi, ctx, true);
+			return;
+		}
+
+		// Fire-and-forget so session replacement/reload remains responsive.
+		void doExport(pi, ctx, true);
 	});
 
 	pi.registerCommand("auto-share", {
