@@ -25,12 +25,12 @@ const loadBeansContext = async (
   ctx: ExtensionContext,
 ): Promise<string | undefined> => {
   try {
-    const hasBeans = await pi.exec("which", ["beans"], { cwd: ctx.cwd });
-    if (hasBeans.code !== 0) return undefined;
-
     const configPath = path.join(ctx.cwd, BEANS_CONFIG);
     const hasConfig = await fileExists(configPath);
     if (!hasConfig) return undefined;
+
+    const hasBeans = await pi.exec("which", ["beans"], { cwd: ctx.cwd });
+    if (hasBeans.code !== 0) return undefined;
 
     const result = await pi.exec("beans", ["prime"], { cwd: ctx.cwd });
     if (result.code !== 0) return undefined;
@@ -45,13 +45,19 @@ const loadBeansContext = async (
 export default function (pi: ExtensionAPI) {
   let beansContext: string | undefined;
   let lastCompactionId: string | undefined;
+  let refreshGeneration = 0;
 
-  const refreshBeansContext = async (ctx: ExtensionContext) => {
-    beansContext = await loadBeansContext(pi, ctx);
+  const refreshBeansContext = async (ctx: ExtensionContext, generation: number) => {
+    const nextContext = await loadBeansContext(pi, ctx);
+    if (generation === refreshGeneration) {
+      beansContext = nextContext;
+    }
   };
 
-  pi.on("session_start", async (_event, ctx) => {
-    await refreshBeansContext(ctx);
+  pi.on("session_start", (_event, ctx) => {
+    beansContext = undefined;
+    const generation = ++refreshGeneration;
+    void refreshBeansContext(ctx, generation);
   });
 
   pi.on("before_agent_start", async (event) => {
