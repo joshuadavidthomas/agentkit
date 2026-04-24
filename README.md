@@ -184,6 +184,10 @@ Methodical approach to researching unfamiliar codebases using scout subagents.
 
 Patterns for building forms with shadcn-svelte and bits-ui. Covers Field.* component patterns, checkbox groups, radio groups, and form validation display.
 
+### [tmux](./skills/tmux/SKILL.md)
+
+Remote control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.
+
 ### Rust
 
 A suite of skills encoding idiomatic defaults and "think in Rust" principles for AI agents. These skills go beyond syntax to provide judgment on type-driven design, ownership strategies, and ecosystem-standard patterns.
@@ -252,6 +256,8 @@ Oracle and librarian scout design inspired by [Amp](https://ampcode.com/)'s agen
 Answer pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Messages pi extension from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
+
+Tmux skill from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff) (Apache 2.0, Armin Ronacher).
 
 Notify pi extension from [pi-coding-agent examples](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/examples/extensions) (MIT, Mario Zechner).
 
