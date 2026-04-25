@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   createAssistantMessageEventStream,
@@ -11,6 +11,7 @@ import {
   type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import { buildContextMessagesHandoff } from "./handoff.js";
+import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
@@ -26,7 +27,6 @@ import {
   handleClaudeStreamEvent,
   PiStreamState,
 } from "./pi-stream.js";
-import type { PromptBlock, PromptImageBlock, PromptTextBlock } from "./types.js";
 
 const require = createRequire(import.meta.url);
 
@@ -42,64 +42,6 @@ function resolveClaudeExecutable(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
-  for (let i = context.messages.length - 1; i >= 0; i--) {
-    const message = context.messages[i];
-    if (message.role !== "user") continue;
-
-    if (typeof message.content === "string") {
-      return message.content;
-    }
-
-    const blocks = message.content.flatMap<PromptBlock>((item) => {
-      if (item.type === "text") {
-        return [{ type: "text", text: item.text }];
-      }
-
-      if (item.type === "image") {
-        const mediaType = item.mimeType as PromptImageBlock["source"]["media_type"];
-        if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType)) {
-          return [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType,
-                data: item.data,
-              },
-            },
-          ];
-        }
-      }
-
-      return [];
-    });
-
-    if (blocks.length === 0) continue;
-
-    if (blocks.every((block): block is PromptTextBlock => block.type === "text")) {
-      return blocks.map((block) => block.text).join("\n");
-    }
-
-    return blocks;
-  }
-
-  throw new Error("No user prompt found in context");
-}
-
-function toSdkPrompt(prompt: string | PromptBlock[]): string | AsyncIterable<SDKUserMessage> {
-  if (typeof prompt === "string") return prompt;
-
-  return (async function* () {
-    yield {
-      type: "user",
-      message: { role: "user", content: prompt },
-      parent_tool_use_id: null,
-      shouldQuery: true,
-    } satisfies SDKUserMessage;
-  })();
 }
 
 function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
