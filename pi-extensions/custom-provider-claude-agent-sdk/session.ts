@@ -120,10 +120,6 @@ export class ClaudeSession {
     };
   }
 
-  sdkSessionIdForResume(): string | undefined {
-    return this.sdkSessionId ?? undefined;
-  }
-
   hasActiveQuery(): boolean {
     return Boolean(this.activeQuery);
   }
