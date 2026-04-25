@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { API_ID, DEFAULT_PROVIDER_MODELS, PROVIDER_ID } from "./constants.js";
+import { API_ID, PROVIDER_ID, PROVIDER_MODELS } from "./provider-config.js";
 import { loadSessionEntry } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
@@ -94,7 +94,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
     baseUrl: "https://api.anthropic.com",
     apiKey: "ANTHROPIC_API_KEY",
     api: API_ID,
-    models: DEFAULT_PROVIDER_MODELS,
+    models: PROVIDER_MODELS,
     streamSimple: (model, context, options) => {
       if (!options?.sessionId) {
         return streamClaudeAgentSdkOneShot(model, context, options);

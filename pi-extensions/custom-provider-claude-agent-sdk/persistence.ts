@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-export const SESSION_ENTRY_TYPE = "claude-agent-sdk-session";
+const SESSION_ENTRY_TYPE = "claude-agent-sdk-session";
 const LEGACY_V3_SESSION_ENTRY_TYPE = "claude-agent-sdk-v3-session";
 
 export function isClaudeAgentSdkSessionEntryType(customType: string | undefined): boolean {
@@ -20,11 +20,11 @@ interface SessionEntryLike {
   data?: unknown;
 }
 
-export interface SessionManagerLike {
+interface SessionBranchReader {
   getBranch(): SessionEntryLike[];
 }
 
-export function loadSessionEntry(sessionManager: SessionManagerLike): SessionEntryData {
+export function loadSessionEntry(sessionManager: SessionBranchReader): SessionEntryData {
   let data: SessionEntryData = {
     sdkSessionId: null,
     syncedThroughEntryId: null,

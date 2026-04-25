@@ -4,7 +4,7 @@ import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 export const PROVIDER_ID = "claude-agent-sdk";
 export const API_ID = "claude-agent-sdk";
 
-export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
+export const PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
   .filter((model) => model.id.startsWith("claude-"))
   .map((model) => ({
     id: model.id,
@@ -17,8 +17,8 @@ export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthrop
     maxTokens: model.maxTokens,
   }));
 
-const CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID: Partial<Record<string, string>> = {};
+const CLAUDE_CODE_MODEL_ID_OVERRIDES: Partial<Record<string, string>> = {};
 
 export function toClaudeCodeModelId(piModelId: string): string {
-  return CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID[piModelId] ?? piModelId;
+  return CLAUDE_CODE_MODEL_ID_OVERRIDES[piModelId] ?? piModelId;
 }

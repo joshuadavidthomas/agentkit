@@ -1,12 +1,12 @@
 import type { query } from "@anthropic-ai/claude-agent-sdk";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type ContinuitySessionManager } from "./continuity.js";
+import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, type SessionEntryData } from "./persistence.js";
 import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 import type { StreamState } from "./types.js";
 
-export type SdkQuery = ReturnType<typeof query>;
+type SdkQuery = ReturnType<typeof query>;
 
 interface PendingToolCall {
   toolName: string;
@@ -18,7 +18,7 @@ export class ClaudeSession {
   sdkSessionId: string | null;
   syncedThroughEntryId: string | null;
   lastClaudeModelId: string | null;
-  sessionManager: ContinuitySessionManager | undefined;
+  sessionManager: HandoffSessionReader | undefined;
   activeQuery: SdkQuery | null;
   currentStreamState: StreamState | null;
   pendingToolCalls: Map<string, PendingToolCall>;
@@ -26,7 +26,7 @@ export class ClaudeSession {
   turnToolCallIds: string[];
   nextToolHandlerIndex: number;
 
-  constructor(piSessionId: string, data?: Partial<SessionEntryData>, sessionManager?: ContinuitySessionManager) {
+  constructor(piSessionId: string, data?: Partial<SessionEntryData>, sessionManager?: HandoffSessionReader) {
     this.piSessionId = piSessionId;
     this.sdkSessionId = data?.sdkSessionId ?? null;
     this.syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
@@ -40,7 +40,7 @@ export class ClaudeSession {
     this.nextToolHandlerIndex = 0;
   }
 
-  setSessionManager(sessionManager: ContinuitySessionManager | undefined) {
+  setSessionManager(sessionManager: HandoffSessionReader | undefined) {
     this.sessionManager = sessionManager;
   }
 

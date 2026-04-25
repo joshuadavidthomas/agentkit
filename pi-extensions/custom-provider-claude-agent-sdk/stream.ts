@@ -12,12 +12,11 @@ import {
   type Model,
   type SimpleStreamOptions,
   type StopReason,
-  type TextContent,
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import { buildContextMessagesHandoff } from "./continuity.js";
-import { toClaudeCodeModelId } from "./constants.js";
+import { buildContextMessagesHandoff } from "./handoff.js";
+import { toClaudeCodeModelId } from "./provider-config.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
@@ -42,7 +41,7 @@ function resolveClaudeExecutable(): string | undefined {
   }
 }
 
-export function createEmptyOutput(model: Model<Api>): AssistantMessage {
+function createEmptyOutput(model: Model<Api>): AssistantMessage {
   return {
     role: "assistant",
     content: [],

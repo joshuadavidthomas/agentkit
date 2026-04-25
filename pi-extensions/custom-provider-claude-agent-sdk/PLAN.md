@@ -42,9 +42,8 @@ directory — but a few pieces are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
-- **`constants.ts`** (24 lines). Port `DEFAULT_PROVIDER_MODELS` (Sonnet 4.5
-  ctx 200k / maxTokens 64k; Opus 4.7 ctx 1M / maxTokens 128k). Rename
-  `PROVIDER_ID` to `claude-agent-sdk`.
+- **`provider-config.ts`**. Start from v2 provider/model config, then replace
+  the static model list with pi's built-in Anthropic model registry.
 - **`types.ts`** — port only the `PromptBlock` / `PromptTextBlock` /
   `PromptImageBlock` shapes (~10 lines). Everything else (`Turn`,
   `ExtensionBindings`) is tied to the unstable v2 SDK API and gets
@@ -67,7 +66,7 @@ loop and uses the SDK's own tool/runtime stack instead."
 
 ## Goals
 
-- Register a `claude-agent-sdk` provider in pi. Models: Sonnet 4.5, Opus 4.7.
+- Register a `claude-agent-sdk` provider in pi with Claude models mirrored from pi's built-in Anthropic registry.
 - `streamSimple` runs Claude Code via the SDK, streams text/thinking/tool
   events back into pi, and surfaces pi's built-in tools to CC via an
   in-process MCP server (same pattern as `pi-claude-bridge`).
@@ -101,7 +100,7 @@ registration guard for accidental same-process double loads.
 - `sdkSessionId: string | null` (set after first successful query)
 - `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
 - `lastClaudeModelId: string | null`
-- `sessionManager?: ContinuitySessionManager` for branch-aware handoff/reset checks
+- `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
 - `activeQuery: ReturnType<typeof query> | null`
 - `currentStreamState: StreamState | null`
 - `pendingToolCalls: Map<string, PendingCall>`
@@ -147,13 +146,13 @@ pi-extensions/custom-provider-claude-agent-sdk/
 ├── PLAN.md                 (this file)
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring)
-├── constants.ts            (PROVIDER_ID, DEFAULT_PROVIDER_MODELS — ported)
+├── provider-config.ts      (provider id, mirrored model list, model-id mapping)
 ├── types.ts                (PromptBlock + provider-specific types)
 ├── session.ts              (ClaudeSession class — written fresh)
 ├── stream.ts               (SDK event → pi event adapter)
 ├── tools.ts                (pi tools → MCP bridge)
-├── persistence.ts          (appendEntry helpers)
-└── compaction.ts           (one-shot summarization + post-compact reset)
+├── handoff.ts              (pi session/context handoff construction)
+└── persistence.ts          (appendEntry helpers)
 ```
 
 ## Milestones

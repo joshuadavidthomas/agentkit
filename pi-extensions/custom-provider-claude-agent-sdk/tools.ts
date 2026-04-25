@@ -45,7 +45,7 @@ export interface PiMcpResult extends CallToolResult {
   toolCallId?: string;
 }
 
-export type PiMcpToolHandler = (toolName: string) => Promise<CallToolResult>;
+type PiMcpToolHandler = (toolName: string) => Promise<CallToolResult>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

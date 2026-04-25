@@ -2,7 +2,7 @@ import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-
 import type { ClaudeSession } from "./session.js";
 import { isClaudeAgentSdkSessionEntryType } from "./persistence.js";
 
-export interface ContinuitySessionManager {
+export interface HandoffSessionReader {
   getBranch(): SessionEntry[];
   getEntries(): SessionEntry[];
 }
@@ -129,7 +129,7 @@ function findCurrentPromptIndex(branch: SessionEntry[]): number {
   return -1;
 }
 
-function buildFreshSeedHandoff(sessionManager: ContinuitySessionManager, currentPromptIndex: number): string | undefined {
+function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentPromptIndex: number): string | undefined {
   const branch = sessionManager.getBranch();
   const targetLeafId = currentPromptIndex > 0 ? branch[currentPromptIndex - 1]?.id ?? null : null;
   const visible = buildSessionContext(sessionManager.getEntries(), targetLeafId).messages;
@@ -139,7 +139,7 @@ function buildFreshSeedHandoff(sessionManager: ContinuitySessionManager, current
 }
 
 function buildDeltaHandoff(
-  sessionManager: ContinuitySessionManager,
+  sessionManager: HandoffSessionReader,
   branch: SessionEntry[],
   currentPromptIndex: number,
   syncedThroughEntryId: string,
@@ -167,13 +167,13 @@ function buildDeltaHandoff(
   return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
 }
 
-export function hasSyncedEntryOnCurrentBranch(sessionManager: ContinuitySessionManager, session: ClaudeSession): boolean {
+export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, session: ClaudeSession): boolean {
   if (!session.syncedThroughEntryId) return false;
   return sessionManager.getBranch().some((entry) => entry.id === session.syncedThroughEntryId);
 }
 
 export function buildPiSessionHandoff(
-  sessionManager: ContinuitySessionManager | undefined,
+  sessionManager: HandoffSessionReader | undefined,
   session: ClaudeSession,
 ): string | undefined {
   if (!sessionManager) return undefined;
