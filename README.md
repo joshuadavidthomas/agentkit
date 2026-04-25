@@ -44,9 +44,7 @@ Model definitions are sourced from [models.dev](https://models.dev) (65+ models)
 
 #### [custom-provider-claude-agent-sdk](./pi-extensions/custom-provider-claude-agent-sdk/)
 
-Custom provider that wraps Anthropic's Claude Agent SDK so you can keep using pi's TUI while Claude runs its own built-in tools and agent loop underneath. Registers the provider as `claude-agent-sdk`.
-
-Persists the SDK `session_id` inside the current pi session so later prompts resume the same Claude Agent session. Streams assistant text back through pi's provider pipeline and shows recent SDK tool activity in a widget using pi's built-in tool rendering components. Requires `ANTHROPIC_API_KEY`.
+Retired Claude Agent SDK provider kept in the repo for reference. `install.sh` does not symlink it into pi's extension directory.
 
 #### [custom-provider-claude-agent-sdk-v3](./pi-extensions/custom-provider-claude-agent-sdk-v3/)
 

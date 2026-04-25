@@ -16,6 +16,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
+import { buildContextMessagesHandoff } from "./continuity.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
@@ -448,6 +449,71 @@ function emitOrphanToolResult(stream: AssistantMessageEventStream, model: Model<
   queueMicrotask(() => finishStream(state, "stop"));
 }
 
+export function streamClaudeAgentSdkOneShot(
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  const session = new ClaudeSession("one-shot");
+  const state = attachState(session, model, stream);
+
+  void (async () => {
+    const abortController = createAbortController(options?.signal);
+    let sdkQuery: ReturnType<typeof query> | undefined;
+
+    try {
+      sdkQuery = query({
+        prompt: toSdkPrompt(extractLatestUserPrompt(context)),
+        options: {
+          abortController,
+          cwd: process.cwd(),
+          pathToClaudeCodeExecutable: resolveClaudeExecutable(),
+          model: model.id,
+          allowedTools: [],
+          disallowedTools: DISALLOWED_BUILTIN_TOOLS,
+          includePartialMessages: true,
+          settingSources: [],
+          systemPrompt: context.systemPrompt,
+          env: createSdkEnv(options?.apiKey),
+          tools: [],
+        },
+      });
+
+      for await (const message of sdkQuery) {
+        if (message.type === "stream_event") {
+          handleStreamEvent(message.event, session, state);
+          continue;
+        }
+
+        if (message.type === "assistant") {
+          backfillAssistantContent(message, session, state);
+          continue;
+        }
+
+        if (message.type === "result") {
+          completeFromResult(message, session, state);
+        }
+      }
+
+      if (!state.finished) {
+        finishStream(state, "stop");
+      }
+    } catch (error) {
+      failStream(error, state, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+    } finally {
+      session.close();
+      try {
+        sdkQuery?.close();
+      } catch {
+        // Ignore close failures.
+      }
+    }
+  })();
+
+  return stream;
+}
+
 export function streamClaudeAgentSdk(
   pi: ExtensionAPI,
   session: ClaudeSession,
@@ -491,7 +557,8 @@ export function streamClaudeAgentSdk(
     }
 
     try {
-      const prompt = mergePromptWithHandoff(extractLatestUserPrompt(context), session.prepareForTurn(pi));
+      const handoff = session.prepareForTurn(pi) ?? buildContextMessagesHandoff(context.messages);
+      const prompt = mergePromptWithHandoff(extractLatestUserPrompt(context), handoff);
       sdkQuery = query({
         prompt: toSdkPrompt(prompt),
         options: {

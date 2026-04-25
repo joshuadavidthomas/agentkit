@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { API_ID, DEFAULT_PROVIDER_MODELS, PROVIDER_ID } from "./constants.js";
 import { loadSessionEntry } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
-import { streamClaudeAgentSdk } from "./stream.js";
+import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
 const sessions = new Map<string, ClaudeSession>();
 
@@ -40,7 +40,9 @@ export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
   pi.on("session_compact", (_event, ctx) => {
     if (ctx.model?.provider !== PROVIDER_ID) return;
 
-    getCurrentSession(ctx)?.reset(pi);
+    const session = getCurrentSession(ctx);
+    session?.setSessionManager(ctx.sessionManager);
+    session?.reset(pi);
   });
 
   pi.on("session_tree", (_event, ctx) => {
@@ -68,8 +70,11 @@ export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
     api: API_ID,
     models: DEFAULT_PROVIDER_MODELS,
     streamSimple: (model, context, options) => {
-      const piSessionId = options?.sessionId ?? "ephemeral";
-      return streamClaudeAgentSdk(pi, getOrCreateSession(piSessionId), model, context, options);
+      if (!options?.sessionId) {
+        return streamClaudeAgentSdkOneShot(model, context, options);
+      }
+
+      return streamClaudeAgentSdk(pi, getOrCreateSession(options.sessionId), model, context, options);
     },
   });
 }

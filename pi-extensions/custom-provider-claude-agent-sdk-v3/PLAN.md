@@ -170,9 +170,12 @@ pi-extensions/custom-provider-claude-agent-sdk-v3/
   → MCP handler resolution. Verified with tmux/TUI for `read`, `bash`,
   `write`, two parallel `read` calls, abort during `bash sleep 30`,
   cross-restart resume after a tool turn, and JSONL invariants.
-- **M4 — Compaction. Next.** Honor caller's `systemPrompt` as `append`.
-  One-shot fresh `query()` for summarization. `SessionCompactEvent` resets
-  `sdkSessionId` so the next turn starts a new SDK session.
+- **M4 — Compaction. Implemented and smoke-verified.** `completeSimple`
+  calls without a pi `sessionId` run as fresh one-shot SDK `query()` calls
+  with no `resume`, no tools, and the caller's `systemPrompt` used directly
+  for isolated summarization. `SessionCompactEvent` resets `sdkSessionId`
+  and refreshes the session manager so the next turn starts a new SDK
+  session seeded from pi's compacted context/handoff.
 - **M5 — Scout co-existence. Not yet verified.** Verify parent + scout both
   using this provider in the same process works (different pi session ids →
   different `ClaudeSession` entries → no shared state). The bug that kicked
@@ -190,12 +193,15 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - cross-restart resume after a tool/write turn
 - two parallel `read` tool calls matched by `toolCallId`
 - abort during `bash sleep 30` produced an error `toolResult` and recovered on the next prompt
+- one-shot completion path returns isolated summaries/replies without resuming an SDK session
+- `/compact` resets the v3 SDK session and the next turn receives pi context handoff in the Claude transcript
+- post-compact continuity smoke test recalled `m4f-papaya, m4f-guava`
 - JSONL had matching tool calls/results, no orphan tool results, no missing tool results, and no old `claude-agent-sdk-provider` entries when v3 was loaded only once
 
 ## Caveats / follow-ups
 
 - **Duplicate v3 load:** If v3 is installed globally and also passed via `-e`, pi loads two v3 instances. That produced duplicate v3 custom entries and reset/persist churn. Clean runs with only one v3 instance behaved correctly. Document or guard before final collapse.
-- **Old v1 provider still installed:** Clean v3 runs no longer write `claude-agent-sdk-provider`, but v1 remains present in the normal extension set until final replacement.
+- **Old v1 provider still installed:** Clean v3 runs no longer write `claude-agent-sdk-provider`; v1's tree/compact handlers are now guarded so they do not append v1 state during v3 tree/compact events. v1 still remains present in the normal extension set until final replacement.
 - **Permission UX coverage is shallow:** `write` to `/tmp` worked and used normal pi tool rendering. A destructive/guarded edit/command should still be manually or tmux-tested for confirm/deny behavior.
 - **Abort coverage is partial:** Tested abort while a pi `bash` tool was running. Still untested: abort while Claude is streaming before a tool call, while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
 - **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
@@ -203,14 +209,11 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - **Linux binary workaround:** v3 forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
 - **Scout/subagent coexistence:** Not yet specifically verified.
-- **Compaction:** M4 remains unimplemented.
+- **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.
 
 ## Open questions
 
-- Can we avoid the `{ type: "preset", preset: "claude_code" }` preset
-  entirely and pass a plain system prompt through? Preset gives us CC's
-  built-in behavior "for free" but also pulls in behaviors we might not
-  want. Leave as preset + append for now; revisit in M6.
+- For normal turns, should we keep using `{ type: "preset", preset: "claude_code" }` plus append forever, or eventually move to a plainer prompt? M4 one-shot summarization already uses the caller's `systemPrompt` directly to avoid Claude Code repo/tool behavior polluting summaries.
 - Do we need an `ACTIVE_STREAM_SIMPLE_KEY`-style guard or other duplicate-load
   detection? Duplicate v3 loads can happen during ad hoc testing with `-e`.
   Decide before final provider collapse.

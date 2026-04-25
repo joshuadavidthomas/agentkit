@@ -46,15 +46,27 @@ fi
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
 
-# Extensions to skip (retired in favor of scouts)
-SKIP_EXTENSIONS="pi-subagents"
+# Extensions to skip (retired but kept in the repo for reference)
+SKIP_EXTENSIONS=(
+    "pi-subagents"
+    "custom-provider-claude-agent-sdk"
+    "custom-provider-claude-agent-sdk-v2"
+)
 
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
     mkdir -p "$PI_EXTENSIONS_DIR"
     for ext in "$PI_EXTENSIONS_SRC"/*; do
         [[ -e "$ext" ]] || continue
         ext_name=$(basename "$ext")
-        if echo "$SKIP_EXTENSIONS" | grep -qw "$ext_name"; then
+        skip_extension=false
+        for skipped in "${SKIP_EXTENSIONS[@]}"; do
+            if [[ "$ext_name" == "$skipped" ]]; then
+                skip_extension=true
+                break
+            fi
+        done
+
+        if [[ "$skip_extension" == true ]]; then
             # Remove stale symlink if it exists
             if [[ -L "$PI_EXTENSIONS_DIR/$ext_name" ]]; then
                 rm "$PI_EXTENSIONS_DIR/$ext_name"

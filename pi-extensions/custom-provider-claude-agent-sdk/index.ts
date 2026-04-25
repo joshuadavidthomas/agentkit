@@ -1368,18 +1368,23 @@ export default function claudeAgentProviderExtension(pi: ExtensionAPI) {
     clearTurn();
   });
 
-  pi.on("session_tree", (event) => {
+  pi.on("session_tree", (event, ctx) => {
     logDebug("session_tree", { oldLeafId: event.oldLeafId, newLeafId: event.newLeafId, fromExtension: event.fromExtension });
+    if (ctx.model?.provider !== PROVIDER_ID) return;
+
     invalidateClaudeLineage(pi, "session_tree");
   });
 
-  pi.on("session_compact", (event) => {
+  pi.on("session_compact", (event, ctx) => {
     logDebug("session_compact", {
       compactionEntryId: event.compactionEntry.id,
       fromExtension: event.fromExtension,
       hasLiveSession: Boolean(runtimeState.session),
       sdkSessionId: runtimeState.sdkSessionId,
+      currentProvider: ctx.model?.provider,
     });
+    if (ctx.model?.provider !== PROVIDER_ID) return;
+
     savePersistedState(runtimeState, pi, { syncedThroughEntryId: event.compactionEntry.id }, invalidateWidget);
   });
 

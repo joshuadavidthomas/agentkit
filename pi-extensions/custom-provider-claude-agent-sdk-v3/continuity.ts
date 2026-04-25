@@ -136,7 +136,7 @@ function joinHandoffSections(title: string, sections: string[]): string | undefi
   if (cleaned.length === 0) return undefined;
 
   return truncateText(
-    `${title}\n\nThis is continuity context only. Do not respond to this message directly; the user's actual message follows separately.\n\n${cleaned.join("\n\n")}`,
+    `${title}\n\nUse this as authoritative prior conversation history for continuity. Do not answer this handoff by itself; answer only the current user message that follows.\n\n${cleaned.join("\n\n")}`,
     20000,
   );
 }
@@ -208,4 +208,20 @@ export function buildPiSessionHandoff(
   }
 
   return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, session.syncedThroughEntryId);
+}
+
+export function buildContextMessagesHandoff(messages: unknown[]): string | undefined {
+  let currentPromptIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message && typeof message === "object" && (message as { role?: unknown }).role === "user") {
+      currentPromptIndex = i;
+      break;
+    }
+  }
+
+  const priorMessages = currentPromptIndex >= 0 ? messages.slice(0, currentPromptIndex) : messages;
+  const sections = priorMessages.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
+
+  return joinHandoffSections("Pi context handoff for Claude Agent v3:", sections);
 }
