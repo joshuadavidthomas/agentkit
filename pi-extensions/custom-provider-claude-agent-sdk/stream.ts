@@ -4,7 +4,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   createAssistantMessageEventStream,
   type Api,
-  type AssistantMessage,
   type AssistantMessageEventStream,
   type Context,
   type Model,
@@ -28,9 +27,9 @@ import {
   MCP_TOOL_PREFIX,
 } from "./tools.js";
 import {
-  backfillAssistantContent,
-  completeFromResult,
-  handleTurnEvent,
+  applyAssistantBackfill,
+  applyTurnEvent,
+  applyTurnResult,
   PiStreamState,
 } from "./pi-stream.js";
 
@@ -80,15 +79,15 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
 function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: PiStreamState): boolean {
   if (message.type === "stream_event") {
     const turnEvent = parseClaudeStreamEvent(message.event);
-    return turnEvent ? handleTurnEvent(turnEvent, state, session.toolCalls) : false;
+    return turnEvent ? applyTurnEvent(turnEvent, state, session.toolCalls) : false;
   }
 
   if (message.type === "assistant") {
-    return backfillAssistantContent(parseClaudeAssistantMessage(message), state, session.toolCalls);
+    return applyAssistantBackfill(parseClaudeAssistantMessage(message), state, session.toolCalls);
   }
 
   if (message.type === "result") {
-    return completeFromResult(parseClaudeResultMessage(message), state);
+    return applyTurnResult(parseClaudeResultMessage(message), state);
   }
 
   return false;

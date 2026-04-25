@@ -228,12 +228,12 @@ export class PiStreamState {
   }
 }
 
-export function handleTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+export function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   state.markStreamingContentReceived();
-  return applyTurnEvent(event, state, toolCalls);
+  return applyTurnEventToState(event, state, toolCalls);
 }
 
-export function backfillAssistantContent(
+export function applyAssistantBackfill(
   backfill: AssistantBackfill[],
   state: PiStreamState,
   toolCalls: ToolCallMatcher,
@@ -242,13 +242,13 @@ export function backfillAssistantContent(
 
   toolCalls.resetTurn();
   for (const item of backfill) {
-    applyAssistantBackfill(item, state, toolCalls);
+    applyAssistantBackfillItem(item, state, toolCalls);
   }
 
   return state.finishToolUseIfPresent();
 }
 
-export function completeFromResult(result: TurnResult, state: PiStreamState): boolean {
+export function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
   if (state.finished) return false;
 
   state.applyUsage(result.usage);
@@ -271,7 +271,7 @@ export function completeFromResult(result: TurnResult, state: PiStreamState): bo
   return true;
 }
 
-function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+function applyTurnEventToState(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   switch (event.type) {
     case "messageStarted":
       state.beginMessage(event.usage);
@@ -332,7 +332,7 @@ function applyBlockDelta(sourceBlockIndex: number, delta: TurnBlockDelta, state:
   }
 }
 
-function applyAssistantBackfill(item: AssistantBackfill, state: PiStreamState, toolCalls: ToolCallMatcher) {
+function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamState, toolCalls: ToolCallMatcher) {
   switch (item.type) {
     case "text":
       state.backfillText(item.text);
