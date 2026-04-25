@@ -11,10 +11,10 @@ import {
 import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
+import { createMcpTextResult } from "./tool-call-matcher.js";
 import { ClaudeTurn, ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
-  createMcpTextResult,
   DISALLOWED_BUILTIN_TOOLS,
   extractToolResults,
   MCP_SERVER_NAME,

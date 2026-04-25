@@ -1,5 +1,9 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createMcpTextResult, type PiMcpResult } from "./tools.js";
+import type { PiMcpResult } from "./tools.js";
+
+export function createMcpTextResult(text: string, isError = false): CallToolResult {
+  return { content: [{ type: "text", text }], isError };
+}
 
 interface PendingToolCall {
   resolve: (result: CallToolResult) => void;

@@ -1,6 +1,5 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { ClaudeSession } from "./session.js";
-import { isClaudeAgentSdkSessionEntryType } from "./persistence.js";
+import { isClaudeAgentSdkSessionEntryType, type SessionEntryData } from "./persistence.js";
 
 export interface HandoffSessionReader {
   getBranch(): SessionEntry[];
@@ -167,27 +166,25 @@ function buildDeltaHandoff(
   return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
 }
 
-export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, session: ClaudeSession): boolean {
-  const { syncedThroughEntryId } = session.continuityState();
-  if (!syncedThroughEntryId) return false;
-  return sessionManager.getBranch().some((entry) => entry.id === syncedThroughEntryId);
+export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionEntryData): boolean {
+  if (!continuity.syncedThroughEntryId) return false;
+  return sessionManager.getBranch().some((entry) => entry.id === continuity.syncedThroughEntryId);
 }
 
 export function buildPiSessionHandoff(
   sessionManager: HandoffSessionReader | undefined,
-  session: ClaudeSession,
+  continuity: SessionEntryData,
 ): string | undefined {
   if (!sessionManager) return undefined;
 
   const branch = sessionManager.getBranch();
   const currentPromptIndex = findCurrentPromptIndex(branch);
 
-  const { sdkSessionId, syncedThroughEntryId } = session.continuityState();
-  if (!sdkSessionId || !syncedThroughEntryId) {
+  if (!continuity.sdkSessionId || !continuity.syncedThroughEntryId) {
     return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
   }
 
-  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, syncedThroughEntryId);
+  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, continuity.syncedThroughEntryId);
 }
 
 export function buildContextMessagesHandoff(messages: unknown[]): string | undefined {

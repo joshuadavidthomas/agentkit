@@ -4,8 +4,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
-import { ToolCallMatcher } from "./tool-call-matcher.js";
-import { createMcpTextResult, type PiMcpResult } from "./tools.js";
+import { createMcpTextResult, ToolCallMatcher } from "./tool-call-matcher.js";
+import type { PiMcpResult } from "./tools.js";
 
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
@@ -250,12 +250,12 @@ export class ClaudeSession {
   prepareForTurn(): string | undefined {
     if (
       this.continuity.sdkSessionId &&
-      (!this.continuity.syncedThroughEntryId || !this.handoffReader || !hasSyncedEntryOnCurrentBranch(this.handoffReader, this))
+      (!this.continuity.syncedThroughEntryId || !this.handoffReader || !hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity))
     ) {
       this.resetContinuity();
     }
 
-    return buildPiSessionHandoff(this.handoffReader, this);
+    return buildPiSessionHandoff(this.handoffReader, this.continuity);
   }
 
   finishActiveTurn(turn: ClaudeTurn, sdkQuery: SdkQuery) {

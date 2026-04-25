@@ -132,10 +132,6 @@ export function stripMcpToolName(name: string): string {
   return name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
 }
 
-export function createMcpTextResult(text: string, isError = false): CallToolResult {
-  return { content: [{ type: "text", text }], isError };
-}
-
 function toolResultContentToMcpContent(content: unknown): CallToolResult["content"] {
   if (typeof content === "string") return [{ type: "text", text: content }];
   if (!Array.isArray(content)) return [{ type: "text", text: "" }];
