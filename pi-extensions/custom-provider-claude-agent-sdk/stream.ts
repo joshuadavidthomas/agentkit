@@ -409,7 +409,7 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
   return env;
 }
 
-const createBaseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
+const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
   abortController,
   cwd: process.cwd(),
   pathToClaudeCodeExecutable: resolveClaudeExecutable(),
@@ -479,7 +479,7 @@ export function streamClaudeAgentSdkOneShot(
       sdkQuery = query({
         prompt: toSdkPrompt(extractLatestUserPrompt(context)),
         options: {
-          ...createBaseQueryOptions(model, abortController, options?.apiKey),
+          ...baseQueryOptions(model, abortController, options?.apiKey),
           allowedTools: [],
           systemPrompt: context.systemPrompt,
           tools: [],
@@ -566,7 +566,7 @@ export function streamClaudeAgentSdk(
       sdkQuery = query({
         prompt: toSdkPrompt(prompt),
         options: {
-          ...createBaseQueryOptions(model, abortController, options?.apiKey),
+          ...baseQueryOptions(model, abortController, options?.apiKey),
           resume: session.sdkSessionId ?? undefined,
           allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
           permissionMode: "bypassPermissions",
