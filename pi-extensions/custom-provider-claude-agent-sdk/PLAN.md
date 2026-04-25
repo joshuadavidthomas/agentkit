@@ -1,11 +1,12 @@
-# Plan: `custom-provider-claude-agent-sdk` (v3)
+# Plan: `custom-provider-claude-agent-sdk`
 
 A pi extension that registers a `claude-agent-sdk` provider,
 running Claude Code as the LLM backend via `@anthropic-ai/claude-agent-sdk`'s
 stable `query()` API. This is the third attempt — v1 got too sprawling, v2 was
 paused when the unstable `unstable_v2_createSession` API turned out to be too
-limited for our needs. v3 starts clean on the `feature/claude-agent-provider`
-branch with the lessons from v1, v2, and `pi-claude-bridge` baked in.
+limited for our needs. This implementation started clean on the
+`feature/claude-agent-provider` branch with the lessons from v1, v2, and
+`pi-claude-bridge` baked in.
 
 ## Background
 
@@ -36,8 +37,8 @@ rewrite.
 ## What to port from v2
 
 v2 lives at `reference/pi-extensions/custom-provider-claude-agent-sdk-v2/`.
-We're not copying files wholesale — v3 is a fresh directory — but a few pieces
-are still good:
+We're not copying files wholesale — this implementation started as a fresh
+directory — but a few pieces are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
@@ -52,8 +53,8 @@ are still good:
 Do **not** port:
 
 - `session.ts` — built around `unstable_v2_createSession` /
-  `unstable_v2_resumeSession`. v3 uses the stable `query()` API with its
-  own `ClaudeSession` class.
+  `unstable_v2_resumeSession`. This provider uses the stable `query()` API
+  with its own `ClaudeSession` class.
 - `Turn` type from `types.ts` — tied to the unstable session handle shape.
 
 v1 at `reference/pi-extensions/custom-provider-claude-agent-sdk/` is a
@@ -85,7 +86,7 @@ loop and uses the SDK's own tool/runtime stack instead."
   custom-tools, etc. keep using whatever provider resolution they already
   have.
 - Not implementing the SDK's own compaction — we piggyback on pi's.
-- No widgets / UI components. v1 had a `components.ts`; skip it in v3 until
+- No widgets / UI components. v1 had a `components.ts`; skip it until
   something actually needs it.
 - No `extraArgs` passthrough in M1; add later if a real need shows up.
 
@@ -147,7 +148,7 @@ pi-extensions/custom-provider-claude-agent-sdk/
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring)
 ├── constants.ts            (PROVIDER_ID, DEFAULT_PROVIDER_MODELS — ported)
-├── types.ts                (PromptBlock + v3-specific types)
+├── types.ts                (PromptBlock + provider-specific types)
 ├── session.ts              (ClaudeSession class — written fresh)
 ├── stream.ts               (SDK event → pi event adapter)
 ├── tools.ts                (pi tools → MCP bridge)

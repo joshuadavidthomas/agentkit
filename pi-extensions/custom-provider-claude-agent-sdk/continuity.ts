@@ -1,32 +1,10 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { ClaudeSession } from "./session.js";
-import { SESSION_ENTRY_TYPE } from "./persistence.js";
+import { isClaudeAgentSdkSessionEntryType } from "./persistence.js";
 
 export interface ContinuitySessionManager {
   getBranch(): SessionEntry[];
   getEntries(): SessionEntry[];
-}
-
-function stringifyUnknown(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (value === null || value === undefined) return "";
-
-  if (Array.isArray(value)) {
-    return value.map((item) => stringifyUnknown(item)).filter(Boolean).join("\n");
-  }
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    if (typeof record.text === "string") return record.text;
-    if (typeof record.content === "string") return record.content;
-    if (Array.isArray(record.content)) return stringifyUnknown(record.content);
-    if (record.file && typeof record.file === "object") return stringifyUnknown(record.file);
-    if (record.results && Array.isArray(record.results)) return stringifyUnknown(record.results);
-    return JSON.stringify(value, null, 2);
-  }
-
-  return "";
 }
 
 function truncateText(text: string, maxChars: number): string {
@@ -174,7 +152,7 @@ function buildDeltaHandoff(
 
   const sections: string[] = [];
   for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
-    if (entry.type === "custom" && entry.customType === SESSION_ENTRY_TYPE) continue;
+    if (entry.type === "custom" && isClaudeAgentSdkSessionEntryType(entry.customType)) continue;
 
     const section = formatSessionEntryForHandoff(entry);
     if (!section) continue;

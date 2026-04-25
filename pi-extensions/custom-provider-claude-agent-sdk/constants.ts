@@ -17,9 +17,7 @@ export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthrop
     maxTokens: model.maxTokens,
   }));
 
-const CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID: Record<string, string> = Object.fromEntries(
-  DEFAULT_PROVIDER_MODELS.map((model) => [model.id, model.id]),
-);
+const CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID: Partial<Record<string, string>> = {};
 
 export function toClaudeCodeModelId(piModelId: string): string {
   return CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID[piModelId] ?? piModelId;
