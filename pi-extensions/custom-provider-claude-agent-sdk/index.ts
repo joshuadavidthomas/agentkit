@@ -37,11 +37,11 @@ type RuntimeSessionManager = HandoffSessionReader & {
   getLeafId(): string | null | undefined;
 };
 
-function claimProviderRuntime(): ClaudeAgentSdkRuntime | undefined {
+function claimProviderRuntime(pi: ExtensionAPI): ClaudeAgentSdkRuntime | undefined {
   const state = globalThis as RuntimeGlobal;
   if (state[ACTIVE_RUNTIME_KEY]) return undefined;
 
-  const runtime = new ClaudeAgentSdkRuntime();
+  const runtime = new ClaudeAgentSdkRuntime((data) => appendSessionEntry(pi, data));
   state[ACTIVE_RUNTIME_KEY] = runtime;
   return runtime;
 }
@@ -49,25 +49,29 @@ function claimProviderRuntime(): ClaudeAgentSdkRuntime | undefined {
 class ClaudeAgentSdkRuntime {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  streamSimple(pi: ExtensionAPI, model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
+  constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) {}
+
+  streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
     if (!options?.sessionId) {
       return streamClaudeAgentSdkOneShot(model, context, options);
     }
 
-    return streamClaudeAgentSdk(this.sessionForTurn(pi, options.sessionId), model, context, options);
+    return streamClaudeAgentSdk(this.sessionForTurn(options.sessionId), model, context, options);
   }
 
-  hydrateSession(pi: ExtensionAPI, sessionManager: RuntimeSessionManager): ClaudeSession {
+  hydrateSession(sessionManager: RuntimeSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistWith(pi));
+    this.sessions.get(piSessionId)?.close();
+
+    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
     return session;
   }
 
-  private sessionForTurn(pi: ExtensionAPI, piSessionId: string): ClaudeSession {
+  private sessionForTurn(piSessionId: string): ClaudeSession {
     let session = this.sessions.get(piSessionId);
     if (!session) {
-      session = new ClaudeSession(piSessionId, undefined, undefined, this.persistWith(pi));
+      session = new ClaudeSession(piSessionId, undefined, undefined, this.persistSessionEntry);
       this.sessions.set(piSessionId, session);
     }
     return session;
@@ -77,14 +81,10 @@ class ClaudeAgentSdkRuntime {
     return this.sessions.get(sessionManager.getSessionId());
   }
 
-  resetCurrentSession(sessionManager: RuntimeSessionManager) {
+  resetSessionForStructuralChange(sessionManager: RuntimeSessionManager) {
     const session = this.currentSession(sessionManager);
     session?.setSessionManager(sessionManager);
     session?.reset();
-  }
-
-  private persistWith(pi: ExtensionAPI) {
-    return (data: SessionEntryData) => appendSessionEntry(pi, data);
   }
 
   shutdownSession(piSessionId: string) {
@@ -106,11 +106,11 @@ class ClaudeAgentSdkRuntime {
 }
 
 export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
-  const runtime = claimProviderRuntime();
+  const runtime = claimProviderRuntime(pi);
   if (!runtime) return;
 
   pi.on("session_start", (event, ctx) => {
-    const session = runtime.hydrateSession(pi, ctx.sessionManager);
+    const session = runtime.hydrateSession(ctx.sessionManager);
 
     if ((event.reason === "new" || event.reason === "fork") && ctx.model?.provider === PROVIDER_ID) {
       session.reset();
@@ -123,12 +123,12 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
 
   pi.on("session_compact", (_event, ctx) => {
     if (ctx.model?.provider !== PROVIDER_ID) return;
-    runtime.resetCurrentSession(ctx.sessionManager);
+    runtime.resetSessionForStructuralChange(ctx.sessionManager);
   });
 
   pi.on("session_tree", (_event, ctx) => {
     if (ctx.model?.provider !== PROVIDER_ID) return;
-    runtime.resetCurrentSession(ctx.sessionManager);
+    runtime.resetSessionForStructuralChange(ctx.sessionManager);
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -153,6 +153,6 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
     apiKey: "ANTHROPIC_API_KEY",
     api: API_ID,
     models: PROVIDER_MODELS,
-    streamSimple: (model, context, options) => runtime.streamSimple(pi, model, context, options),
+    streamSimple: (model, context, options) => runtime.streamSimple(model, context, options),
   });
 }
