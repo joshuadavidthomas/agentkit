@@ -37,7 +37,7 @@ export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManage
 export class ClaudeSessionManager {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  constructor(private readonly persistSessionEntry: PersistSessionEntry) {}
+  constructor(private readonly persistSessionEntry: PersistSessionEntry) { }
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
@@ -84,91 +84,6 @@ export class ClaudeSessionManager {
       if (state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY] === this) {
         delete state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY];
       }
-    }
-  }
-}
-
-export class ClaudeTurn {
-  readonly toolCallMatcher = new ToolCallMatcher();
-
-  private activeQuery: SdkQuery | null = null;
-  private currentStreamState: PiStreamState | null = null;
-
-  constructor(streamState: PiStreamState) {
-    this.attachStreamState(streamState);
-  }
-
-  hasActiveQuery(): boolean {
-    return Boolean(this.activeQuery);
-  }
-
-  streamState(): PiStreamState | undefined {
-    return this.currentStreamState ?? undefined;
-  }
-
-  beginActiveQuery(sdkQuery: SdkQuery) {
-    this.activeQuery = sdkQuery;
-  }
-
-  finishActiveQuery(sdkQuery: SdkQuery): boolean {
-    if (this.activeQuery !== sdkQuery) return false;
-
-    this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
-    this.toolCallMatcher.clearQueuedResults();
-    this.activeQuery = null;
-    this.currentStreamState = null;
-    this.closeSdkQuery(sdkQuery);
-    return true;
-  }
-
-  attachStreamState(state: PiStreamState) {
-    this.currentStreamState = state;
-    state.start();
-  }
-
-  detachStreamState(state: PiStreamState) {
-    if (this.currentStreamState === state) {
-      this.currentStreamState = null;
-    }
-  }
-
-  handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    return this.toolCallMatcher.handleMcpToolCall(toolName);
-  }
-
-  deliverToolResults(results: PiMcpResult[]) {
-    this.toolCallMatcher.deliverToolResults(results);
-  }
-
-  resolvePendingToolCalls(result: CallToolResult) {
-    this.toolCallMatcher.resolvePendingToolCalls(result);
-  }
-
-  abort(message: string) {
-    const state = this.currentStreamState;
-    if (state && !state.finished) {
-      state.fail(message, true);
-    }
-
-    this.close("Session closed");
-  }
-
-  close(message = "Session closed") {
-    this.resolvePendingToolCalls(createMcpTextResult(message, true));
-    this.toolCallMatcher.clearQueuedResults();
-    this.currentStreamState = null;
-    this.toolCallMatcher.resetTurn();
-
-    const sdkQuery = this.activeQuery;
-    this.activeQuery = null;
-    this.closeSdkQuery(sdkQuery);
-  }
-
-  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
-    try {
-      sdkQuery?.close();
-    } catch {
-      // Ignore close failures.
     }
   }
 }
@@ -279,3 +194,89 @@ export class ClaudeSession {
     this.persistSessionEntry?.(this.continuityState());
   }
 }
+
+export class ClaudeTurn {
+  readonly toolCallMatcher = new ToolCallMatcher();
+
+  private activeQuery: SdkQuery | null = null;
+  private currentStreamState: PiStreamState | null = null;
+
+  constructor(streamState: PiStreamState) {
+    this.attachStreamState(streamState);
+  }
+
+  hasActiveQuery(): boolean {
+    return Boolean(this.activeQuery);
+  }
+
+  streamState(): PiStreamState | undefined {
+    return this.currentStreamState ?? undefined;
+  }
+
+  beginActiveQuery(sdkQuery: SdkQuery) {
+    this.activeQuery = sdkQuery;
+  }
+
+  finishActiveQuery(sdkQuery: SdkQuery): boolean {
+    if (this.activeQuery !== sdkQuery) return false;
+
+    this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
+    this.toolCallMatcher.clearQueuedResults();
+    this.activeQuery = null;
+    this.currentStreamState = null;
+    this.closeSdkQuery(sdkQuery);
+    return true;
+  }
+
+  attachStreamState(state: PiStreamState) {
+    this.currentStreamState = state;
+    state.start();
+  }
+
+  detachStreamState(state: PiStreamState) {
+    if (this.currentStreamState === state) {
+      this.currentStreamState = null;
+    }
+  }
+
+  handleMcpToolCall(toolName: string): Promise<CallToolResult> {
+    return this.toolCallMatcher.handleMcpToolCall(toolName);
+  }
+
+  deliverToolResults(results: PiMcpResult[]) {
+    this.toolCallMatcher.deliverToolResults(results);
+  }
+
+  resolvePendingToolCalls(result: CallToolResult) {
+    this.toolCallMatcher.resolvePendingToolCalls(result);
+  }
+
+  abort(message: string) {
+    const state = this.currentStreamState;
+    if (state && !state.finished) {
+      state.fail(message, true);
+    }
+
+    this.close("Session closed");
+  }
+
+  close(message = "Session closed") {
+    this.resolvePendingToolCalls(createMcpTextResult(message, true));
+    this.toolCallMatcher.clearQueuedResults();
+    this.currentStreamState = null;
+    this.toolCallMatcher.resetTurn();
+
+    const sdkQuery = this.activeQuery;
+    this.activeQuery = null;
+    this.closeSdkQuery(sdkQuery);
+  }
+
+  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+  }
+}
+
