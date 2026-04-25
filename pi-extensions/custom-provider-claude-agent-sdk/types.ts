@@ -40,10 +40,10 @@ export interface StreamState {
   readonly output: AssistantMessage;
   readonly stream: AssistantMessageEventStream;
   readonly finished: boolean;
-  readonly sawStreamEvent: boolean;
-  readonly sawToolCall: boolean;
 
-  markSawStreamEvent(): void;
+  markStreamingContentReceived(): void;
+  acceptsAssistantBackfill(): boolean;
+  finishToolUseIfPresent(): boolean;
   start(): void;
   finish(reason: FinishedStopReason): void;
   fail(error: unknown, aborted: boolean): void;

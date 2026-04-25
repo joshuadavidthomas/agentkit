@@ -25,8 +25,8 @@ class PiStreamState implements StreamState {
   private activeBlocks = new Map<number, ActiveBlock>();
   private started = false;
   private isFinished = false;
-  private didSeeStreamEvent = false;
-  private didSeeToolCall = false;
+  private streamEventsReceived = false;
+  private toolCallStarted = false;
 
   constructor(readonly model: Model<Api>, readonly stream: AssistantMessageEventStream) {
     this.output = {
@@ -52,16 +52,19 @@ class PiStreamState implements StreamState {
     return this.isFinished;
   }
 
-  get sawStreamEvent() {
-    return this.didSeeStreamEvent;
+  markStreamingContentReceived() {
+    this.streamEventsReceived = true;
   }
 
-  get sawToolCall() {
-    return this.didSeeToolCall;
+  acceptsAssistantBackfill() {
+    return !this.streamEventsReceived;
   }
 
-  markSawStreamEvent() {
-    this.didSeeStreamEvent = true;
+  finishToolUseIfPresent() {
+    if (!this.toolCallStarted) return false;
+
+    this.finish("toolUse");
+    return true;
   }
 
   start() {
@@ -136,7 +139,7 @@ class PiStreamState implements StreamState {
   }
 
   backfillToolCall(id: string, name: string, args: ToolCall["arguments"]) {
-    this.didSeeToolCall = true;
+    this.toolCallStarted = true;
     this.output.content.push({
       type: "toolCall",
       id,
@@ -195,7 +198,7 @@ class PiStreamState implements StreamState {
 
   beginToolCall({ sdkIndex, id, name, args }: StreamToolCallStart) {
     this.start();
-    this.didSeeToolCall = true;
+    this.toolCallStarted = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
     this.activeBlocks.set(sdkIndex, { type: "toolCall", contentIndex, partialJson: "" });
@@ -252,7 +255,7 @@ export function handleClaudeStreamEvent(event: ClaudeStreamEvent, session: Claud
   const providerEvent = parseClaudeStreamEvent(event);
   if (!providerEvent) return;
 
-  state.markSawStreamEvent();
+  state.markStreamingContentReceived();
   applyProviderStreamEvent(providerEvent, session, state);
 }
 
@@ -261,7 +264,7 @@ export function backfillAssistantContent(
   session: ClaudeSession,
   state: StreamState,
 ) {
-  if (state.sawStreamEvent) return;
+  if (!state.acceptsAssistantBackfill()) return;
 
   const blocks = (message.message as { content?: unknown; usage?: unknown }).content;
   if (!Array.isArray(blocks)) return;
@@ -293,8 +296,8 @@ export function backfillAssistantContent(
     }
   }
 
-  if (state.sawToolCall) {
-    finishToolUse(session, state);
+  if (state.finishToolUseIfPresent()) {
+    session.detachStreamState(state);
   }
 }
 
@@ -366,7 +369,9 @@ function applyProviderStreamEvent(event: ProviderStreamEvent, session: ClaudeSes
       state.applyUsage(event.usage);
       return;
     case "messageStop":
-      if (state.sawToolCall) finishToolUse(session, state);
+      if (state.finishToolUseIfPresent()) {
+        session.detachStreamState(state);
+      }
   }
 }
 
@@ -385,7 +390,3 @@ function parseToolArguments(partialJson: string, fallback: Record<string, unknow
   }
 }
 
-function finishToolUse(session: ClaudeSession, state: StreamState) {
-  state.finish("toolUse");
-  session.detachStreamState(state);
-}
