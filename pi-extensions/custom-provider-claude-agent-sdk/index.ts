@@ -59,7 +59,7 @@ class ClaudeSessionManager {
     return session;
   }
 
-  currentSession(sessionManager: { getSessionId(): string }): ClaudeSession | undefined {
+  currentSession(sessionManager: PiSessionManager): ClaudeSession | undefined {
     return this.sessions.get(sessionManager.getSessionId());
   }
 
