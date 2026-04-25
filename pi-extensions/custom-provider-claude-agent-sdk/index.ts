@@ -49,59 +49,7 @@ function claimProviderRuntime(): ClaudeAgentSdkRuntime | undefined {
 class ClaudeAgentSdkRuntime {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  install(pi: ExtensionAPI) {
-    pi.on("session_start", (event, ctx) => {
-      const session = this.hydrateSession(pi, ctx.sessionManager);
-
-      if ((event.reason === "new" || event.reason === "fork") && ctx.model?.provider === PROVIDER_ID) {
-        session.reset();
-      }
-    });
-
-    pi.on("session_shutdown", (_event, ctx) => {
-      this.closeSession(ctx.sessionManager.getSessionId());
-      if (this.sessions.size === 0) {
-        this.release();
-      }
-    });
-
-    pi.on("session_compact", (_event, ctx) => {
-      if (ctx.model?.provider !== PROVIDER_ID) return;
-      this.resetCurrentSession(ctx.sessionManager);
-    });
-
-    pi.on("session_tree", (_event, ctx) => {
-      if (ctx.model?.provider !== PROVIDER_ID) return;
-      this.resetCurrentSession(ctx.sessionManager);
-    });
-
-    pi.on("turn_end", (_event, ctx) => {
-      if (ctx.model?.provider !== PROVIDER_ID) return;
-
-      const leafId = ctx.sessionManager.getLeafId();
-      if (!leafId) return;
-
-      const session = this.currentSession(ctx.sessionManager);
-      session?.setSessionManager(ctx.sessionManager);
-      session?.markSyncedThrough(leafId);
-    });
-
-    pi.on("model_select", (event, ctx) => {
-      if (event.previousModel?.provider !== PROVIDER_ID || event.model.provider === PROVIDER_ID) return;
-
-      this.currentSession(ctx.sessionManager)?.abortActiveTurn("Claude Agent SDK request cancelled after switching models");
-    });
-
-    pi.registerProvider(PROVIDER_ID, {
-      baseUrl: "https://api.anthropic.com",
-      apiKey: "ANTHROPIC_API_KEY",
-      api: API_ID,
-      models: PROVIDER_MODELS,
-      streamSimple: (model, context, options) => this.streamSimple(pi, model, context, options),
-    });
-  }
-
-  private streamSimple(pi: ExtensionAPI, model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
+  streamSimple(pi: ExtensionAPI, model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
     if (!options?.sessionId) {
       return streamClaudeAgentSdkOneShot(model, context, options);
     }
@@ -109,7 +57,7 @@ class ClaudeAgentSdkRuntime {
     return streamClaudeAgentSdk(this.sessionForTurn(pi, options.sessionId), model, context, options);
   }
 
-  private hydrateSession(pi: ExtensionAPI, sessionManager: RuntimeSessionManager): ClaudeSession {
+  hydrateSession(pi: ExtensionAPI, sessionManager: RuntimeSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
     const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistWith(pi));
     this.sessions.set(piSessionId, session);
@@ -125,11 +73,11 @@ class ClaudeAgentSdkRuntime {
     return session;
   }
 
-  private currentSession(sessionManager: { getSessionId(): string }): ClaudeSession | undefined {
+  currentSession(sessionManager: { getSessionId(): string }): ClaudeSession | undefined {
     return this.sessions.get(sessionManager.getSessionId());
   }
 
-  private resetCurrentSession(sessionManager: RuntimeSessionManager) {
+  resetCurrentSession(sessionManager: RuntimeSessionManager) {
     const session = this.currentSession(sessionManager);
     session?.setSessionManager(sessionManager);
     session?.reset();
@@ -139,10 +87,14 @@ class ClaudeAgentSdkRuntime {
     return (data: SessionEntryData) => appendSessionEntry(pi, data);
   }
 
-  private closeSession(piSessionId: string) {
+  shutdownSession(piSessionId: string) {
     const session = this.sessions.get(piSessionId);
     session?.close();
     this.sessions.delete(piSessionId);
+
+    if (this.sessions.size === 0) {
+      this.release();
+    }
   }
 
   private release() {
@@ -157,5 +109,50 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   const runtime = claimProviderRuntime();
   if (!runtime) return;
 
-  runtime.install(pi);
+  pi.on("session_start", (event, ctx) => {
+    const session = runtime.hydrateSession(pi, ctx.sessionManager);
+
+    if ((event.reason === "new" || event.reason === "fork") && ctx.model?.provider === PROVIDER_ID) {
+      session.reset();
+    }
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    runtime.shutdownSession(ctx.sessionManager.getSessionId());
+  });
+
+  pi.on("session_compact", (_event, ctx) => {
+    if (ctx.model?.provider !== PROVIDER_ID) return;
+    runtime.resetCurrentSession(ctx.sessionManager);
+  });
+
+  pi.on("session_tree", (_event, ctx) => {
+    if (ctx.model?.provider !== PROVIDER_ID) return;
+    runtime.resetCurrentSession(ctx.sessionManager);
+  });
+
+  pi.on("turn_end", (_event, ctx) => {
+    if (ctx.model?.provider !== PROVIDER_ID) return;
+
+    const leafId = ctx.sessionManager.getLeafId();
+    if (!leafId) return;
+
+    const session = runtime.currentSession(ctx.sessionManager);
+    session?.setSessionManager(ctx.sessionManager);
+    session?.markSyncedThrough(leafId);
+  });
+
+  pi.on("model_select", (event, ctx) => {
+    if (event.previousModel?.provider !== PROVIDER_ID || event.model.provider === PROVIDER_ID) return;
+
+    runtime.currentSession(ctx.sessionManager)?.abortActiveTurn("Claude Agent SDK request cancelled after switching models");
+  });
+
+  pi.registerProvider(PROVIDER_ID, {
+    baseUrl: "https://api.anthropic.com",
+    apiKey: "ANTHROPIC_API_KEY",
+    api: API_ID,
+    models: PROVIDER_MODELS,
+    streamSimple: (model, context, options) => runtime.streamSimple(pi, model, context, options),
+  });
 }
