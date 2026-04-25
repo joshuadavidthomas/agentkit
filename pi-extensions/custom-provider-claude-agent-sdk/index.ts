@@ -53,7 +53,7 @@ class ClaudeSessionManager {
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    this.sessions.get(piSessionId)?.close();
+    this.currentSession(sessionManager)?.close();
 
     const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
