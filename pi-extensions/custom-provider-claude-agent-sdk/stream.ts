@@ -25,7 +25,7 @@ import {
   MCP_TOOL_PREFIX,
   stripMcpToolName,
 } from "./tools.js";
-import type { PromptBlock, PromptTextBlock, StreamState } from "./types.js";
+import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
 
 const require = createRequire(import.meta.url);
 
@@ -94,20 +94,20 @@ function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
         return [{ type: "text", text: item.text }];
       }
 
-      if (
-        item.type === "image" &&
-        (item.mimeType === "image/jpeg" || item.mimeType === "image/png" || item.mimeType === "image/gif" || item.mimeType === "image/webp")
-      ) {
-        return [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: item.mimeType,
-              data: item.data,
+      if (item.type === "image") {
+        const mediaType = item.mimeType as PromptImageBlock["source"]["media_type"];
+        if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType)) {
+          return [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: item.data,
+              },
             },
-          },
-        ];
+          ];
+        }
       }
 
       return [];
