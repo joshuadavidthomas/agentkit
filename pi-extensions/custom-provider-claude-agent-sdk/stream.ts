@@ -70,7 +70,7 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
 
 function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: PiStreamState): boolean {
   const update = parseClaudeMessage(message);
-  return update ? applyTurnUpdate(update, state, session.toolCalls) : false;
+  return update ? applyTurnUpdate(update, state, session.toolCallMatcher) : false;
 }
 
 function createAbortController(signal?: AbortSignal): AbortController {
@@ -146,7 +146,7 @@ async function runOneShotQuery(
   } catch (error) {
     state.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
   } finally {
-    session.close();
+    session.closeActiveTurn();
     try {
       sdkQuery?.close();
     } catch {
@@ -235,7 +235,7 @@ async function runSessionQuery(
         ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
       },
     });
-    session.beginQuery(sdkQuery);
+    session.beginActiveQuery(sdkQuery);
 
     for await (const message of sdkQuery) {
       const sdkSessionId = extractSessionId(message);
@@ -263,12 +263,7 @@ async function runSessionQuery(
   } finally {
     options?.signal?.removeEventListener("abort", abortPending);
     if (sdkQuery) {
-      session.finishQuery(sdkQuery);
-      try {
-        sdkQuery.close();
-      } catch {
-        // Ignore close failures.
-      }
+      session.finishActiveQuery(sdkQuery);
     }
   }
 }

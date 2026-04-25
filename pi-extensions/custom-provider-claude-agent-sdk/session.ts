@@ -10,6 +10,14 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
+function closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
+  try {
+    sdkQuery?.close();
+  } catch {
+    // Ignore close failures.
+  }
+}
+
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
 // The model registry is shared, so a later instance must not overwrite the
@@ -41,7 +49,7 @@ export class ClaudeSessionManager {
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    this.sessions.get(piSessionId)?.close();
+    this.sessions.get(piSessionId)?.closeActiveTurn();
 
     const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
@@ -65,7 +73,7 @@ export class ClaudeSessionManager {
   resetSessionForStructuralChange(sessionManager: PiSessionManager) {
     const session = this.currentSession(sessionManager);
     session?.setSessionManager(sessionManager);
-    session?.reset();
+    session?.resetContinuity();
   }
 
   markSessionSynced(sessionManager: PiSessionManager, leafId: string) {
@@ -76,7 +84,7 @@ export class ClaudeSessionManager {
 
   shutdownSession(piSessionId: string) {
     const session = this.sessions.get(piSessionId);
-    session?.close();
+    session?.closeActiveTurn();
     this.sessions.delete(piSessionId);
 
     if (this.sessions.size === 0) {
@@ -90,7 +98,7 @@ export class ClaudeSessionManager {
 
 export class ClaudeSession {
   readonly piSessionId: string;
-  readonly toolCalls = new ToolCallMatcher();
+  readonly toolCallMatcher = new ToolCallMatcher();
 
   private _sdkSessionId: string | null;
   private _syncedThroughEntryId: string | null;
@@ -151,8 +159,8 @@ export class ClaudeSession {
     this.persist();
   }
 
-  reset() {
-    this.close();
+  resetContinuity() {
+    this.closeActiveTurn();
     if (!this._sdkSessionId && !this._syncedThroughEntryId && !this._lastClaudeModelId) return;
 
     this._sdkSessionId = null;
@@ -163,23 +171,24 @@ export class ClaudeSession {
 
   prepareForTurn(): string | undefined {
     if (this._sdkSessionId && (!this._syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
-      this.reset();
+      this.resetContinuity();
     }
 
     return buildPiSessionHandoff(this.sessionManager, this);
   }
 
-  beginQuery(sdkQuery: SdkQuery) {
+  beginActiveQuery(sdkQuery: SdkQuery) {
     this._activeQuery = sdkQuery;
   }
 
-  finishQuery(sdkQuery: SdkQuery) {
+  finishActiveQuery(sdkQuery: SdkQuery) {
     if (this._activeQuery !== sdkQuery) return;
 
     this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
-    this.toolCalls.clearQueuedResults();
+    this.toolCallMatcher.clearQueuedResults();
     this._activeQuery = null;
     this._currentStreamState = null;
+    closeSdkQuery(sdkQuery);
   }
 
   attachStreamState(state: PiStreamState) {
@@ -193,15 +202,15 @@ export class ClaudeSession {
   }
 
   handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    return this.toolCalls.handleMcpToolCall(toolName);
+    return this.toolCallMatcher.handleMcpToolCall(toolName);
   }
 
   deliverToolResults(results: PiMcpResult[]) {
-    this.toolCalls.deliverToolResults(results);
+    this.toolCallMatcher.deliverToolResults(results);
   }
 
   resolvePendingToolCalls(result: CallToolResult) {
-    this.toolCalls.resolvePendingToolCalls(result);
+    this.toolCallMatcher.resolvePendingToolCalls(result);
   }
 
   abortActiveTurn(message: string) {
@@ -210,22 +219,18 @@ export class ClaudeSession {
       state.fail(message, true);
     }
 
-    this.close();
+    this.closeActiveTurn();
   }
 
-  close() {
+  closeActiveTurn() {
     this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
-    this.toolCalls.clearQueuedResults();
+    this.toolCallMatcher.clearQueuedResults();
     this._currentStreamState = null;
-    this.toolCalls.resetTurn();
+    this.toolCallMatcher.resetTurn();
 
     const sdkQuery = this._activeQuery;
     this._activeQuery = null;
-    try {
-      sdkQuery?.close();
-    } catch {
-      // Ignore close failures.
-    }
+    closeSdkQuery(sdkQuery);
   }
 
   private persist() {

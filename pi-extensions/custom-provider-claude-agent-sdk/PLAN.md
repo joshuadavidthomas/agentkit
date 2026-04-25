@@ -105,9 +105,9 @@ registration guard for accidental same-process double loads.
 - private `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
 - private `activeQuery: ReturnType<typeof query> | null`
 - private `currentStreamState: PiStreamState | null`
-- `toolCalls: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
+- `toolCallMatcher: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
 - `.prepareForTurn()` builds fresh/delta pi-session handoff and resets stale branch state
-- `.close()` tears down active queries and resolves pending MCP handlers
+- `.closeActiveTurn()` tears down active queries and resolves pending MCP handlers
 
 **Provider entry:**
 - `streamSimple(model, context, options)`:
@@ -137,7 +137,7 @@ tells us to reset `sdkSessionId` on the live `ClaudeSession` so the next
 **Persistence:** `pi.appendEntry<SessionEntry>(SESSION_ENTRY_TYPE,
 { sdkSessionId, syncedThroughEntryId, lastClaudeModelId })`. On
 `SessionStartEvent` we reconstruct `ClaudeSession` from the most recent
-entry (if any). On `SessionShutdownEvent` we `.close()`.
+entry (if any). On `SessionShutdownEvent` we `.closeActiveTurn()`.
 
 ## File layout
 

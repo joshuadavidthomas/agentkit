@@ -27,7 +27,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
     const session = claudeSessions.hydrateSession(ctx.sessionManager);
 
     if ((event.reason === "new" || event.reason === "fork") && ctx.model?.provider === PROVIDER_ID) {
-      session.reset();
+      session.resetContinuity();
     }
   });
 
