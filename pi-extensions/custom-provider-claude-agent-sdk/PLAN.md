@@ -106,7 +106,7 @@ registration guard for accidental same-process double loads.
 - private `activeQuery: ReturnType<typeof query> | null`
 - private `currentStreamState: PiStreamState | null`
 - `toolCalls: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
-- `.prepareForTurn(pi)` builds fresh/delta pi-session handoff and resets stale branch state
+- `.prepareForTurn()` builds fresh/delta pi-session handoff and resets stale branch state
 - `.close()` tears down active queries and resolves pending MCP handlers
 
 **Provider entry:**

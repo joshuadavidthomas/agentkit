@@ -2,7 +2,7 @@ import { getModels } from "@mariozechner/pi-ai";
 import type { Api, Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { HandoffSessionReader } from "./handoff.js";
-import { loadSessionEntry } from "./persistence.js";
+import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
@@ -55,25 +55,18 @@ function releaseProviderRuntime(runtime: ClaudeAgentSdkRuntime) {
 
 class ClaudeAgentSdkRuntime {
   private readonly sessions = new Map<string, ClaudeSession>();
-  private pi: ExtensionAPI | undefined;
 
   install(pi: ExtensionAPI) {
-    this.pi = pi;
     this.registerSessionLifecycle(pi);
     this.registerProvider(pi);
   }
 
-  private get installedPi(): ExtensionAPI {
-    if (!this.pi) throw new Error("Claude Agent SDK provider runtime is not installed");
-    return this.pi;
-  }
-
   private registerSessionLifecycle(pi: ExtensionAPI) {
     pi.on("session_start", (event, ctx) => {
-      const session = this.hydrateSession(ctx.sessionManager);
+      const session = this.hydrateSession(pi, ctx.sessionManager);
 
       if ((event.reason === "new" || event.reason === "fork") && ctx.model?.provider === PROVIDER_ID) {
-        session.reset(pi);
+        session.reset();
       }
     });
 
@@ -102,7 +95,7 @@ class ClaudeAgentSdkRuntime {
 
       const session = this.currentSession(ctx.sessionManager);
       session?.setSessionManager(ctx.sessionManager);
-      session?.markSyncedThrough(pi, leafId);
+      session?.markSyncedThrough(leafId);
     });
 
     pi.on("model_select", (event, ctx) => {
@@ -118,29 +111,29 @@ class ClaudeAgentSdkRuntime {
       apiKey: "ANTHROPIC_API_KEY",
       api: API_ID,
       models: PROVIDER_MODELS,
-      streamSimple: (model, context, options) => this.streamSimple(model, context, options),
+      streamSimple: (model, context, options) => this.streamSimple(pi, model, context, options),
     });
   }
 
-  private streamSimple(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
+  private streamSimple(pi: ExtensionAPI, model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
     if (!options?.sessionId) {
       return streamClaudeAgentSdkOneShot(model, context, options);
     }
 
-    return streamClaudeAgentSdk(this.installedPi, this.sessionForTurn(options.sessionId), model, context, options);
+    return streamClaudeAgentSdk(this.sessionForTurn(pi, options.sessionId), model, context, options);
   }
 
-  private hydrateSession(sessionManager: RuntimeSessionManager): ClaudeSession {
+  private hydrateSession(pi: ExtensionAPI, sessionManager: RuntimeSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager);
+    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistWith(pi));
     this.sessions.set(piSessionId, session);
     return session;
   }
 
-  private sessionForTurn(piSessionId: string): ClaudeSession {
+  private sessionForTurn(pi: ExtensionAPI, piSessionId: string): ClaudeSession {
     let session = this.sessions.get(piSessionId);
     if (!session) {
-      session = new ClaudeSession(piSessionId);
+      session = new ClaudeSession(piSessionId, undefined, undefined, this.persistWith(pi));
       this.sessions.set(piSessionId, session);
     }
     return session;
@@ -153,7 +146,11 @@ class ClaudeAgentSdkRuntime {
   private resetCurrentSession(sessionManager: RuntimeSessionManager) {
     const session = this.currentSession(sessionManager);
     session?.setSessionManager(sessionManager);
-    session?.reset(this.installedPi);
+    session?.reset();
+  }
+
+  private persistWith(pi: ExtensionAPI) {
+    return (data: SessionEntryData) => appendSessionEntry(pi, data);
   }
 
   private closeSession(piSessionId: string) {

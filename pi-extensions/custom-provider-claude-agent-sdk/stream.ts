@@ -1,6 +1,5 @@
 import { createRequire } from "node:module";
 import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   createAssistantMessageEventStream,
   type Api,
@@ -157,7 +156,6 @@ async function runOneShotQuery(
 }
 
 export function streamClaudeAgentSdk(
-  pi: ExtensionAPI,
   session: ClaudeSession,
   model: Model<Api>,
   context: Context,
@@ -180,13 +178,12 @@ export function streamClaudeAgentSdk(
 
   const state = attachState(session, model, stream);
 
-  void runSessionQuery(pi, session, state, model, context, options);
+  void runSessionQuery(session, state, model, context, options);
 
   return stream;
 }
 
 async function runSessionQuery(
-  pi: ExtensionAPI,
   session: ClaudeSession,
   state: PiStreamState,
   model: Model<Api>,
@@ -216,7 +213,7 @@ async function runSessionQuery(
   options?.signal?.addEventListener("abort", abortPending, { once: true });
 
   try {
-    const handoff = session.prepareForTurn(pi) ?? buildContextMessagesHandoff(context.messages);
+    const handoff = session.prepareForTurn() ?? buildContextMessagesHandoff(context.messages);
     let prompt = extractLatestUserPrompt(context);
     if (handoff) {
       const prefix = `${handoff}\n\nCurrent user message:\n`;
@@ -243,7 +240,7 @@ async function runSessionQuery(
     for await (const message of sdkQuery) {
       const sdkSessionId = extractSessionId(message);
       if (sdkSessionId) {
-        session.captureSdkSessionId(pi, sdkSessionId, model.id);
+        session.captureSdkSessionId(sdkSessionId, model.id);
       }
 
       const currentState = session.currentStreamState;

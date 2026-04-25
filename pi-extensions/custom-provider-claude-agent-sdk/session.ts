@@ -1,13 +1,13 @@
 import type { query } from "@anthropic-ai/claude-agent-sdk";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
-import { appendSessionEntry, type SessionEntryData } from "./persistence.js";
+import type { SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { ToolCallMatcher } from "./tool-call-matcher.js";
 import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 
 type SdkQuery = ReturnType<typeof query>;
+type PersistSessionEntry = (data: SessionEntryData) => void;
 
 export class ClaudeSession {
   readonly piSessionId: string;
@@ -20,7 +20,12 @@ export class ClaudeSession {
   private _activeQuery: SdkQuery | null = null;
   private _currentStreamState: PiStreamState | null = null;
 
-  constructor(piSessionId: string, data?: Partial<SessionEntryData>, sessionManager?: HandoffSessionReader) {
+  constructor(
+    piSessionId: string,
+    data?: Partial<SessionEntryData>,
+    sessionManager?: HandoffSessionReader,
+    private readonly persistSessionEntry?: PersistSessionEntry,
+  ) {
     this.piSessionId = piSessionId;
     this._sdkSessionId = data?.sdkSessionId ?? null;
     this._syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
@@ -52,34 +57,34 @@ export class ClaudeSession {
     this.sessionManager = sessionManager;
   }
 
-  captureSdkSessionId(pi: ExtensionAPI, sdkSessionId: string, claudeModelId: string) {
+  captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
     if (this._sdkSessionId === sdkSessionId && this._lastClaudeModelId === claudeModelId) return;
 
     this._sdkSessionId = sdkSessionId;
     this._lastClaudeModelId = claudeModelId;
-    this.persist(pi);
+    this.persist();
   }
 
-  markSyncedThrough(pi: ExtensionAPI, entryId: string) {
+  markSyncedThrough(entryId: string) {
     if (this._syncedThroughEntryId === entryId) return;
 
     this._syncedThroughEntryId = entryId;
-    this.persist(pi);
+    this.persist();
   }
 
-  reset(pi: ExtensionAPI) {
+  reset() {
     this.close();
     if (!this._sdkSessionId && !this._syncedThroughEntryId && !this._lastClaudeModelId) return;
 
     this._sdkSessionId = null;
     this._syncedThroughEntryId = null;
     this._lastClaudeModelId = null;
-    this.persist(pi);
+    this.persist();
   }
 
-  prepareForTurn(pi: ExtensionAPI): string | undefined {
+  prepareForTurn(): string | undefined {
     if (this._sdkSessionId && (!this._syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
-      this.reset(pi);
+      this.reset();
     }
 
     return buildPiSessionHandoff(this.sessionManager, this);
@@ -144,8 +149,8 @@ export class ClaudeSession {
     }
   }
 
-  private persist(pi: ExtensionAPI) {
-    appendSessionEntry(pi, {
+  private persist() {
+    this.persistSessionEntry?.({
       sdkSessionId: this._sdkSessionId,
       syncedThroughEntryId: this._syncedThroughEntryId,
       lastClaudeModelId: this._lastClaudeModelId,
