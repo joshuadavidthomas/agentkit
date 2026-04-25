@@ -10,6 +10,11 @@ import {
   type Model,
   type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
+import {
+  parseClaudeAssistantMessage,
+  parseClaudeResultMessage,
+  parseClaudeStreamEvent,
+} from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { ClaudeSession } from "./session.js";
@@ -24,7 +29,7 @@ import {
 import {
   backfillAssistantContent,
   completeFromResult,
-  handleClaudeStreamEvent,
+  handleTurnEvent,
   PiStreamState,
 } from "./pi-stream.js";
 
@@ -73,15 +78,16 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
 
 function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: PiStreamState): boolean {
   if (message.type === "stream_event") {
-    return handleClaudeStreamEvent(message.event, state, session.toolCalls);
+    const turnEvent = parseClaudeStreamEvent(message.event);
+    return turnEvent ? handleTurnEvent(turnEvent, state, session.toolCalls) : false;
   }
 
   if (message.type === "assistant") {
-    return backfillAssistantContent(message, state, session.toolCalls);
+    return backfillAssistantContent(parseClaudeAssistantMessage(message), state, session.toolCalls);
   }
 
   if (message.type === "result") {
-    return completeFromResult(message, state);
+    return completeFromResult(parseClaudeResultMessage(message), state);
   }
 
   return false;

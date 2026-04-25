@@ -1,4 +1,3 @@
-import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   calculateCost,
   type Api,
@@ -8,7 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import { parseClaudeStreamEvent, type ClaudeStreamEvent, type ProviderStreamEvent } from "./claude-stream-events.js";
+import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult } from "./claude-stream-events.js";
 import type { ToolCallMatcher } from "./tool-call-matcher.js";
 import { stripMcpToolName } from "./tools.js";
 import type { FinishedStopReason, StreamDelta, StreamSignature, StreamToolCallStart } from "./types.js";
@@ -147,16 +146,16 @@ export class PiStreamState {
     });
   }
 
-  beginTextBlock(sdkIndex: number) {
+  beginTextBlock(sourceBlockIndex: number) {
     this.start();
     this.output.content.push({ type: "text", text: "" });
     const contentIndex = this.output.content.length - 1;
-    this.activeBlocks.set(sdkIndex, { type: "text", contentIndex });
+    this.activeBlocks.set(sourceBlockIndex, { type: "text", contentIndex });
     this.stream.push({ type: "text_start", contentIndex, partial: this.output });
   }
 
-  appendTextDelta({ sdkIndex, delta }: StreamDelta) {
-    const active = this.activeBlocks.get(sdkIndex);
+  appendTextDelta({ sourceBlockIndex, delta }: StreamDelta) {
+    const active = this.activeBlocks.get(sourceBlockIndex);
     if (active?.type !== "text") return;
 
     const block = this.output.content[active.contentIndex];
@@ -166,16 +165,16 @@ export class PiStreamState {
     this.stream.push({ type: "text_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
 
-  beginThinkingBlock(sdkIndex: number) {
+  beginThinkingBlock(sourceBlockIndex: number) {
     this.start();
     this.output.content.push({ type: "thinking", thinking: "", thinkingSignature: "" } as ThinkingContent);
     const contentIndex = this.output.content.length - 1;
-    this.activeBlocks.set(sdkIndex, { type: "thinking", contentIndex });
+    this.activeBlocks.set(sourceBlockIndex, { type: "thinking", contentIndex });
     this.stream.push({ type: "thinking_start", contentIndex, partial: this.output });
   }
 
-  appendThinkingDelta({ sdkIndex, delta }: StreamDelta) {
-    const active = this.activeBlocks.get(sdkIndex);
+  appendThinkingDelta({ sourceBlockIndex, delta }: StreamDelta) {
+    const active = this.activeBlocks.get(sourceBlockIndex);
     if (active?.type !== "thinking") return;
 
     const block = this.output.content[active.contentIndex];
@@ -185,8 +184,8 @@ export class PiStreamState {
     this.stream.push({ type: "thinking_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
 
-  appendThinkingSignature({ sdkIndex, signature }: StreamSignature) {
-    const active = this.activeBlocks.get(sdkIndex);
+  appendThinkingSignature({ sourceBlockIndex, signature }: StreamSignature) {
+    const active = this.activeBlocks.get(sourceBlockIndex);
     if (active?.type !== "thinking") return;
 
     const block = this.output.content[active.contentIndex];
@@ -195,17 +194,17 @@ export class PiStreamState {
     }
   }
 
-  beginToolCall({ sdkIndex, id, name, args }: StreamToolCallStart) {
+  beginToolCall({ sourceBlockIndex, id, name, args }: StreamToolCallStart) {
     this.start();
     this.toolCallStarted = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
-    this.activeBlocks.set(sdkIndex, { type: "toolCall", contentIndex, partialJson: "" });
+    this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "" });
     this.stream.push({ type: "toolcall_start", contentIndex, partial: this.output });
   }
 
-  appendToolCallJson({ sdkIndex, delta }: StreamDelta) {
-    const active = this.activeBlocks.get(sdkIndex);
+  appendToolCallJson({ sourceBlockIndex, delta }: StreamDelta) {
+    const active = this.activeBlocks.get(sourceBlockIndex);
     if (active?.type !== "toolCall") return;
 
     const block = this.output.content[active.contentIndex];
@@ -216,12 +215,12 @@ export class PiStreamState {
     this.stream.push({ type: "toolcall_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
 
-  finishContentBlock(sdkIndex: number) {
-    const active = this.activeBlocks.get(sdkIndex);
+  finishContentBlock(sourceBlockIndex: number) {
+    const active = this.activeBlocks.get(sourceBlockIndex);
     if (!active) return;
 
     const block = this.output.content[active.contentIndex];
-    this.activeBlocks.delete(sdkIndex);
+    this.activeBlocks.delete(sourceBlockIndex);
 
     if (block?.type === "text") {
       this.stream.push({ type: "text_end", contentIndex: active.contentIndex, content: block.text, partial: this.output });
@@ -234,129 +233,124 @@ export class PiStreamState {
   }
 }
 
-export function handleClaudeStreamEvent(event: ClaudeStreamEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
-  const providerEvent = parseClaudeStreamEvent(event);
-  if (!providerEvent) return false;
-
+export function handleTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   state.markStreamingContentReceived();
-  return applyProviderStreamEvent(providerEvent, state, toolCalls);
+  return applyTurnEvent(event, state, toolCalls);
 }
 
 export function backfillAssistantContent(
-  message: Extract<SDKMessage, { type: "assistant" }>,
+  backfill: AssistantBackfill[],
   state: PiStreamState,
   toolCalls: ToolCallMatcher,
 ): boolean {
-  if (!state.acceptsAssistantBackfill()) return false;
-
-  const blocks = (message.message as { content?: unknown; usage?: unknown }).content;
-  if (!Array.isArray(blocks)) return false;
+  if (!state.acceptsAssistantBackfill() || backfill.length === 0) return false;
 
   toolCalls.resetTurn();
-
-  for (const block of blocks) {
-    if (!block || typeof block !== "object") continue;
-    const item = block as Record<string, unknown>;
-
-    if (item.type === "text" && typeof item.text === "string") {
-      state.backfillText(item.text);
-      continue;
-    }
-
-    if (item.type === "thinking") {
-      state.backfillThinking(
-        typeof item.thinking === "string" ? item.thinking : "",
-        typeof item.signature === "string" ? item.signature : "",
-      );
-      continue;
-    }
-
-    if (item.type === "tool_use") {
-      const toolCallId = typeof item.id === "string" ? item.id : `tool-${state.output.content.length}`;
-      const rawName = typeof item.name === "string" ? item.name : "tool";
-      state.backfillToolCall(toolCallId, stripMcpToolName(rawName), item.input as ToolCall["arguments"]);
-      toolCalls.register(toolCallId);
-    }
+  for (const item of backfill) {
+    applyAssistantBackfill(item, state, toolCalls);
   }
 
   return state.finishToolUseIfPresent();
 }
 
-export function completeFromResult(result: SDKResultMessage, state: PiStreamState | null): boolean {
+export function completeFromResult(result: TurnResult, state: PiStreamState | null): boolean {
   if (!state || state.finished) return false;
 
   state.applyUsage(result.usage);
 
-  if (result.is_error) {
-    const resultText = "result" in result && result.result.trim() ? result.result : undefined;
-    state.output.errorMessage = resultText ?? (result.subtype === "success" ? "Unknown Claude Agent SDK error" : result.errors.join("\n"));
-    if (resultText) {
-      state.backfillText(resultText);
+  if (result.type === "error") {
+    state.output.errorMessage = result.message;
+    if (result.text) {
+      state.backfillText(result.text);
     }
-    state.fail(state.output.errorMessage, false);
+    state.fail(result.message, false);
     return true;
   }
 
   const hasText = state.output.content.some((block) => block.type === "text" && block.text.trim().length > 0);
-  if (!hasText && "result" in result && result.result.trim()) {
-    state.backfillText(result.result);
+  if (!hasText && result.text) {
+    state.backfillText(result.text);
   }
 
-  state.finish(mapStopReason(result.stop_reason));
+  state.finish(result.stopReason);
   return true;
 }
 
-function applyProviderStreamEvent(event: ProviderStreamEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   switch (event.type) {
-    case "messageStart":
+    case "messageStarted":
       state.beginMessage(event.usage);
       toolCalls.resetTurn();
       return false;
-    case "textStart":
-      state.beginTextBlock(event.sdkIndex);
+    case "blockStarted":
+      applyBlockStart(event.block, state, toolCalls);
       return false;
-    case "textDelta":
-      state.appendTextDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
+    case "blockDelta":
+      applyBlockDelta(event.sourceBlockIndex, event.delta, state);
       return false;
-    case "thinkingStart":
-      state.beginThinkingBlock(event.sdkIndex);
+    case "blockFinished":
+      state.finishContentBlock(event.sourceBlockIndex);
       return false;
-    case "thinkingDelta":
-      state.appendThinkingDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
-      return false;
-    case "thinkingSignature":
-      state.appendThinkingSignature({ sdkIndex: event.sdkIndex, signature: event.signature });
-      return false;
-    case "toolCallStart": {
-      const toolCall = {
-        sdkIndex: event.sdkIndex,
-        id: event.id,
-        name: stripMcpToolName(event.rawName),
-        args: event.input as ToolCall["arguments"],
-      };
-      state.beginToolCall(toolCall);
-      toolCalls.register(toolCall.id);
-      return false;
-    }
-    case "toolCallDelta":
-      state.appendToolCallJson({ sdkIndex: event.sdkIndex, delta: event.delta });
-      return false;
-    case "contentBlockStop":
-      state.finishContentBlock(event.sdkIndex);
-      return false;
-    case "messageDelta":
-      state.setStopReason(mapStopReason(event.stopReason));
+    case "messageUpdated":
+      state.setStopReason(event.stopReason);
       state.applyUsage(event.usage);
       return false;
-    case "messageStop":
+    case "messageFinished":
       return state.finishToolUseIfPresent();
   }
 }
 
-function mapStopReason(reason: string | null): FinishedStopReason {
-  if (reason === "max_tokens") return "length";
-  if (reason === "tool_use") return "toolUse";
-  return "stop";
+function applyBlockStart(block: TurnBlockStart, state: PiStreamState, toolCalls: ToolCallMatcher) {
+  switch (block.kind) {
+    case "text":
+      state.beginTextBlock(block.sourceBlockIndex);
+      return;
+    case "thinking":
+      state.beginThinkingBlock(block.sourceBlockIndex);
+      return;
+    case "toolCall": {
+      const toolCall = {
+        sourceBlockIndex: block.sourceBlockIndex,
+        id: block.id,
+        name: stripMcpToolName(block.mcpToolName),
+        args: block.input as ToolCall["arguments"],
+      };
+      state.beginToolCall(toolCall);
+      toolCalls.register(toolCall.id);
+    }
+  }
+}
+
+function applyBlockDelta(sourceBlockIndex: number, delta: TurnBlockDelta, state: PiStreamState) {
+  switch (delta.kind) {
+    case "text":
+      state.appendTextDelta({ sourceBlockIndex, delta: delta.text });
+      return;
+    case "thinking":
+      state.appendThinkingDelta({ sourceBlockIndex, delta: delta.thinking });
+      return;
+    case "thinkingSignature":
+      state.appendThinkingSignature({ sourceBlockIndex, signature: delta.signature });
+      return;
+    case "toolInputJson":
+      state.appendToolCallJson({ sourceBlockIndex, delta: delta.partialJson });
+  }
+}
+
+function applyAssistantBackfill(item: AssistantBackfill, state: PiStreamState, toolCalls: ToolCallMatcher) {
+  switch (item.type) {
+    case "text":
+      state.backfillText(item.text);
+      return;
+    case "thinking":
+      state.backfillThinking(item.thinking, item.signature);
+      return;
+    case "toolCall": {
+      const name = stripMcpToolName(item.mcpToolName);
+      state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"]);
+      toolCalls.register(item.id);
+    }
+  }
 }
 
 function parseToolArguments(partialJson: string, fallback: Record<string, unknown>): Record<string, unknown> {
@@ -367,4 +361,3 @@ function parseToolArguments(partialJson: string, fallback: Record<string, unknow
     return fallback;
   }
 }
-

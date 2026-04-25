@@ -19,17 +19,17 @@ export type PromptBlock = PromptTextBlock | PromptImageBlock;
 export type FinishedStopReason = Extract<StopReason, "stop" | "length" | "toolUse">;
 
 export interface StreamDelta {
-  sdkIndex: number;
+  sourceBlockIndex: number;
   delta: string;
 }
 
 export interface StreamSignature {
-  sdkIndex: number;
+  sourceBlockIndex: number;
   signature: string;
 }
 
 export interface StreamToolCallStart {
-  sdkIndex: number;
+  sourceBlockIndex: number;
   id: string;
   name: string;
   args: ToolCall["arguments"];
