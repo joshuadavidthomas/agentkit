@@ -86,17 +86,13 @@ function createAbortController(signal?: AbortSignal): AbortController {
   return abortController;
 }
 
-function beginTurn(model: Model<Api>, stream: AssistantMessageEventStream): ClaudeActiveTurn {
-  return new ClaudeActiveTurn(new PiStreamState(model, stream));
-}
-
 export function streamClaudeAgentSdkOneShot(
   model: Model<Api>,
   context: Context,
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
-  const turn = beginTurn(model, stream);
+  const turn = new ClaudeActiveTurn(new PiStreamState(model, stream));
 
   void runOneShotQuery(turn, model, context, options);
 
