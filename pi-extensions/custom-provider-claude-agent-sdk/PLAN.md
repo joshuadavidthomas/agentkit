@@ -42,9 +42,10 @@ directory — but a few pieces are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
-- **`identity.ts` plus local model setup in `index.ts` / `stream.ts`**. Start
-  from v2 provider/model config, then replace the static model list with pi's
-  built-in Anthropic model registry.
+- **Provider identity plus local model setup in `index.ts` / `stream.ts`**.
+  Start from v2 provider/model config, then replace the static model list with
+  pi's built-in Anthropic model registry. Provider/API ids now live directly in
+  `index.ts`.
 - **`types.ts`** — port only the `PromptBlock` / `PromptTextBlock` /
   `PromptImageBlock` shapes (~10 lines). Everything else (`Turn`,
   `ExtensionBindings`) is tied to the unstable v2 SDK API and gets
@@ -96,44 +97,42 @@ loop and uses the SDK's own tool/runtime stack instead."
 No `sharedSession`. The only other module/global state is a defensive duplicate
 registration guard for accidental same-process double loads.
 
-**`ClaudeSession`** holds:
+**`ClaudeSession`** owns per-pi-session identity and query lifecycle:
 - `piSessionId: string`
-- `sdkSessionId: string | null` (set after first successful query)
-- `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
-- `lastClaudeModelId: string | null`
-- `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
-- `activeQuery: ReturnType<typeof query> | null`
-- `currentStreamState: StreamState | null`
-- `pendingToolCalls: Map<string, PendingCall>`
-- `pendingResults: Map<string, CallToolResult>`
-- `turnToolCallIds: string[]` + `nextToolHandlerIndex` for matching SDK MCP handlers to streamed pi tool calls
+- private `sdkSessionId: string | null` (set after first successful query)
+- private `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
+- private `lastClaudeModelId: string | null`
+- private `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
+- private `activeQuery: ReturnType<typeof query> | null`
+- private `currentStreamState: PiStreamState | null`
+- `toolCalls: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
 - `.prepareForTurn(pi)` builds fresh/delta pi-session handoff and resets stale branch state
 - `.close()` tears down active queries and resolves pending MCP handlers
 
 **Provider entry:**
 - `streamSimple(model, context, options)`:
   1. Resolve or create `ClaudeSession` for current pi session.
-  2. If `session.activeQuery` exists, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers, and return without starting a new SDK query.
+  2. If the session has an active SDK query, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers through `ToolCallMatcher`, and return without starting a new SDK query.
   3. Otherwise build SDK options: `resume: sdkSessionId ?? undefined`, `systemPrompt: { type: "preset", preset: "claude_code", append: callerSystemPrompt }` (append, don't replace), `mcpServers: { "pi-tools": buildPiMcpServer(context.tools, ...) }`, `includePartialMessages: true`, `allowedTools: ["mcp__pi-tools__*"]`, `disallowedTools: DISALLOWED_BUILTIN_TOOLS`, `permissionMode: "bypassPermissions"`.
-  4. Iterate the AsyncGenerator in the background, translate each SDK event to pi events.
-  5. On `system.init`, capture the new `sdkSessionId` and persist it.
+  4. Iterate the AsyncGenerator in the background, translate SDK stream events through `claude-stream-events.ts` into provider events, then apply them to `PiStreamState`.
+  5. When SDK messages expose a `session_id`, capture the new `sdkSessionId` and persist it.
 
 **Tool bridge:** same shape as `pi-claude-bridge`'s MCP bridge, scoped per
 `ClaudeSession`. pi tools → MCP tools registered in a per-query SDK MCP
-server. Handler awaits a Promise, stores entry in
-`session.pendingToolCalls`, and resolves when pi delivers the `toolResult`
-in the next `streamSimple` turn. Execution stays in pi's normal tool loop so
-permissions, tool rendering, extension hooks, persistence, and retries keep
-working.
+server. `ToolCallMatcher` records streamed tool-call ids in order, maps SDK MCP
+handler invocations to those ids, and resolves the handler promise when pi
+delivers the matching `toolResult` in the next `streamSimple` turn. Execution
+stays in pi's normal tool loop so permissions, tool rendering, extension hooks,
+persistence, and retries keep working.
 
 **Compaction:** pi calls `completeSimple(model, { systemPrompt:
 SUMMARIZATION_SYSTEM_PROMPT, messages: [...] }, ...)`. In our
 `completeSimple` implementation we do NOT reuse the current
 `ClaudeSession`; we run a one-shot fresh `query()` with an ephemeral
-session, honor the passed `systemPrompt` as `append`, return the summary
-text. Then on the next normal turn, `SessionCompactEvent` tells us to
-reset `sdkSessionId` on the live `ClaudeSession` so the next `query()`
-starts a new SDK session seeded with the summary as its first user turn.
+session, no tools, no `resume`, and the caller's `systemPrompt` used directly,
+then return the summary text. On the next normal turn, `SessionCompactEvent`
+tells us to reset `sdkSessionId` on the live `ClaudeSession` so the next
+`query()` starts a new SDK session seeded from pi's compacted context/handoff.
 
 **Persistence:** `pi.appendEntry<SessionEntry>(SESSION_ENTRY_TYPE,
 { sdkSessionId, syncedThroughEntryId, lastClaudeModelId })`. On
@@ -146,11 +145,14 @@ entry (if any). On `SessionShutdownEvent` we `.close()`.
 pi-extensions/custom-provider-claude-agent-sdk/
 ├── PLAN.md                 (this file)
 ├── package.json            (ported from v2, renamed)
-├── index.ts                (provider registration, event wiring)
-├── identity.ts             (provider id / api id)
-├── types.ts                (PromptBlock + provider-specific types)
-├── session.ts              (ClaudeSession class — written fresh)
-├── stream.ts               (SDK event → pi event adapter)
+├── index.ts                (provider registration, event wiring, provider/API ids)
+├── types.ts                (PromptBlock + small stream command types)
+├── prompt.ts               (pi context/user prompt → Claude SDK prompt)
+├── session.ts              (ClaudeSession identity/query lifecycle)
+├── tool-call-matcher.ts    (tool-call id ↔ MCP handler rendezvous)
+├── stream.ts               (Claude SDK query orchestration)
+├── claude-stream-events.ts (Claude SDK stream event → provider event)
+├── pi-stream.ts            (provider event/result → pi stream/message state)
 ├── tools.ts                (pi tools → MCP bridge)
 ├── handoff.ts              (pi session/context handoff construction)
 └── persistence.ts          (appendEntry helpers)
@@ -162,12 +164,12 @@ pi-extensions/custom-provider-claude-agent-sdk/
   `query()` each call (no resume, no tools). Emits text/thinking/done.
   Enough to pick the provider in pi and get a streamed text reply.
 - **M2 — Session continuity. Done.** Add `ClaudeSession` + persistence.
-  Capture `sdkSessionId` from `system.init`, `resume` on subsequent turns,
+  Capture `sdkSessionId` from SDK messages, `resume` on subsequent turns,
   store via `appendEntry`, reconstruct on `SessionStartEvent`, track
   `syncedThroughEntryId`, reset on branch/tree mismatch, and build provider-native
   fresh/delta handoff.
 - **M3 — Tool bridge. Implemented and smoke-verified.** Per-session query
-  state, SDK MCP server from pi tools, `pendingToolCalls` map, SDK
+  state, SDK MCP server from pi tools, `ToolCallMatcher`, SDK
   `mcp__pi-tools__*` tool calls → pi `toolcall_*` events → pi tool results
   → MCP handler resolution. Verified with tmux/TUI for `read`, `bash`,
   `write`, two parallel `read` calls, abort during `bash sleep 30`,
@@ -185,11 +187,14 @@ pi-extensions/custom-provider-claude-agent-sdk/
   stall. JSONL had matching finder tool call/result and no v1 custom entries.
 - **M6 — Polish. In progress.** Provider directory and public provider id have
   been collapsed to `custom-provider-claude-agent-sdk` / `claude-agent-sdk`.
-  Remaining polish: final regression, schema conversion breadth, and any
-  remaining reentrancy guard if needed. The
-  provider now mirrors pi's built-in Anthropic model list and passes those model
-  ids directly to Claude Code. A same-load duplicate registration guard now prevents the common installed
-  provider + explicit `-e` double-load case.
+  The provider now mirrors pi's built-in Anthropic model list and passes those
+  model ids directly to Claude Code. A same-load duplicate registration guard
+  prevents the common installed provider + explicit `-e` double-load case.
+  Recent polish split prompt marshalling, Claude stream parsing, pi stream
+  application, and tool-call matching into separate modules. Remaining polish:
+  re-evaluate the provider event layer, tighten the `ClaudeSession` API further,
+  final regression, schema conversion breadth, and any remaining reentrancy guard
+  if needed.
 
 ## Verified so far
 
