@@ -3,31 +3,49 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, type SessionEntryData } from "./persistence.js";
+import type { PiStreamState } from "./pi-stream.js";
 import { ToolCallMatcher } from "./tool-call-matcher.js";
 import { createMcpTextResult, type PiMcpResult } from "./tools.js";
-import type { PiStreamState } from "./pi-stream.js";
 
 type SdkQuery = ReturnType<typeof query>;
 
 export class ClaudeSession {
   readonly piSessionId: string;
-  sdkSessionId: string | null;
-  syncedThroughEntryId: string | null;
-  lastClaudeModelId: string | null;
-  sessionManager: HandoffSessionReader | undefined;
-  activeQuery: SdkQuery | null;
-  currentStreamState: PiStreamState | null;
-  toolCalls: ToolCallMatcher;
+  readonly toolCalls = new ToolCallMatcher();
+
+  private _sdkSessionId: string | null;
+  private _syncedThroughEntryId: string | null;
+  private _lastClaudeModelId: string | null;
+  private sessionManager: HandoffSessionReader | undefined;
+  private _activeQuery: SdkQuery | null = null;
+  private _currentStreamState: PiStreamState | null = null;
 
   constructor(piSessionId: string, data?: Partial<SessionEntryData>, sessionManager?: HandoffSessionReader) {
     this.piSessionId = piSessionId;
-    this.sdkSessionId = data?.sdkSessionId ?? null;
-    this.syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
-    this.lastClaudeModelId = data?.lastClaudeModelId ?? null;
+    this._sdkSessionId = data?.sdkSessionId ?? null;
+    this._syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
+    this._lastClaudeModelId = data?.lastClaudeModelId ?? null;
     this.sessionManager = sessionManager;
-    this.activeQuery = null;
-    this.currentStreamState = null;
-    this.toolCalls = new ToolCallMatcher();
+  }
+
+  get sdkSessionId() {
+    return this._sdkSessionId;
+  }
+
+  get syncedThroughEntryId() {
+    return this._syncedThroughEntryId;
+  }
+
+  get lastClaudeModelId() {
+    return this._lastClaudeModelId;
+  }
+
+  get activeQuery() {
+    return this._activeQuery;
+  }
+
+  get currentStreamState() {
+    return this._currentStreamState;
   }
 
   setSessionManager(sessionManager: HandoffSessionReader | undefined) {
@@ -35,32 +53,32 @@ export class ClaudeSession {
   }
 
   captureSdkSessionId(pi: ExtensionAPI, sdkSessionId: string, claudeModelId: string) {
-    if (this.sdkSessionId === sdkSessionId && this.lastClaudeModelId === claudeModelId) return;
+    if (this._sdkSessionId === sdkSessionId && this._lastClaudeModelId === claudeModelId) return;
 
-    this.sdkSessionId = sdkSessionId;
-    this.lastClaudeModelId = claudeModelId;
+    this._sdkSessionId = sdkSessionId;
+    this._lastClaudeModelId = claudeModelId;
     this.persist(pi);
   }
 
   markSyncedThrough(pi: ExtensionAPI, entryId: string) {
-    if (this.syncedThroughEntryId === entryId) return;
+    if (this._syncedThroughEntryId === entryId) return;
 
-    this.syncedThroughEntryId = entryId;
+    this._syncedThroughEntryId = entryId;
     this.persist(pi);
   }
 
   reset(pi: ExtensionAPI) {
     this.close();
-    if (!this.sdkSessionId && !this.syncedThroughEntryId && !this.lastClaudeModelId) return;
+    if (!this._sdkSessionId && !this._syncedThroughEntryId && !this._lastClaudeModelId) return;
 
-    this.sdkSessionId = null;
-    this.syncedThroughEntryId = null;
-    this.lastClaudeModelId = null;
+    this._sdkSessionId = null;
+    this._syncedThroughEntryId = null;
+    this._lastClaudeModelId = null;
     this.persist(pi);
   }
 
   prepareForTurn(pi: ExtensionAPI): string | undefined {
-    if (this.sdkSessionId && (!this.syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
+    if (this._sdkSessionId && (!this._syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
       this.reset(pi);
     }
 
@@ -68,25 +86,25 @@ export class ClaudeSession {
   }
 
   beginQuery(sdkQuery: SdkQuery) {
-    this.activeQuery = sdkQuery;
+    this._activeQuery = sdkQuery;
   }
 
   finishQuery(sdkQuery: SdkQuery) {
-    if (this.activeQuery !== sdkQuery) return;
+    if (this._activeQuery !== sdkQuery) return;
 
     this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
     this.toolCalls.clearQueuedResults();
-    this.activeQuery = null;
-    this.currentStreamState = null;
+    this._activeQuery = null;
+    this._currentStreamState = null;
   }
 
   attachStreamState(state: PiStreamState) {
-    this.currentStreamState = state;
+    this._currentStreamState = state;
   }
 
   detachStreamState(state: PiStreamState) {
-    if (this.currentStreamState === state) {
-      this.currentStreamState = null;
+    if (this._currentStreamState === state) {
+      this._currentStreamState = null;
     }
   }
 
@@ -103,7 +121,7 @@ export class ClaudeSession {
   }
 
   abortActiveTurn(message: string) {
-    const state = this.currentStreamState;
+    const state = this._currentStreamState;
     if (state && !state.finished) {
       state.fail(message, true);
     }
@@ -114,11 +132,11 @@ export class ClaudeSession {
   close() {
     this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
     this.toolCalls.clearQueuedResults();
-    this.currentStreamState = null;
+    this._currentStreamState = null;
     this.toolCalls.resetTurn();
 
-    const query = this.activeQuery;
-    this.activeQuery = null;
+    const query = this._activeQuery;
+    this._activeQuery = null;
     try {
       query?.close();
     } catch {
@@ -128,9 +146,9 @@ export class ClaudeSession {
 
   private persist(pi: ExtensionAPI) {
     appendSessionEntry(pi, {
-      sdkSessionId: this.sdkSessionId,
-      syncedThroughEntryId: this.syncedThroughEntryId,
-      lastClaudeModelId: this.lastClaudeModelId,
+      sdkSessionId: this._sdkSessionId,
+      syncedThroughEntryId: this._syncedThroughEntryId,
+      lastClaudeModelId: this._lastClaudeModelId,
     });
   }
 }
