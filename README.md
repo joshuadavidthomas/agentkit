@@ -44,7 +44,7 @@ Model definitions are sourced from [models.dev](https://models.dev) (65+ models)
 
 #### [custom-provider-claude-agent-sdk](./pi-extensions/custom-provider-claude-agent-sdk/)
 
-Third-pass Claude Agent SDK provider prototype using the SDK's stable `query()` API. It currently registers `claude-agent-sdk-v3`, streams Claude turns through pi, bridges pi tools through an in-process SDK MCP server, preserves pi's system prompt, and persists the SDK session id for later resume.
+Claude Agent SDK provider using the SDK's stable `query()` API. It registers `claude-agent-sdk`, streams Claude turns through pi, bridges pi tools through an in-process SDK MCP server, preserves pi's system prompt, and persists the SDK session id for later resume.
 
 Retired first and second Claude Agent SDK provider attempts are archived under [`reference/pi-extensions/`](./reference/pi-extensions/) and are not installed by `install.sh`.
 

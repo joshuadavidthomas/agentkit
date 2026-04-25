@@ -1,6 +1,6 @@
 # Plan: `custom-provider-claude-agent-sdk` (v3)
 
-A pi extension that currently registers a `claude-agent-sdk-v3` provider,
+A pi extension that registers a `claude-agent-sdk` provider,
 running Claude Code as the LLM backend via `@anthropic-ai/claude-agent-sdk`'s
 stable `query()` API. This is the third attempt — v1 got too sprawling, v2 was
 paused when the unstable `unstable_v2_createSession` API turned out to be too
@@ -43,7 +43,7 @@ are still good:
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
 - **`constants.ts`** (24 lines). Port `DEFAULT_PROVIDER_MODELS` (Sonnet 4.5
   ctx 200k / maxTokens 64k; Opus 4.7 ctx 1M / maxTokens 128k). Rename
-  `PROVIDER_ID` to `claude-agent-sdk-v3`.
+  `PROVIDER_ID` to `claude-agent-sdk`.
 - **`types.ts`** — port only the `PromptBlock` / `PromptTextBlock` /
   `PromptImageBlock` shapes (~10 lines). Everything else (`Turn`,
   `ExtensionBindings`) is tied to the unstable v2 SDK API and gets
@@ -66,7 +66,7 @@ loop and uses the SDK's own tool/runtime stack instead."
 
 ## Goals
 
-- Register a `claude-agent-sdk-v3` provider in pi during iteration. Models: Sonnet 4.5, Opus 4.7.
+- Register a `claude-agent-sdk` provider in pi. Models: Sonnet 4.5, Opus 4.7.
 - `streamSimple` runs Claude Code via the SDK, streams text/thinking/tool
   events back into pi, and surfaces pi's built-in tools to CC via an
   in-process MCP server (same pattern as `pi-claude-bridge`).
@@ -163,7 +163,7 @@ pi-extensions/custom-provider-claude-agent-sdk/
 - **M2 — Session continuity. Done.** Add `ClaudeSession` + persistence.
   Capture `sdkSessionId` from `system.init`, `resume` on subsequent turns,
   store via `appendEntry`, reconstruct on `SessionStartEvent`, track
-  `syncedThroughEntryId`, reset on branch/tree mismatch, and build v3-native
+  `syncedThroughEntryId`, reset on branch/tree mismatch, and build provider-native
   fresh/delta handoff.
 - **M3 — Tool bridge. Implemented and smoke-verified.** Per-session query
   state, SDK MCP server from pi tools, `pendingToolCalls` map, SDK
@@ -177,14 +177,15 @@ pi-extensions/custom-provider-claude-agent-sdk/
   for isolated summarization. `SessionCompactEvent` resets `sdkSessionId`
   and refreshes the session manager so the next turn starts a new SDK
   session seeded from pi's compacted context/handoff.
-- **M5 — Scout co-existence. Smoke-verified.** Verified parent v3 session
+- **M5 — Scout co-existence. Smoke-verified.** Verified parent session
   calling the `finder` scout with explicit model
-  `claude-agent-sdk-v3/claude-sonnet-4-5`. The scout made tool calls and
+  `claude-agent-sdk/claude-sonnet-4-5`. The scout made tool calls and
   returned the expected path without the pi-claude-bridge shared-session
   stall. JSONL had matching finder tool call/result and no v1 custom entries.
-- **M6 — Polish. In progress.** final provider naming/collapse, model
-  metadata, README, portability of Claude binary resolution, schema
-  conversion breadth, and any remaining reentrancy guard if needed. A
+- **M6 — Polish. In progress.** Provider directory and public provider id have
+  been collapsed to `custom-provider-claude-agent-sdk` / `claude-agent-sdk`.
+  Remaining polish: final regression, portability of Claude binary resolution,
+  schema conversion breadth, and any remaining reentrancy guard if needed. A
   same-load duplicate registration guard now prevents the common installed
   provider + explicit `-e` double-load case.
 
@@ -198,25 +199,24 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - two parallel `read` tool calls matched by `toolCallId`
 - abort during `bash sleep 30` produced an error `toolResult` and recovered on the next prompt
 - one-shot completion path returns isolated summaries/replies without resuming an SDK session
-- `/compact` resets the v3 SDK session and the next turn receives pi context handoff in the Claude transcript
+- `/compact` resets the SDK session and the next turn receives pi context handoff in the Claude transcript
 - post-compact continuity smoke test recalled `m4f-papaya, m4f-guava`
-- parent v3 session successfully called `finder` scout also running v3 (`claude-agent-sdk-v3/claude-sonnet-4-5`) and received the expected result
-- JSONL had matching tool calls/results, no orphan tool results, no missing tool results, and no old `claude-agent-sdk-provider` entries when v3 was loaded only once
+- parent session successfully called `finder` scout also running this provider (`claude-agent-sdk/claude-sonnet-4-5`) and received the expected result
+- final identity smoke tests passed with `claude-agent-sdk/claude-sonnet-4-5` for no-tool, `read`, duplicate-load guard, and parent → `finder` scout
+- JSONL had matching tool calls/results, no orphan tool results, no missing tool results, final `claude-agent-sdk-session` entries, and no old `claude-agent-sdk-provider` entries when the provider was loaded only once
 
 ## Caveats / follow-ups
 
-- **Duplicate v3 load:** If v3 is installed globally and also passed via `-e`, pi loads two v3 instances. That produced duplicate v3 custom entries and reset/persist churn. Clean runs with only one v3 instance behaved correctly. Document or guard before final collapse.
-- **Old v1 provider still installed:** Clean v3 runs no longer write `claude-agent-sdk-provider`; v1's tree/compact handlers are now guarded so they do not append v1 state during v3 tree/compact events. v1 still remains present in the normal extension set until final replacement.
+- **Duplicate load:** If the provider is installed globally and also passed via `-e`, pi can load two instances. That previously produced duplicate custom entries and reset/persist churn. The same-load guard prevents the common case.
+- **Old v1/v2 provider attempts:** Archived under `reference/pi-extensions/` and no longer installed by `install.sh`. Clean runs should not write the old v1 `claude-agent-sdk-provider` custom entry.
 - **Permission UX coverage is shallow:** `write` to `/tmp` worked and used normal pi tool rendering. A destructive/guarded edit/command should still be manually or tmux-tested for confirm/deny behavior.
 - **Abort coverage is partial:** Tested abort while a pi `bash` tool was running. Still untested: abort while Claude is streaming before a tool call, while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
 - **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
 - **Schema conversion is minimal:** TypeBox/JSON schema → Zod handles common object properties, arrays, enums, constants, and primitives. It does not deeply model nested object properties, oneOf/anyOf/allOf, nullable unions, numeric bounds, or string formats.
-- **Linux binary workaround:** v3 forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
+- **Linux binary workaround:** the provider forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
-- **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using v3 works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
+- **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using this provider works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
 - **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.
-- **Duplicate v3 load:** The common installed provider + explicit `-e` same-load case is guarded. Continue avoiding duplicate loads in normal testing; the guard is defensive, not a supported multi-instance mode.
-
 ## Open questions
 
 - For normal turns, should we keep using `{ type: "preset", preset: "claude_code" }` plus append forever, or eventually move to a plainer prompt? M4 one-shot summarization already uses the caller's `systemPrompt` directly to avoid Claude Code repo/tool behavior polluting summaries.

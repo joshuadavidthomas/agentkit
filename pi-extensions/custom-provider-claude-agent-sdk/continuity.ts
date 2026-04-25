@@ -157,7 +157,7 @@ function buildFreshSeedHandoff(sessionManager: ContinuitySessionManager, current
   const visible = buildSessionContext(sessionManager.getEntries(), targetLeafId).messages;
   const sections = visible.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
 
-  return joinHandoffSections("Pi session handoff for Claude Agent v3:", sections);
+  return joinHandoffSections("Pi session handoff for Claude Agent SDK:", sections);
 }
 
 function buildDeltaHandoff(
@@ -186,7 +186,7 @@ function buildDeltaHandoff(
     sections.push(section);
   }
 
-  return joinHandoffSections("Pi session handoff since Claude Agent v3 last synced:", sections);
+  return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
 }
 
 export function hasSyncedEntryOnCurrentBranch(sessionManager: ContinuitySessionManager, session: ClaudeSession): boolean {
@@ -223,5 +223,5 @@ export function buildContextMessagesHandoff(messages: unknown[]): string | undef
   const priorMessages = currentPromptIndex >= 0 ? messages.slice(0, currentPromptIndex) : messages;
   const sections = priorMessages.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
 
-  return joinHandoffSections("Pi context handoff for Claude Agent v3:", sections);
+  return joinHandoffSections("Pi context handoff for Claude Agent SDK:", sections);
 }

@@ -5,7 +5,7 @@ import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
 const sessions = new Map<string, ClaudeSession>();
-const DUPLICATE_LOAD_GUARD = Symbol.for("agentkit.claude-agent-sdk-v3.registration-in-progress");
+const DUPLICATE_LOAD_GUARD = Symbol.for("agentkit.claude-agent-sdk.registration-in-progress");
 
 type DuplicateLoadGlobal = typeof globalThis & { [DUPLICATE_LOAD_GUARD]?: boolean };
 
@@ -34,7 +34,7 @@ function getCurrentSession(ctx: { sessionManager: { getSessionId(): string } }):
   return sessions.get(ctx.sessionManager.getSessionId());
 }
 
-export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
+export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   if (!claimProviderRegistration()) return;
 
   pi.on("session_start", (event, ctx) => {
@@ -87,7 +87,7 @@ export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
   pi.on("model_select", (event, ctx) => {
     if (event.previousModel?.provider !== PROVIDER_ID || event.model.provider === PROVIDER_ID) return;
 
-    getCurrentSession(ctx)?.abortActiveTurn("Claude Agent SDK v3 request cancelled after switching models");
+    getCurrentSession(ctx)?.abortActiveTurn("Claude Agent SDK request cancelled after switching models");
   });
 
   pi.registerProvider(PROVIDER_ID, {

@@ -463,7 +463,7 @@ export function streamClaudeAgentSdkOneShot(
     let sdkQuery: ReturnType<typeof query> | undefined;
 
     if (abortController.signal.aborted) {
-      failStream(new Error("Claude Agent SDK v3 one-shot request aborted"), state, true);
+      failStream(new Error("Claude Agent SDK one-shot request aborted"), state, true);
       session.detachStreamState(state);
       return;
     }
@@ -558,7 +558,7 @@ export function streamClaudeAgentSdk(
 
     if (options?.signal?.aborted) {
       abortPending();
-      failStream(new Error("Claude Agent SDK v3 request aborted"), state, true);
+      failStream(new Error("Claude Agent SDK request aborted"), state, true);
       session.detachStreamState(state);
       return;
     }

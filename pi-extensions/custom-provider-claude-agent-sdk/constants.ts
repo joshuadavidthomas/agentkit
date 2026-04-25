@@ -1,7 +1,7 @@
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 
-export const PROVIDER_ID = "claude-agent-sdk-v3";
-export const API_ID = "claude-agent-sdk-v3";
+export const PROVIDER_ID = "claude-agent-sdk";
+export const API_ID = "claude-agent-sdk";
 
 export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = [
   {
