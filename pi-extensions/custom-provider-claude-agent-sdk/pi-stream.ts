@@ -7,7 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult } from "./claude-stream-events.js";
+import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult, TurnUsage } from "./claude-stream-events.js";
 import type { ToolCallMatcher } from "./tool-call-matcher.js";
 import { stripMcpToolName } from "./tools.js";
 import type { FinishedStopReason, StreamDelta, StreamSignature, StreamToolCallStart } from "./types.js";
@@ -93,23 +93,18 @@ export class PiStreamState {
     this.stream.end();
   }
 
-  beginMessage(usage?: unknown) {
+  beginMessage(usage?: TurnUsage) {
     this.activeBlocks.clear();
     if (usage) this.applyUsage(usage);
   }
 
-  applyUsage(rawUsage: unknown) {
-    const usage = (rawUsage ?? {}) as {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
+  applyUsage(usage: TurnUsage | undefined) {
+    if (!usage) return;
 
-    this.output.usage.input = usage.input_tokens ?? this.output.usage.input;
-    this.output.usage.output = usage.output_tokens ?? this.output.usage.output;
-    this.output.usage.cacheRead = usage.cache_read_input_tokens ?? this.output.usage.cacheRead;
-    this.output.usage.cacheWrite = usage.cache_creation_input_tokens ?? this.output.usage.cacheWrite;
+    this.output.usage.input = usage.inputTokens ?? this.output.usage.input;
+    this.output.usage.output = usage.outputTokens ?? this.output.usage.output;
+    this.output.usage.cacheRead = usage.cacheReadTokens ?? this.output.usage.cacheRead;
+    this.output.usage.cacheWrite = usage.cacheWriteTokens ?? this.output.usage.cacheWrite;
     this.output.usage.totalTokens =
       this.output.usage.input + this.output.usage.output + this.output.usage.cacheRead + this.output.usage.cacheWrite;
     calculateCost(this.model, this.output.usage);

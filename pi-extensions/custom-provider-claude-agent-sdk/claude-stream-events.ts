@@ -4,12 +4,19 @@ import type { FinishedStopReason } from "./types.js";
 export type ClaudeStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
 export type ClaudeAssistantMessage = Extract<SDKMessage, { type: "assistant" }>;
 
+export interface TurnUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+}
+
 export type TurnEvent =
-  | { type: "messageStarted"; usage?: unknown }
+  | { type: "messageStarted"; usage?: TurnUsage }
   | { type: "blockStarted"; block: TurnBlockStart }
   | { type: "blockDelta"; sourceBlockIndex: number; delta: TurnBlockDelta }
   | { type: "blockFinished"; sourceBlockIndex: number }
-  | { type: "messageUpdated"; stopReason: FinishedStopReason; usage?: unknown }
+  | { type: "messageUpdated"; stopReason: FinishedStopReason; usage?: TurnUsage }
   | { type: "messageFinished" };
 
 export type TurnBlockStart =
@@ -29,13 +36,13 @@ export type AssistantBackfill =
   | { type: "toolCall"; id: string; mcpToolName: string; input: unknown };
 
 export type TurnResult =
-  | { type: "error"; message: string; text?: string; usage?: unknown }
-  | { type: "done"; stopReason: FinishedStopReason; text?: string; usage?: unknown };
+  | { type: "error"; message: string; text?: string; usage?: TurnUsage }
+  | { type: "done"; stopReason: FinishedStopReason; text?: string; usage?: TurnUsage };
 
 export function parseClaudeStreamEvent(event: ClaudeStreamEvent): TurnEvent | undefined {
   switch (event.type) {
     case "message_start":
-      return { type: "messageStarted", usage: event.message.usage };
+      return { type: "messageStarted", usage: parseClaudeUsage(event.message.usage) };
 
     case "content_block_start":
       switch (event.content_block.type) {
@@ -85,7 +92,7 @@ export function parseClaudeStreamEvent(event: ClaudeStreamEvent): TurnEvent | un
       return { type: "blockFinished", sourceBlockIndex: event.index };
 
     case "message_delta":
-      return { type: "messageUpdated", stopReason: mapStopReason(event.delta.stop_reason), usage: event.usage };
+      return { type: "messageUpdated", stopReason: mapStopReason(event.delta.stop_reason), usage: parseClaudeUsage(event.usage) };
 
     case "message_stop":
       return { type: "messageFinished" };
@@ -120,7 +127,7 @@ export function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): As
 }
 
 export function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
-  const usage = result.usage;
+  const usage = parseClaudeUsage(result.usage);
   const text = "result" in result && result.result.trim() ? result.result : undefined;
 
   if (result.is_error) {
@@ -133,6 +140,22 @@ export function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
   }
 
   return { type: "done", stopReason: mapStopReason(result.stop_reason), text, usage };
+}
+
+function parseClaudeUsage(usage: {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+} | null | undefined): TurnUsage | undefined {
+  if (!usage) return undefined;
+
+  return {
+    inputTokens: usage.input_tokens ?? undefined,
+    outputTokens: usage.output_tokens ?? undefined,
+    cacheReadTokens: usage.cache_read_input_tokens ?? undefined,
+    cacheWriteTokens: usage.cache_creation_input_tokens ?? undefined,
+  };
 }
 
 function mapStopReason(reason: string | null): FinishedStopReason {
