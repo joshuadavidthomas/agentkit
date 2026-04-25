@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { API_ID, PROVIDER_ID, PROVIDER_MODELS } from "./provider-config.js";
+import { API_ID, PROVIDER_ID } from "./identity.js";
+import { PROVIDER_MODELS } from "./models.js";
 import { loadSessionEntry } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";

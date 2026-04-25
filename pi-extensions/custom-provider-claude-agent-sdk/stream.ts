@@ -16,7 +16,7 @@ import {
   type ToolCall,
 } from "@mariozechner/pi-ai";
 import { buildContextMessagesHandoff } from "./handoff.js";
-import { toClaudeCodeModelId } from "./provider-config.js";
+import { toClaudeCodeModelId } from "./models.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,

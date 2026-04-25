@@ -1,8 +1,6 @@
 import { getModels } from "@mariozechner/pi-ai";
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
-
-export const PROVIDER_ID = "claude-agent-sdk";
-export const API_ID = "claude-agent-sdk";
+import { API_ID } from "./identity.js";
 
 export const PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
   .filter((model) => model.id.startsWith("claude-"))
