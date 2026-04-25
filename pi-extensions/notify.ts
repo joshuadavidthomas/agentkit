@@ -191,7 +191,13 @@ async function selectSummaryModel(modelRegistry: ExtensionContext["modelRegistry
  * Generate a short notification summary using a quick model call
  */
 async function generateNotificationSummary(turnSummary: string, modelRegistry: ExtensionContext["modelRegistry"]): Promise<string> {
-	const selected = await selectSummaryModel(modelRegistry);
+	let selected: Awaited<ReturnType<typeof selectSummaryModel>>;
+	try {
+		selected = await selectSummaryModel(modelRegistry);
+	} catch (err) {
+		await logNotificationError(err);
+		return "Ready for input";
+	}
 	if (!selected) {
 		return "Ready for input";
 	}
@@ -238,14 +244,17 @@ NO QUESTIONS. NO EXPLANATIONS. JUST THE NOTIFICATION TEXT.`;
 			return summary.slice(0, 77) + "...";
 		}
 	} catch (err) {
-		// Log to debug file for troubleshooting
-		const fs = await import("node:fs/promises");
-		const timestamp = new Date().toISOString();
-		const errorMsg = err instanceof Error ? err.message : String(err);
-		await fs.appendFile("/tmp/pi-notify-debug.log", `[${timestamp}] Error: ${errorMsg}\n`).catch(() => {});
+		await logNotificationError(err);
 	}
 
 	return "Ready for input";
+}
+
+async function logNotificationError(err: unknown): Promise<void> {
+	const fs = await import("node:fs/promises");
+	const timestamp = new Date().toISOString();
+	const errorMsg = err instanceof Error ? err.message : String(err);
+	await fs.appendFile("/tmp/pi-notify-debug.log", `[${timestamp}] Error: ${errorMsg}\n`).catch(() => {});
 }
 
 /**
@@ -277,10 +286,20 @@ export default function (pi: ExtensionAPI) {
 			clearTimeout(pendingNotifyTimeout);
 		}
 
-		const branch = ctx.sessionManager.getBranch();
-		const modelRegistry = ctx.modelRegistry;
+		let branch: SessionEntry[];
+		let modelRegistry: ExtensionContext["modelRegistry"];
+		let projectName: string;
+		try {
+			if (!ctx.hasUI) return;
+			branch = ctx.sessionManager.getBranch();
+			modelRegistry = ctx.modelRegistry;
+			projectName = getProjectName(ctx.cwd);
+		} catch (err) {
+			await logNotificationError(err);
+			return;
+		}
+
 		const turnSummary = getLastTurnSummary(branch);
-		const projectName = getProjectName(ctx.cwd);
 		const notificationText = turnSummary
 			? await generateNotificationSummary(turnSummary, modelRegistry)
 			: "Ready for input";

@@ -544,15 +544,28 @@ export default function (pi: ExtensionAPI) {
 
   const hasPacks = () => listPacks().length > 0;
 
-  const shouldPlaySounds = (ctx: { hasUI: boolean }) =>
-    ctx.hasUI && !installing && hasPacks();
+  const shouldPlaySounds = (hasUI: boolean) =>
+    hasUI && !installing && hasPacks();
+
+  const getHasUI = (ctx: { hasUI: boolean }): boolean | null => {
+    try {
+      return ctx.hasUI;
+    } catch {
+      return null;
+    }
+  };
 
   // Session start → session.start
   pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
+    const hasUI = getHasUI(ctx);
+    if (!hasUI) return;
 
     if (!hasPacks()) {
-      ctx.ui.notify("peon-ping: no sound packs. Run /peon install", "warning");
+      try {
+        ctx.ui.notify("peon-ping: no sound packs. Run /peon install", "warning");
+      } catch {
+        // The session may already be shutting down.
+      }
       return;
     }
 
@@ -567,7 +580,8 @@ export default function (pi: ExtensionAPI) {
 
   // Agent start → task.acknowledge + spam detection
   pi.on("agent_start", async (_event, ctx) => {
-    if (!shouldPlaySounds(ctx)) return;
+    const hasUI = getHasUI(ctx);
+    if (hasUI === null || !shouldPlaySounds(hasUI)) return;
 
     config = loadConfig();
     state = loadState();
@@ -587,7 +601,15 @@ export default function (pi: ExtensionAPI) {
 
   // Agent end → task.complete + notification
   pi.on("agent_end", async (_event, ctx) => {
-    if (!shouldPlaySounds(ctx)) return;
+    const hasUI = getHasUI(ctx);
+    if (hasUI === null || !shouldPlaySounds(hasUI)) return;
+
+    let cwd: string;
+    try {
+      cwd = ctx.cwd;
+    } catch {
+      return;
+    }
 
     config = loadConfig();
     state = loadState();
@@ -602,7 +624,7 @@ export default function (pi: ExtensionAPI) {
     playCategorySound("task.complete", config, state);
 
     if (config.enabled && !state.paused) {
-      const project = basename(ctx.cwd);
+      const project = basename(cwd);
       sendNotification(`pi · ${project}`, "Task complete");
     }
   });
