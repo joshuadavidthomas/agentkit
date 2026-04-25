@@ -17,6 +17,7 @@ import {
   type ToolCall,
 } from "@mariozechner/pi-ai";
 import { buildContextMessagesHandoff } from "./continuity.js";
+import { toClaudeCodeModelId } from "./constants.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
@@ -475,7 +476,7 @@ export function streamClaudeAgentSdkOneShot(
           abortController,
           cwd: process.cwd(),
           pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: model.id,
+          model: toClaudeCodeModelId(model.id),
           allowedTools: [],
           disallowedTools: DISALLOWED_BUILTIN_TOOLS,
           includePartialMessages: true,
@@ -574,7 +575,7 @@ export function streamClaudeAgentSdk(
           abortController,
           cwd: process.cwd(),
           pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: model.id,
+          model: toClaudeCodeModelId(model.id),
           resume: session.sdkSessionId ?? undefined,
           allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
           disallowedTools: DISALLOWED_BUILTIN_TOOLS,

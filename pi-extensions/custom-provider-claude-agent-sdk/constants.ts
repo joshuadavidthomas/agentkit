@@ -1,27 +1,26 @@
+import { getModels } from "@mariozechner/pi-ai";
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 
 export const PROVIDER_ID = "claude-agent-sdk";
 export const API_ID = "claude-agent-sdk";
 
-export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = [
-  {
-    id: "claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
+export const DEFAULT_PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
+  .filter((model) => model.id.startsWith("claude-"))
+  .map((model) => ({
+    id: model.id,
+    name: model.name,
     api: API_ID,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 200000,
-    maxTokens: 64000,
-  },
-  {
-    id: "claude-opus-4-7",
-    name: "Claude Opus 4.7",
-    api: API_ID,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
-    contextWindow: 1000000,
-    maxTokens: 128000,
-  },
-];
+    reasoning: model.reasoning,
+    input: [...model.input],
+    cost: { ...model.cost },
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+  }));
+
+const CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID: Record<string, string> = Object.fromEntries(
+  DEFAULT_PROVIDER_MODELS.map((model) => [model.id, model.id]),
+);
+
+export function toClaudeCodeModelId(piModelId: string): string {
+  return CLAUDE_CODE_MODEL_ID_BY_PI_MODEL_ID[piModelId] ?? piModelId;
+}
