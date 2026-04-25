@@ -35,9 +35,9 @@ rewrite.
 
 ## What to port from v2
 
-v2 lives at `pi-extensions/custom-provider-claude-agent-sdk-v2/`. We're not
-copying files wholesale — v3 is a fresh directory — but a few pieces are
-still good:
+v2 lives at `reference/pi-extensions/custom-provider-claude-agent-sdk-v2/`.
+We're not copying files wholesale — v3 is a fresh directory — but a few pieces
+are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk-v3`.
@@ -56,8 +56,9 @@ Do **not** port:
   own `ClaudeSession` class.
 - `Turn` type from `types.ts` — tied to the unstable session handle shape.
 
-v1 at `pi-extensions/custom-provider-claude-agent-sdk/` is a reference, not
-a source of ports. Two ideas worth lifting as we build: the `persistence.ts`
+v1 at `reference/pi-extensions/custom-provider-claude-agent-sdk/` is a
+reference, not a source of ports. Two ideas worth lifting as we build: the
+`persistence.ts`
 pattern (`pi.appendEntry(SESSION_ENTRY_TYPE, { sdkSessionId,
 syncedThroughEntryId, lastClaudeModelId })` for per-pi-session SDK session
 IDs) and the README's framing that "this provider ignores pi's normal tool
@@ -90,9 +91,9 @@ loop and uses the SDK's own tool/runtime stack instead."
 
 ## Architecture
 
-**Single source of module state:** a `Map<piSessionId, ClaudeSession>`.
-Nothing else global. No `sharedSession`. No static symbols for
-registration guards beyond the minimum pi already requires.
+**Single source of session state:** a `Map<piSessionId, ClaudeSession>`.
+No `sharedSession`. The only other module/global state is a defensive duplicate
+registration guard for accidental same-process double loads.
 
 **`ClaudeSession`** holds:
 - `piSessionId: string`

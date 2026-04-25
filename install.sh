@@ -46,11 +46,23 @@ fi
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
 
-# Extensions to skip (retired but kept in the repo for reference)
-SKIP_EXTENSIONS=(
-    "pi-subagents"
+# Retired extensions that may still exist as stale symlinks from older installs.
+RETIRED_EXTENSIONS=(
     "custom-provider-claude-agent-sdk"
     "custom-provider-claude-agent-sdk-v2"
+)
+
+mkdir -p "$PI_EXTENSIONS_DIR"
+for retired in "${RETIRED_EXTENSIONS[@]}"; do
+    if [[ -L "$PI_EXTENSIONS_DIR/$retired" ]]; then
+        rm "$PI_EXTENSIONS_DIR/$retired"
+        echo "Removed retired extension: $retired"
+    fi
+done
+
+# Extensions to skip while walking pi-extensions/.
+SKIP_EXTENSIONS=(
+    "pi-subagents"
 )
 
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
@@ -67,11 +79,6 @@ if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
         done
 
         if [[ "$skip_extension" == true ]]; then
-            # Remove stale symlink if it exists
-            if [[ -L "$PI_EXTENSIONS_DIR/$ext_name" ]]; then
-                rm "$PI_EXTENSIONS_DIR/$ext_name"
-                echo "Removed retired extension: $ext_name"
-            fi
             continue
         fi
         ln -sfn "$ext" "$PI_EXTENSIONS_DIR/$ext_name"
