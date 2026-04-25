@@ -103,49 +103,57 @@ export function streamClaudeAgentSdkOneShot(
   const session = new ClaudeSession("one-shot");
   const state = attachState(session, model, stream);
 
-  void (async () => {
-    const abortController = createAbortController(options?.signal);
-    let sdkQuery: ReturnType<typeof query> | undefined;
-
-    if (abortController.signal.aborted) {
-      state.fail("Claude Agent SDK one-shot request aborted", true);
-      session.detachStreamState(state);
-      return;
-    }
-
-    try {
-      sdkQuery = query({
-        prompt: toSdkPrompt(extractLatestUserPrompt(context)),
-        options: {
-          ...baseQueryOptions(model, abortController, options?.apiKey),
-          allowedTools: [],
-          systemPrompt: context.systemPrompt,
-          tools: [],
-        },
-      });
-
-      for await (const message of sdkQuery) {
-        if (handleSdkQueryMessage(message, session, state)) {
-          session.detachStreamState(state);
-        }
-      }
-
-      if (!state.finished) {
-        state.finish("stop");
-      }
-    } catch (error) {
-      state.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
-    } finally {
-      session.close();
-      try {
-        sdkQuery?.close();
-      } catch {
-        // Ignore close failures.
-      }
-    }
-  })();
+  void runOneShotQuery(session, state, model, context, options);
 
   return stream;
+}
+
+async function runOneShotQuery(
+  session: ClaudeSession,
+  state: PiStreamState,
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) {
+  const abortController = createAbortController(options?.signal);
+  let sdkQuery: ReturnType<typeof query> | undefined;
+
+  if (abortController.signal.aborted) {
+    state.fail("Claude Agent SDK one-shot request aborted", true);
+    session.detachStreamState(state);
+    return;
+  }
+
+  try {
+    sdkQuery = query({
+      prompt: toSdkPrompt(extractLatestUserPrompt(context)),
+      options: {
+        ...baseQueryOptions(model, abortController, options?.apiKey),
+        allowedTools: [],
+        systemPrompt: context.systemPrompt,
+        tools: [],
+      },
+    });
+
+    for await (const message of sdkQuery) {
+      if (handleSdkQueryMessage(message, session, state)) {
+        session.detachStreamState(state);
+      }
+    }
+
+    if (!state.finished) {
+      state.finish("stop");
+    }
+  } catch (error) {
+    state.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
+  } finally {
+    session.close();
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+  }
 }
 
 export function streamClaudeAgentSdk(
@@ -172,89 +180,98 @@ export function streamClaudeAgentSdk(
 
   const state = attachState(session, model, stream);
 
-  void (async () => {
-    const abortController = createAbortController(options?.signal);
-    const mcpServer = buildPiMcpServer(context.tools, (toolName) => session.handleMcpToolCall(toolName));
-    let sdkQuery: ReturnType<typeof query> | undefined;
+  void runSessionQuery(pi, session, state, model, context, options);
 
-    const abortPending = () => {
-      session.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
-      try {
-        sdkQuery?.close();
-      } catch {
-        // Ignore close failures.
-      }
-    };
+  return stream;
+}
 
-    if (abortController.signal.aborted) {
-      abortPending();
-      state.fail("Claude Agent SDK request aborted", true);
-      session.detachStreamState(state);
-      return;
+async function runSessionQuery(
+  pi: ExtensionAPI,
+  session: ClaudeSession,
+  state: PiStreamState,
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) {
+  const abortController = createAbortController(options?.signal);
+  const mcpServer = buildPiMcpServer(context.tools, (toolName) => session.handleMcpToolCall(toolName));
+  let sdkQuery: ReturnType<typeof query> | undefined;
+
+  const abortPending = () => {
+    session.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+  };
+
+  if (abortController.signal.aborted) {
+    abortPending();
+    state.fail("Claude Agent SDK request aborted", true);
+    session.detachStreamState(state);
+    return;
+  }
+
+  options?.signal?.addEventListener("abort", abortPending, { once: true });
+
+  try {
+    const handoff = session.prepareForTurn(pi) ?? buildContextMessagesHandoff(context.messages);
+    let prompt = extractLatestUserPrompt(context);
+    if (handoff) {
+      const prefix = `${handoff}\n\nCurrent user message:\n`;
+      prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text", text: prefix }, ...prompt];
     }
 
-    options?.signal?.addEventListener("abort", abortPending, { once: true });
-
-    try {
-      const handoff = session.prepareForTurn(pi) ?? buildContextMessagesHandoff(context.messages);
-      let prompt = extractLatestUserPrompt(context);
-      if (handoff) {
-        const prefix = `${handoff}\n\nCurrent user message:\n`;
-        prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text", text: prefix }, ...prompt];
-      }
-
-      sdkQuery = query({
-        prompt: toSdkPrompt(prompt),
-        options: {
-          ...baseQueryOptions(model, abortController, options?.apiKey),
-          resume: session.sdkSessionId ?? undefined,
-          allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
-          permissionMode: "bypassPermissions",
-          systemPrompt: {
-            type: "preset",
-            preset: "claude_code",
-            append: context.systemPrompt,
-          },
-          ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
+    sdkQuery = query({
+      prompt: toSdkPrompt(prompt),
+      options: {
+        ...baseQueryOptions(model, abortController, options?.apiKey),
+        resume: session.sdkSessionId ?? undefined,
+        allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
+        permissionMode: "bypassPermissions",
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: context.systemPrompt,
         },
-      });
-      session.beginQuery(sdkQuery);
+        ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
+      },
+    });
+    session.beginQuery(sdkQuery);
 
-      for await (const message of sdkQuery) {
-        const sdkSessionId = extractSessionId(message);
-        if (sdkSessionId) {
-          session.captureSdkSessionId(pi, sdkSessionId, model.id);
-        }
-
-        const currentState = session.currentStreamState;
-        if (!currentState) continue;
-
-        if (handleSdkQueryMessage(message, session, currentState)) {
-          session.detachStreamState(currentState);
-        }
+    for await (const message of sdkQuery) {
+      const sdkSessionId = extractSessionId(message);
+      if (sdkSessionId) {
+        session.captureSdkSessionId(pi, sdkSessionId, model.id);
       }
 
       const currentState = session.currentStreamState;
-      if (currentState && !currentState.finished) {
-        currentState.finish("stop");
+      if (!currentState) continue;
+
+      if (handleSdkQueryMessage(message, session, currentState)) {
         session.detachStreamState(currentState);
       }
-    } catch (error) {
-      const currentState = session.currentStreamState ?? state;
-      currentState.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
+    }
+
+    const currentState = session.currentStreamState;
+    if (currentState && !currentState.finished) {
+      currentState.finish("stop");
       session.detachStreamState(currentState);
-    } finally {
-      options?.signal?.removeEventListener("abort", abortPending);
-      if (sdkQuery) {
-        session.finishQuery(sdkQuery);
-        try {
-          sdkQuery.close();
-        } catch {
-          // Ignore close failures.
-        }
+    }
+  } catch (error) {
+    const currentState = session.currentStreamState ?? state;
+    currentState.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
+    session.detachStreamState(currentState);
+  } finally {
+    options?.signal?.removeEventListener("abort", abortPending);
+    if (sdkQuery) {
+      session.finishQuery(sdkQuery);
+      try {
+        sdkQuery.close();
+      } catch {
+        // Ignore close failures.
       }
     }
-  })();
-
-  return stream;
+  }
 }
