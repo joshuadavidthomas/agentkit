@@ -39,7 +39,7 @@ export function parseClaudeStreamEvent(event: ClaudeStreamEvent): ProviderStream
             sdkIndex: event.index,
             id: event.content_block.id,
             rawName: event.content_block.name,
-            arguments: recordOrEmpty(event.content_block.input),
+            arguments: event.content_block.input as Record<string, unknown>,
           };
         default:
           return undefined;
@@ -70,7 +70,3 @@ export function parseClaudeStreamEvent(event: ClaudeStreamEvent): ProviderStream
   }
 }
 
-function recordOrEmpty(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
-}
