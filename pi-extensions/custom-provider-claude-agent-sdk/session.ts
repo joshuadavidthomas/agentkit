@@ -15,14 +15,6 @@ export interface ClaudeSessionContinuity {
   syncedThroughEntryId: string | null;
 }
 
-function closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
-  try {
-    sdkQuery?.close();
-  } catch {
-    // Ignore close failures.
-  }
-}
-
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
 // The model registry is shared, so a later instance must not overwrite the
@@ -192,7 +184,7 @@ export class ClaudeSession {
     this.toolCallMatcher.clearQueuedResults();
     this.activeQuery = null;
     this.currentStreamState = null;
-    closeSdkQuery(sdkQuery);
+    this.closeSdkQuery(sdkQuery);
   }
 
   attachStreamState(state: PiStreamState) {
@@ -234,7 +226,15 @@ export class ClaudeSession {
 
     const sdkQuery = this.activeQuery;
     this.activeQuery = null;
-    closeSdkQuery(sdkQuery);
+    this.closeSdkQuery(sdkQuery);
+  }
+
+  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
   }
 
   private persist() {
