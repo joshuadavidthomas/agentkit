@@ -88,16 +88,99 @@ export class ClaudeSessionManager {
   }
 }
 
+export class ClaudeActiveTurn {
+  readonly toolCallMatcher = new ToolCallMatcher();
+
+  private activeQuery: SdkQuery | null = null;
+  private currentStreamState: PiStreamState | null = null;
+
+  constructor(streamState: PiStreamState) {
+    this.attachStreamState(streamState);
+  }
+
+  hasActiveQuery(): boolean {
+    return Boolean(this.activeQuery);
+  }
+
+  streamState(): PiStreamState | undefined {
+    return this.currentStreamState ?? undefined;
+  }
+
+  beginActiveQuery(sdkQuery: SdkQuery) {
+    this.activeQuery = sdkQuery;
+  }
+
+  finishActiveQuery(sdkQuery: SdkQuery): boolean {
+    if (this.activeQuery !== sdkQuery) return false;
+
+    this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
+    this.toolCallMatcher.clearQueuedResults();
+    this.activeQuery = null;
+    this.currentStreamState = null;
+    this.closeSdkQuery(sdkQuery);
+    return true;
+  }
+
+  attachStreamState(state: PiStreamState) {
+    this.currentStreamState = state;
+    state.start();
+  }
+
+  detachStreamState(state: PiStreamState) {
+    if (this.currentStreamState === state) {
+      this.currentStreamState = null;
+    }
+  }
+
+  handleMcpToolCall(toolName: string): Promise<CallToolResult> {
+    return this.toolCallMatcher.handleMcpToolCall(toolName);
+  }
+
+  deliverToolResults(results: PiMcpResult[]) {
+    this.toolCallMatcher.deliverToolResults(results);
+  }
+
+  resolvePendingToolCalls(result: CallToolResult) {
+    this.toolCallMatcher.resolvePendingToolCalls(result);
+  }
+
+  abort(message: string) {
+    const state = this.currentStreamState;
+    if (state && !state.finished) {
+      state.fail(message, true);
+    }
+
+    this.close("Session closed");
+  }
+
+  close(message = "Session closed") {
+    this.resolvePendingToolCalls(createMcpTextResult(message, true));
+    this.toolCallMatcher.clearQueuedResults();
+    this.currentStreamState = null;
+    this.toolCallMatcher.resetTurn();
+
+    const sdkQuery = this.activeQuery;
+    this.activeQuery = null;
+    this.closeSdkQuery(sdkQuery);
+  }
+
+  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+  }
+}
+
 export class ClaudeSession {
   readonly piSessionId: string;
-  readonly toolCallMatcher = new ToolCallMatcher();
 
   private sdkSessionId: string | null;
   private syncedThroughEntryId: string | null;
   private lastClaudeModelId: string | null;
   private sessionManager: HandoffSessionReader | undefined;
-  private activeQuery: SdkQuery | null = null;
-  private currentStreamState: PiStreamState | null = null;
+  private activeTurn: ClaudeActiveTurn | null = null;
 
   constructor(
     piSessionId: string,
@@ -120,12 +203,15 @@ export class ClaudeSession {
     };
   }
 
-  hasActiveQuery(): boolean {
-    return Boolean(this.activeQuery);
+  currentTurn(): ClaudeActiveTurn | undefined {
+    return this.activeTurn ?? undefined;
   }
 
-  streamState(): PiStreamState | undefined {
-    return this.currentStreamState ?? undefined;
+  beginTurn(streamState: PiStreamState): ClaudeActiveTurn {
+    this.closeActiveTurn();
+    const turn = new ClaudeActiveTurn(streamState);
+    this.activeTurn = turn;
+    return turn;
   }
 
   setSessionManager(sessionManager: HandoffSessionReader | undefined) {
@@ -165,68 +251,21 @@ export class ClaudeSession {
     return buildPiSessionHandoff(this.sessionManager, this);
   }
 
-  beginActiveQuery(sdkQuery: SdkQuery) {
-    this.activeQuery = sdkQuery;
-  }
-
-  finishActiveQuery(sdkQuery: SdkQuery) {
-    if (this.activeQuery !== sdkQuery) return;
-
-    this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
-    this.toolCallMatcher.clearQueuedResults();
-    this.activeQuery = null;
-    this.currentStreamState = null;
-    this.closeSdkQuery(sdkQuery);
-  }
-
-  attachStreamState(state: PiStreamState) {
-    this.currentStreamState = state;
-  }
-
-  detachStreamState(state: PiStreamState) {
-    if (this.currentStreamState === state) {
-      this.currentStreamState = null;
+  finishActiveTurn(turn: ClaudeActiveTurn, sdkQuery: SdkQuery) {
+    if (this.activeTurn !== turn) return;
+    if (turn.finishActiveQuery(sdkQuery)) {
+      this.activeTurn = null;
     }
-  }
-
-  handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    return this.toolCallMatcher.handleMcpToolCall(toolName);
-  }
-
-  deliverToolResults(results: PiMcpResult[]) {
-    this.toolCallMatcher.deliverToolResults(results);
-  }
-
-  resolvePendingToolCalls(result: CallToolResult) {
-    this.toolCallMatcher.resolvePendingToolCalls(result);
-  }
-
-  abortActiveTurn(message: string) {
-    const state = this.currentStreamState;
-    if (state && !state.finished) {
-      state.fail(message, true);
-    }
-
-    this.closeActiveTurn();
   }
 
   closeActiveTurn() {
-    this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
-    this.toolCallMatcher.clearQueuedResults();
-    this.currentStreamState = null;
-    this.toolCallMatcher.resetTurn();
-
-    const sdkQuery = this.activeQuery;
-    this.activeQuery = null;
-    this.closeSdkQuery(sdkQuery);
+    this.activeTurn?.close();
+    this.activeTurn = null;
   }
 
-  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
-    try {
-      sdkQuery?.close();
-    } catch {
-      // Ignore close failures.
-    }
+  abortActiveTurn(message: string) {
+    this.activeTurn?.abort(message);
+    this.activeTurn = null;
   }
 
   private persist() {

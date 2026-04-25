@@ -97,17 +97,20 @@ loop and uses the SDK's own tool/runtime stack instead."
 No `sharedSession`. The only other module/global state is a defensive duplicate
 registration guard for accidental same-process double loads.
 
-**`ClaudeSession`** owns per-pi-session identity and query lifecycle:
+**`ClaudeSession`** owns per-pi-session identity and SDK continuity:
 - `piSessionId: string`
 - private `sdkSessionId: string | null` (set after first successful query)
 - private `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
 - private `lastClaudeModelId: string | null`
 - private `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
-- private `activeQuery: ReturnType<typeof query> | null`
-- private `currentStreamState: PiStreamState | null`
-- `toolCallMatcher: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
+- private `activeTurn: ClaudeActiveTurn | null`
 - `.prepareForTurn()` builds fresh/delta pi-session handoff and resets stale branch state
-- `.closeActiveTurn()` tears down active queries and resolves pending MCP handlers
+- `.closeActiveTurn()` tears down the current turn without clearing SDK continuity
+
+**`ClaudeActiveTurn`** owns active query/stream/tool rendezvous state:
+- private active SDK query
+- current pi stream state
+- `toolCallMatcher: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises
 
 **Provider entry:**
 - `streamSimple(model, context, options)`:
