@@ -18,6 +18,23 @@ export type PromptBlock = PromptTextBlock | PromptImageBlock;
 
 export type FinishedStopReason = Extract<StopReason, "stop" | "length" | "toolUse">;
 
+export interface StreamDelta {
+  sdkIndex: number;
+  delta: string;
+}
+
+export interface StreamSignature {
+  sdkIndex: number;
+  signature: string;
+}
+
+export interface StreamToolCallStart {
+  sdkIndex: number;
+  id: string;
+  name: string;
+  args: ToolCall["arguments"];
+}
+
 export interface StreamState {
   readonly model: Model<Api>;
   readonly output: AssistantMessage;
@@ -38,11 +55,11 @@ export interface StreamState {
   backfillThinking(thinking: string, signature: string): void;
   backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): void;
   beginTextBlock(sdkIndex: number): void;
-  appendTextDelta(sdkIndex: number, delta: string): void;
+  appendTextDelta(delta: StreamDelta): void;
   beginThinkingBlock(sdkIndex: number): void;
-  appendThinkingDelta(sdkIndex: number, delta: string): void;
-  appendThinkingSignature(sdkIndex: number, signature: string): void;
-  beginToolCall(sdkIndex: number, id: string, name: string, args: ToolCall["arguments"]): void;
-  appendToolCallJson(sdkIndex: number, delta: string): void;
+  appendThinkingDelta(delta: StreamDelta): void;
+  appendThinkingSignature(signature: StreamSignature): void;
+  beginToolCall(toolCall: StreamToolCallStart): void;
+  appendToolCallJson(delta: StreamDelta): void;
   finishContentBlock(sdkIndex: number): void;
 }

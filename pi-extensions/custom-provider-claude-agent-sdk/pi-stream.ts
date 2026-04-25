@@ -12,7 +12,7 @@ import {
 import { parseClaudeStreamEvent, type ClaudeStreamEvent, type ProviderStreamEvent } from "./claude-stream-events.js";
 import type { ClaudeSession } from "./session.js";
 import { stripMcpToolName } from "./tools.js";
-import type { FinishedStopReason, StreamState } from "./types.js";
+import type { FinishedStopReason, StreamDelta, StreamSignature, StreamState, StreamToolCallStart } from "./types.js";
 
 type ActiveBlock =
   | { type: "text"; contentIndex: number }
@@ -153,7 +153,7 @@ class PiStreamState implements StreamState {
     this.stream.push({ type: "text_start", contentIndex, partial: this.output });
   }
 
-  appendTextDelta(sdkIndex: number, delta: string) {
+  appendTextDelta({ sdkIndex, delta }: StreamDelta) {
     const active = this.activeBlocks.get(sdkIndex);
     if (active?.type !== "text") return;
 
@@ -172,7 +172,7 @@ class PiStreamState implements StreamState {
     this.stream.push({ type: "thinking_start", contentIndex, partial: this.output });
   }
 
-  appendThinkingDelta(sdkIndex: number, delta: string) {
+  appendThinkingDelta({ sdkIndex, delta }: StreamDelta) {
     const active = this.activeBlocks.get(sdkIndex);
     if (active?.type !== "thinking") return;
 
@@ -183,7 +183,7 @@ class PiStreamState implements StreamState {
     this.stream.push({ type: "thinking_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
 
-  appendThinkingSignature(sdkIndex: number, signature: string) {
+  appendThinkingSignature({ sdkIndex, signature }: StreamSignature) {
     const active = this.activeBlocks.get(sdkIndex);
     if (active?.type !== "thinking") return;
 
@@ -193,7 +193,7 @@ class PiStreamState implements StreamState {
     }
   }
 
-  beginToolCall(sdkIndex: number, id: string, name: string, args: ToolCall["arguments"]) {
+  beginToolCall({ sdkIndex, id, name, args }: StreamToolCallStart) {
     this.start();
     this.didSeeToolCall = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
@@ -202,7 +202,7 @@ class PiStreamState implements StreamState {
     this.stream.push({ type: "toolcall_start", contentIndex, partial: this.output });
   }
 
-  appendToolCallJson(sdkIndex: number, delta: string) {
+  appendToolCallJson({ sdkIndex, delta }: StreamDelta) {
     const active = this.activeBlocks.get(sdkIndex);
     if (active?.type !== "toolCall") return;
 
@@ -333,23 +333,30 @@ function applyProviderStreamEvent(event: ProviderStreamEvent, session: ClaudeSes
       state.beginTextBlock(event.sdkIndex);
       return;
     case "textDelta":
-      state.appendTextDelta(event.sdkIndex, event.delta);
+      state.appendTextDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
       return;
     case "thinkingStart":
       state.beginThinkingBlock(event.sdkIndex);
       return;
     case "thinkingDelta":
-      state.appendThinkingDelta(event.sdkIndex, event.delta);
+      state.appendThinkingDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
       return;
     case "thinkingSignature":
-      state.appendThinkingSignature(event.sdkIndex, event.signature);
+      state.appendThinkingSignature({ sdkIndex: event.sdkIndex, signature: event.signature });
       return;
-    case "toolCallStart":
-      state.beginToolCall(event.sdkIndex, event.id, stripMcpToolName(event.rawName), event.input as ToolCall["arguments"]);
-      session.registerToolCallId(event.id);
+    case "toolCallStart": {
+      const toolCall = {
+        sdkIndex: event.sdkIndex,
+        id: event.id,
+        name: stripMcpToolName(event.rawName),
+        args: event.input as ToolCall["arguments"],
+      };
+      state.beginToolCall(toolCall);
+      session.registerToolCallId(toolCall.id);
       return;
+    }
     case "toolCallDelta":
-      state.appendToolCallJson(event.sdkIndex, event.delta);
+      state.appendToolCallJson({ sdkIndex: event.sdkIndex, delta: event.delta });
       return;
     case "contentBlockStop":
       state.finishContentBlock(event.sdkIndex);
