@@ -16,7 +16,6 @@ import {
   type ToolCall,
 } from "@mariozechner/pi-ai";
 import { buildContextMessagesHandoff } from "./handoff.js";
-import { toClaudeCodeModelId } from "./models.js";
 import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
@@ -30,6 +29,11 @@ import {
 import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
 
 const require = createRequire(import.meta.url);
+const CLAUDE_CODE_MODEL_ID_OVERRIDES: Partial<Record<string, string>> = {};
+
+function toClaudeCodeModelId(piModelId: string): string {
+  return CLAUDE_CODE_MODEL_ID_OVERRIDES[piModelId] ?? piModelId;
+}
 
 function resolveClaudeExecutable(): string | undefined {
   if (process.platform !== "linux" || process.arch !== "x64") return undefined;

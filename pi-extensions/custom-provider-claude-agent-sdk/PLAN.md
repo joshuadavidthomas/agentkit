@@ -42,8 +42,9 @@ directory — but a few pieces are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
-- **`identity.ts` / `models.ts`**. Start from v2 provider/model config, then
-  replace the static model list with pi's built-in Anthropic model registry.
+- **`identity.ts` plus local model setup in `index.ts` / `stream.ts`**. Start
+  from v2 provider/model config, then replace the static model list with pi's
+  built-in Anthropic model registry.
 - **`types.ts`** — port only the `PromptBlock` / `PromptTextBlock` /
   `PromptImageBlock` shapes (~10 lines). Everything else (`Turn`,
   `ExtensionBindings`) is tied to the unstable v2 SDK API and gets
@@ -147,7 +148,6 @@ pi-extensions/custom-provider-claude-agent-sdk/
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring)
 ├── identity.ts             (provider id / api id)
-├── models.ts               (mirrored model list and model-id mapping)
 ├── types.ts                (PromptBlock + provider-specific types)
 ├── session.ts              (ClaudeSession class — written fresh)
 ├── stream.ts               (SDK event → pi event adapter)

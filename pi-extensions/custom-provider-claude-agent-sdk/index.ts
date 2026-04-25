@@ -1,9 +1,22 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getModels } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import { API_ID, PROVIDER_ID } from "./identity.js";
-import { PROVIDER_MODELS } from "./models.js";
 import { loadSessionEntry } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
+
+const PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
+  .filter((model) => model.id.startsWith("claude-"))
+  .map((model) => ({
+    id: model.id,
+    name: model.name,
+    api: API_ID,
+    reasoning: model.reasoning,
+    input: [...model.input],
+    cost: { ...model.cost },
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+  }));
 
 const sessions = new Map<string, ClaudeSession>();
 const DUPLICATE_LOAD_GUARD = Symbol.for("agentkit.claude-agent-sdk.registration-in-progress");
