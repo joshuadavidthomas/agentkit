@@ -29,6 +29,7 @@ const NERD_FONT_MAP = {
 
 const PROVIDER_MAP = {
   "claude-agent-sdk": "claude code",
+  "claude-agent-sdk-v3": "claude code",
   "github-copilot": "copilot",
   "google-antigravity": "google",
   "openai-codex": "openai",
@@ -38,6 +39,7 @@ const PROVIDER_MAP = {
 const VIBEUSAGE_PROVIDER_MAP: Record<string, string> = {
   "anthropic": "claude",
   "claude-agent-sdk": "claude",
+  "claude-agent-sdk-v3": "claude",
   "github-copilot": "copilot",
   "google": "gemini",
   "google-antigravity": "antigravity",
@@ -177,7 +179,7 @@ function refreshVibeusage(vibeProvider: string): void {
 
 function formatStatuslineModelName(model: { provider: string; name?: string; id: string }): string {
   const rawModelName = model.name || model.id;
-  if (model.provider === "anthropic" || model.provider === "claude-agent-sdk") {
+  if (model.provider === "anthropic" || model.provider === "claude-agent-sdk" || model.provider === "claude-agent-sdk-v3") {
     return rawModelName.replace(/^Claude\s+/i, "");
   }
   return rawModelName;

@@ -176,10 +176,11 @@ pi-extensions/custom-provider-claude-agent-sdk-v3/
   for isolated summarization. `SessionCompactEvent` resets `sdkSessionId`
   and refreshes the session manager so the next turn starts a new SDK
   session seeded from pi's compacted context/handoff.
-- **M5 — Scout co-existence. Not yet verified.** Verify parent + scout both
-  using this provider in the same process works (different pi session ids →
-  different `ClaudeSession` entries → no shared state). The bug that kicked
-  this whole thing off.
+- **M5 — Scout co-existence. Smoke-verified.** Verified parent v3 session
+  calling the `finder` scout with explicit model
+  `claude-agent-sdk-v3/claude-sonnet-4-5`. The scout made tool calls and
+  returned the expected path without the pi-claude-bridge shared-session
+  stall. JSONL had matching finder tool call/result and no v1 custom entries.
 - **M6 — Polish. Remaining.** final provider naming/collapse, model
   metadata, README, duplicate-load behavior, portability of Claude binary
   resolution, schema conversion breadth, and any reentrancy guard if needed.
@@ -196,6 +197,7 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - one-shot completion path returns isolated summaries/replies without resuming an SDK session
 - `/compact` resets the v3 SDK session and the next turn receives pi context handoff in the Claude transcript
 - post-compact continuity smoke test recalled `m4f-papaya, m4f-guava`
+- parent v3 session successfully called `finder` scout also running v3 (`claude-agent-sdk-v3/claude-sonnet-4-5`) and received the expected result
 - JSONL had matching tool calls/results, no orphan tool results, no missing tool results, and no old `claude-agent-sdk-provider` entries when v3 was loaded only once
 
 ## Caveats / follow-ups
@@ -208,8 +210,9 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - **Schema conversion is minimal:** TypeBox/JSON schema → Zod handles common object properties, arrays, enums, constants, and primitives. It does not deeply model nested object properties, oneOf/anyOf/allOf, nullable unions, numeric bounds, or string formats.
 - **Linux binary workaround:** v3 forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
-- **Scout/subagent coexistence:** Not yet specifically verified.
+- **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using v3 works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
 - **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.
+- **Duplicate v3 load:** Still unsupported. Avoid loading the installed provider again with `-e`; a reload-safe duplicate guard needs separate design.
 
 ## Open questions
 

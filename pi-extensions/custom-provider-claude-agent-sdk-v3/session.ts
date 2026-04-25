@@ -150,6 +150,19 @@ export class ClaudeSession {
     this.pendingToolCalls.clear();
   }
 
+  abortActiveTurn(message: string) {
+    const state = this.currentStreamState;
+    if (state && !state.finished) {
+      state.finished = true;
+      state.output.stopReason = "aborted";
+      state.output.errorMessage = message;
+      state.stream.push({ type: "error", reason: "aborted", error: state.output });
+      state.stream.end();
+    }
+
+    this.close();
+  }
+
   close() {
     this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
     this.pendingResults.clear();

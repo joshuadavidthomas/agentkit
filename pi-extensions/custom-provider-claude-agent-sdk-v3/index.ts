@@ -64,6 +64,12 @@ export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
     session?.markSyncedThrough(pi, leafId);
   });
 
+  pi.on("model_select", (event, ctx) => {
+    if (event.previousModel?.provider !== PROVIDER_ID || event.model.provider === PROVIDER_ID) return;
+
+    getCurrentSession(ctx)?.abortActiveTurn("Claude Agent SDK v3 request cancelled after switching models");
+  });
+
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: "https://api.anthropic.com",
     apiKey: "ANTHROPIC_API_KEY",
