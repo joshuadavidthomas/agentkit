@@ -16,7 +16,7 @@ type Brand<Value, Name> = Value & { readonly [brand]: Name };
 
 export type PiSessionId = Brand<string, "PiSessionId">;
 
-export function piSessionId(value: string): PiSessionId {
+export function asPiSessionId(value: string): PiSessionId {
   return value as PiSessionId;
 }
 

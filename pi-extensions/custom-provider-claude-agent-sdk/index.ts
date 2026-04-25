@@ -2,7 +2,7 @@ import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
-import { ClaudeSession, piSessionId, type PiSessionId } from "./session.js";
+import { asPiSessionId, ClaudeSession, type PiSessionId } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
 export const PROVIDER_ID = "claude-agent-sdk";
@@ -51,7 +51,7 @@ class ClaudeSessionManager {
   constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) {}
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
-    const id = piSessionId(sessionManager.getSessionId());
+    const id = asPiSessionId(sessionManager.getSessionId());
     this.sessions.get(id)?.close();
 
     const session = new ClaudeSession(id, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
@@ -60,7 +60,7 @@ class ClaudeSessionManager {
   }
 
   currentSession(sessionManager: PiSessionManager): ClaudeSession | undefined {
-    return this.sessions.get(piSessionId(sessionManager.getSessionId()));
+    return this.sessions.get(asPiSessionId(sessionManager.getSessionId()));
   }
 
   createSession(id: PiSessionId): ClaudeSession {
@@ -112,7 +112,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    claudeSessions.shutdownSession(piSessionId(ctx.sessionManager.getSessionId()));
+    claudeSessions.shutdownSession(asPiSessionId(ctx.sessionManager.getSessionId()));
   });
 
   pi.on("session_compact", (_event, ctx) => {
@@ -150,7 +150,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
         return streamClaudeAgentSdkOneShot(model, context, options);
       }
 
-      const id = piSessionId(options.sessionId);
+      const id = asPiSessionId(options.sessionId);
       let session = claudeSessions.getSession(id);
       if (!session) {
         session = claudeSessions.createSession(id);
