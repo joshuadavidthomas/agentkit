@@ -128,7 +128,7 @@ function detectPlatform(): Platform {
     try {
       const version = readFileSync("/proc/version", "utf8");
       if (/microsoft/i.test(version)) return "wsl";
-    } catch {}
+    } catch { }
     return "linux";
   }
   return "unknown";
@@ -143,7 +143,7 @@ function detectLinuxPlayer(): string | null {
       execSync(`command -v ${cmd}`, { stdio: "pipe" });
       cachedLinuxPlayer = cmd;
       return cmd;
-    } catch {}
+    } catch { }
   }
   cachedLinuxPlayer = null;
   return null;
@@ -219,7 +219,7 @@ function loadManifest(packPath: string): PackManifest | null {
     if (existsSync(p)) {
       try {
         return JSON.parse(readFileSync(p, "utf8"));
-      } catch {}
+      } catch { }
     }
   }
   return null;
@@ -268,7 +268,7 @@ function killPreviousSound(): void {
   if (currentSoundPid !== null) {
     try {
       process.kill(currentSoundPid);
-    } catch {}
+    } catch { }
     currentSoundPid = null;
   }
 }
@@ -542,17 +542,29 @@ export default function (pi: ExtensionAPI) {
   let state = loadState();
   let installing = false;
 
+  const hasUI = (ctx: { hasUI: boolean }): boolean | null => {
+    try {
+      return ctx.hasUI;
+    } catch {
+      return null;
+    }
+  };
+
   const hasPacks = () => listPacks().length > 0;
 
-  const shouldPlaySounds = (ctx: { hasUI: boolean }) =>
-    ctx.hasUI && !installing && hasPacks();
+  const shouldPlaySounds = (hasUI: boolean | null): boolean =>
+    !!hasUI && !installing && hasPacks();
 
   // Session start → session.start
   pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
+    if (!hasUI(ctx)) return;
 
     if (!hasPacks()) {
-      ctx.ui.notify("peon-ping: no sound packs. Run /peon install", "warning");
+      try {
+        ctx.ui.notify("peon-ping: no sound packs. Run /peon install", "warning");
+      } catch {
+        // The session may already be shutting down.
+      }
       return;
     }
 
@@ -567,7 +579,7 @@ export default function (pi: ExtensionAPI) {
 
   // Agent start → task.acknowledge + spam detection
   pi.on("agent_start", async (_event, ctx) => {
-    if (!shouldPlaySounds(ctx)) return;
+    if (!shouldPlaySounds(hasUI(ctx))) return;
 
     config = loadConfig();
     state = loadState();
@@ -587,7 +599,14 @@ export default function (pi: ExtensionAPI) {
 
   // Agent end → task.complete + notification
   pi.on("agent_end", async (_event, ctx) => {
-    if (!shouldPlaySounds(ctx)) return;
+    if (!shouldPlaySounds(hasUI(ctx))) return;
+
+    let cwd: string;
+    try {
+      cwd = ctx.cwd;
+    } catch {
+      return;
+    }
 
     config = loadConfig();
     state = loadState();
@@ -602,7 +621,7 @@ export default function (pi: ExtensionAPI) {
     playCategorySound("task.complete", config, state);
 
     if (config.enabled && !state.paused) {
-      const project = basename(ctx.cwd);
+      const project = basename(cwd);
       sendNotification(`pi · ${project}`, "Task complete");
     }
   });
@@ -630,7 +649,7 @@ export default function (pi: ExtensionAPI) {
         submenu: (_current: string, done: (val?: string) => void) => {
           if (packs.length === 0) {
             done();
-            return { render: () => ["No packs installed"], invalidate() {}, handleInput() {} } as Component;
+            return { render: () => ["No packs installed"], invalidate() { }, handleInput() { } } as Component;
           }
           return createPackPickerSubmenu(
             config.active_pack,

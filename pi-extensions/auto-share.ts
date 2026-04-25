@@ -62,10 +62,13 @@ let enabled = false;
 let flagOverride: boolean | null = null;
 let exporting = false;
 
-function updateManifest(ctx: ExtensionContext, gistId: string, isNew: boolean): void {
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	if (!sessionFile) return;
-
+function updateManifestForSession(
+	sessionFile: string,
+	sessionId: string,
+	sessionName: string | undefined,
+	gistId: string,
+	isNew: boolean,
+): void {
 	const manifestPath = join(dirname(sessionFile), MANIFEST_FILENAME);
 	let manifest: Manifest = {};
 	try {
@@ -76,14 +79,13 @@ function updateManifest(ctx: ExtensionContext, gistId: string, isNew: boolean): 
 		// Corrupted file, start fresh
 	}
 	const sessions = manifest.sessions ??= {};
-	const sessionId = ctx.sessionManager.getSessionId();
 	const now = new Date().toISOString();
 
 	const existing = sessions[sessionId];
 	sessions[sessionId] = {
 		gistId,
 		viewerUrl: getShareViewerUrl(gistId),
-		name: ctx.sessionManager.getSessionName(),
+		name: sessionName,
 		sessionFile: basename(sessionFile),
 		created: isNew ? now : existing?.created ?? now,
 		updated: now,
@@ -132,34 +134,52 @@ function debugLog(message: string): void {
 	} catch {}
 }
 
+interface ExportOptions {
+	skipCooldown?: boolean;
+	notifyGhUnavailable?: boolean;
+}
+
 async function doExport(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
-	skipCooldown: boolean,
+	options: ExportOptions = {},
 ): Promise<void> {
 	if (!enabled) return;
 	if (exporting) return;
-	if (!skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
+	if (!options.skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
+
+	const sessionManager = ctx.sessionManager;
+	const sessionFile = sessionManager.getSessionFile();
+	if (!sessionFile || !existsSync(sessionFile)) return;
+	const sessionId = sessionManager.getSessionId();
+	const sessionName = sessionManager.getSessionName();
+	const systemPrompt = ctx.getSystemPrompt();
+	const themeName = ctx.ui.theme.name;
+	const activeToolNames = new Set(pi.getActiveTools());
+	const tools = pi.getAllTools()
+		.filter((t) => activeToolNames.has(t.name))
+		.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
 
 	if (ghAvailable !== true) {
 		const authCheck = await runGh(["auth", "status"]);
 		ghAvailable = authCheck.code === 0;
 		if (!ghAvailable) {
-			if (!ghWarningShown) {
+			if (options.notifyGhUnavailable && !ghWarningShown) {
 				ghWarningShown = true;
 				const versionCheck = await runGh(["--version"]);
-				if (versionCheck.code !== 0) {
-					ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
-				} else {
-					ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
+				try {
+					if (versionCheck.code !== 0) {
+						ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
+					} else {
+						ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
+					}
+				} catch {
+					// The session may have ended while checking gh; skip notification.
 				}
 			}
 			return;
 		}
 	}
-
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	if (!sessionFile || !existsSync(sessionFile)) return;
 
 	exporting = true;
 	// Use a subdirectory so the gist file is named consistently
@@ -169,20 +189,16 @@ async function doExport(
 
 	try {
 		const exportSessionToHtml = await loadExportFn();
-		const activeToolNames = new Set(pi.getActiveTools());
-		const tools = pi.getAllTools()
-			.filter((t) => activeToolNames.has(t.name))
-			.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
-		const state = { systemPrompt: ctx.getSystemPrompt(), tools };
-		await exportSessionToHtml(ctx.sessionManager, state, {
+		const state = { systemPrompt, tools };
+		await exportSessionToHtml(sessionManager, state, {
 			outputPath: tmpFile,
-			themeName: ctx.ui.theme.name,
+			themeName,
 		});
 
 		if (gistId) {
 			const result = await runGh(["gist", "edit", gistId, "--filename", GIST_FILENAME, tmpFile]);
 			if (result.code === 0) {
-				updateManifest(ctx, gistId, false);
+				updateManifestForSession(sessionFile, sessionId, sessionName, gistId, false);
 				lastExportTime = Date.now();
 			} else {
 				debugLog(`gist edit failed: ${result.stderr.trim()}`);
@@ -192,9 +208,9 @@ async function doExport(
 			const newGistId = result.code === 0 ? basename(result.stdout.trim()) : null;
 			if (newGistId) {
 				gistId = newGistId;
-				updateManifest(ctx, gistId, true);
+				updateManifestForSession(sessionFile, sessionId, sessionName, gistId, true);
 				lastExportTime = Date.now();
-				debugLog(`Created gist ${gistId} for session ${ctx.sessionManager.getSessionId()}`);
+				debugLog(`Created gist ${gistId} for session ${sessionId}`);
 			} else {
 				debugLog(`gist create failed: ${result.stderr.trim()}`);
 			}
@@ -242,34 +258,21 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
-	pi.on("session_before_switch", (_event, ctx) => {
-		// Final export of the outgoing session before switching away.
-		// Fire-and-forget so session switching remains responsive.
-		void doExport(pi, ctx, true).finally(() => {
-			gistId = null;
-			lastExportTime = 0;
-		});
-	});
-
-	pi.on("session_shutdown", async (event, ctx) => {
-		if (event.reason === "quit") {
-			await doExport(pi, ctx, true);
-			return;
-		}
-
-		// Fire-and-forget so session replacement/reload remains responsive.
-		void doExport(pi, ctx, true);
+	pi.on("session_shutdown", async (_event, ctx) => {
+		await doExport(pi, ctx, { skipCooldown: true });
+		gistId = null;
+		lastExportTime = 0;
 	});
 
 	pi.registerCommand("auto-share", {
@@ -319,7 +322,7 @@ export default function (pi: ExtensionAPI) {
 				persistEnabled(ctx, enabled);
 				ctx.ui.notify(`Auto-share ${enabled ? "enabled" : "disabled"}`, "info");
 				if (enabled) {
-					doExport(pi, ctx, true);
+					await doExport(pi, ctx, { skipCooldown: true, notifyGhUnavailable: true });
 				}
 				return;
 			}
