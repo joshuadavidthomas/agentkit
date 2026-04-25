@@ -442,12 +442,6 @@ function attachState(session: ClaudeSession, model: Model<Api>, stream: Assistan
   return state;
 }
 
-function emitOrphanToolResult(stream: AssistantMessageEventStream, model: Model<Api>) {
-  const state = createStreamState(model, stream);
-  startStream(state);
-  queueMicrotask(() => finishStream(state, "stop"));
-}
-
 export function streamClaudeAgentSdkOneShot(
   model: Model<Api>,
   context: Context,
@@ -535,7 +529,9 @@ export function streamClaudeAgentSdk(
   }
 
   if (context.messages[context.messages.length - 1]?.role === "toolResult") {
-    emitOrphanToolResult(stream, model);
+    const state = createStreamState(model, stream);
+    startStream(state);
+    queueMicrotask(() => finishStream(state, "stop"));
     return stream;
   }
 
