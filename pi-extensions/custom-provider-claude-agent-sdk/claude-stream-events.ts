@@ -43,7 +43,29 @@ export type TurnResult =
   | { type: "error"; message: string; text?: string; usage?: TurnUsage }
   | { type: "done"; stopReason: FinishedStopReason; text?: string; usage?: TurnUsage };
 
-export function parseClaudeStreamEvent(event: ClaudeStreamEvent): TurnEvent | undefined {
+export type TurnUpdate =
+  | { type: "event"; event: TurnEvent }
+  | { type: "assistantBackfill"; backfill: AssistantBackfill[] }
+  | { type: "result"; result: TurnResult };
+
+export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined {
+  if (message.type === "stream_event") {
+    const event = parseClaudeStreamEvent(message.event);
+    return event ? { type: "event", event } : undefined;
+  }
+
+  if (message.type === "assistant") {
+    return { type: "assistantBackfill", backfill: parseClaudeAssistantMessage(message) };
+  }
+
+  if (message.type === "result") {
+    return { type: "result", result: parseClaudeResultMessage(message) };
+  }
+
+  return undefined;
+}
+
+function parseClaudeStreamEvent(event: ClaudeStreamEvent): TurnEvent | undefined {
   switch (event.type) {
     case "message_start":
       return { type: "messageStarted", usage: parseClaudeUsage(event.message.usage) };
@@ -103,7 +125,7 @@ export function parseClaudeStreamEvent(event: ClaudeStreamEvent): TurnEvent | un
   }
 }
 
-export function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): AssistantBackfill[] {
+function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): AssistantBackfill[] {
   const backfill: AssistantBackfill[] = [];
 
   for (const block of message.message.content) {
@@ -130,7 +152,7 @@ export function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): As
   return backfill;
 }
 
-export function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
+function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
   const usage = parseClaudeUsage(result.usage);
   const text = "result" in result && result.result.trim() ? result.result : undefined;
 

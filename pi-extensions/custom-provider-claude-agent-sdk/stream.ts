@@ -9,12 +9,7 @@ import {
   type Model,
   type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
-import {
-  extractSessionId,
-  parseClaudeAssistantMessage,
-  parseClaudeResultMessage,
-  parseClaudeStreamEvent,
-} from "./claude-stream-events.js";
+import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { ClaudeSession } from "./session.js";
@@ -27,9 +22,7 @@ import {
   MCP_TOOL_PREFIX,
 } from "./tools.js";
 import {
-  applyAssistantBackfill,
-  applyTurnEvent,
-  applyTurnResult,
+  applyTurnUpdate,
   PiStreamState,
 } from "./pi-stream.js";
 
@@ -77,20 +70,8 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
 });
 
 function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: PiStreamState): boolean {
-  if (message.type === "stream_event") {
-    const turnEvent = parseClaudeStreamEvent(message.event);
-    return turnEvent ? applyTurnEvent(turnEvent, state, session.toolCalls) : false;
-  }
-
-  if (message.type === "assistant") {
-    return applyAssistantBackfill(parseClaudeAssistantMessage(message), state, session.toolCalls);
-  }
-
-  if (message.type === "result") {
-    return applyTurnResult(parseClaudeResultMessage(message), state);
-  }
-
-  return false;
+  const update = parseClaudeMessage(message);
+  return update ? applyTurnUpdate(update, state, session.toolCalls) : false;
 }
 
 function createAbortController(signal?: AbortSignal): AbortController {

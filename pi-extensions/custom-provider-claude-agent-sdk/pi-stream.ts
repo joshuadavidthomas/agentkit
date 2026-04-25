@@ -7,7 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult, TurnUsage } from "./claude-stream-events.js";
+import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult, TurnUpdate, TurnUsage } from "./claude-stream-events.js";
 import type { ToolCallMatcher } from "./tool-call-matcher.js";
 import { stripMcpToolName } from "./tools.js";
 import type { FinishedStopReason, StreamDelta, StreamSignature, StreamToolCallStart } from "./types.js";
@@ -228,16 +228,19 @@ export class PiStreamState {
   }
 }
 
-export function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
-  state.markStreamingContentReceived();
-  return applyTurnEventToState(event, state, toolCalls);
+export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+  switch (update.type) {
+    case "event":
+      state.markStreamingContentReceived();
+      return applyTurnEvent(update.event, state, toolCalls);
+    case "assistantBackfill":
+      return applyAssistantBackfill(update.backfill, state, toolCalls);
+    case "result":
+      return applyTurnResult(update.result, state);
+  }
 }
 
-export function applyAssistantBackfill(
-  backfill: AssistantBackfill[],
-  state: PiStreamState,
-  toolCalls: ToolCallMatcher,
-): boolean {
+function applyAssistantBackfill(backfill: AssistantBackfill[], state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   if (!state.acceptsAssistantBackfill() || backfill.length === 0) return false;
 
   toolCalls.resetTurn();
@@ -248,7 +251,7 @@ export function applyAssistantBackfill(
   return state.finishToolUseIfPresent();
 }
 
-export function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
+function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
   if (state.finished) return false;
 
   state.applyUsage(result.usage);
@@ -271,7 +274,7 @@ export function applyTurnResult(result: TurnResult, state: PiStreamState): boole
   return true;
 }
 
-function applyTurnEventToState(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   switch (event.type) {
     case "messageStarted":
       state.beginMessage(event.usage);
