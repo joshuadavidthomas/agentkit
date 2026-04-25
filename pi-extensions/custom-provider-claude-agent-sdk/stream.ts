@@ -11,7 +11,7 @@ import {
 import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
-import { asPiSessionId, ClaudeSession } from "./session.js";
+import { ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
   createMcpTextResult,
@@ -99,7 +99,7 @@ export function streamClaudeAgentSdkOneShot(
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
-  const session = new ClaudeSession(asPiSessionId("one-shot"));
+  const session = new ClaudeSession("one-shot");
   const state = attachState(session, model, stream);
 
   void runOneShotQuery(session, state, model, context, options);

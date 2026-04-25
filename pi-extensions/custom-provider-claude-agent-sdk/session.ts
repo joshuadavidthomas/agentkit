@@ -9,19 +9,8 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
-declare const brand: unique symbol;
-
-// TypeScript newtype-style helper for nominal IDs over primitive values.
-type Brand<Value, Name> = Value & { readonly [brand]: Name };
-
-export type PiSessionId = Brand<string, "PiSessionId">;
-
-export function asPiSessionId(value: string): PiSessionId {
-  return value as PiSessionId;
-}
-
 export class ClaudeSession {
-  readonly piSessionId: PiSessionId;
+  readonly piSessionId: string;
   readonly toolCalls = new ToolCallMatcher();
 
   private _sdkSessionId: string | null;
@@ -32,7 +21,7 @@ export class ClaudeSession {
   private _currentStreamState: PiStreamState | null = null;
 
   constructor(
-    piSessionId: PiSessionId,
+    piSessionId: string,
     data?: Partial<SessionEntryData>,
     sessionManager?: HandoffSessionReader,
     private readonly persistSessionEntry?: PersistSessionEntry,
