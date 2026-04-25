@@ -231,7 +231,7 @@ function applyProviderStreamEvent(event: ProviderStreamEvent, session: ClaudeSes
         type: "toolCall",
         id: event.id,
         name: stripMcpToolName(event.rawName),
-        arguments: event.arguments,
+        arguments: event.input as ToolCall["arguments"],
       };
       state.sawToolCall = true;
       session.registerToolCallId(event.id);

@@ -14,7 +14,7 @@ export type ProviderStreamEvent =
       sdkIndex: number;
       id: string;
       rawName: string;
-      arguments: Record<string, unknown>;
+      input: unknown;
     }
   | { type: "toolCallDelta"; sdkIndex: number; delta: string }
   | { type: "contentBlockStop"; sdkIndex: number }
@@ -39,7 +39,7 @@ export function parseClaudeStreamEvent(event: ClaudeStreamEvent): ProviderStream
             sdkIndex: event.index,
             id: event.content_block.id,
             rawName: event.content_block.name,
-            arguments: event.content_block.input as Record<string, unknown>,
+            input: event.content_block.input,
           };
         default:
           return undefined;
