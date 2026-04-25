@@ -128,7 +128,7 @@ function detectPlatform(): Platform {
     try {
       const version = readFileSync("/proc/version", "utf8");
       if (/microsoft/i.test(version)) return "wsl";
-    } catch {}
+    } catch { }
     return "linux";
   }
   return "unknown";
@@ -143,7 +143,7 @@ function detectLinuxPlayer(): string | null {
       execSync(`command -v ${cmd}`, { stdio: "pipe" });
       cachedLinuxPlayer = cmd;
       return cmd;
-    } catch {}
+    } catch { }
   }
   cachedLinuxPlayer = null;
   return null;
@@ -219,7 +219,7 @@ function loadManifest(packPath: string): PackManifest | null {
     if (existsSync(p)) {
       try {
         return JSON.parse(readFileSync(p, "utf8"));
-      } catch {}
+      } catch { }
     }
   }
   return null;
@@ -268,7 +268,7 @@ function killPreviousSound(): void {
   if (currentSoundPid !== null) {
     try {
       process.kill(currentSoundPid);
-    } catch {}
+    } catch { }
     currentSoundPid = null;
   }
 }
@@ -542,12 +542,7 @@ export default function (pi: ExtensionAPI) {
   let state = loadState();
   let installing = false;
 
-  const hasPacks = () => listPacks().length > 0;
-
-  const shouldPlaySounds = (hasUI: boolean) =>
-    hasUI && !installing && hasPacks();
-
-  const getHasUI = (ctx: { hasUI: boolean }): boolean | null => {
+  const hasUI = (ctx: { hasUI: boolean }): boolean | null => {
     try {
       return ctx.hasUI;
     } catch {
@@ -555,10 +550,14 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  const hasPacks = () => listPacks().length > 0;
+
+  const shouldPlaySounds = (hasUI: boolean | null): boolean =>
+    !!hasUI && !installing && hasPacks();
+
   // Session start → session.start
   pi.on("session_start", async (_event, ctx) => {
-    const hasUI = getHasUI(ctx);
-    if (!hasUI) return;
+    if (!hasUI(ctx)) return;
 
     if (!hasPacks()) {
       try {
@@ -580,8 +579,7 @@ export default function (pi: ExtensionAPI) {
 
   // Agent start → task.acknowledge + spam detection
   pi.on("agent_start", async (_event, ctx) => {
-    const hasUI = getHasUI(ctx);
-    if (hasUI === null || !shouldPlaySounds(hasUI)) return;
+    if (!shouldPlaySounds(hasUI(ctx))) return;
 
     config = loadConfig();
     state = loadState();
@@ -601,8 +599,7 @@ export default function (pi: ExtensionAPI) {
 
   // Agent end → task.complete + notification
   pi.on("agent_end", async (_event, ctx) => {
-    const hasUI = getHasUI(ctx);
-    if (hasUI === null || !shouldPlaySounds(hasUI)) return;
+    if (!shouldPlaySounds(hasUI(ctx))) return;
 
     let cwd: string;
     try {
@@ -652,7 +649,7 @@ export default function (pi: ExtensionAPI) {
         submenu: (_current: string, done: (val?: string) => void) => {
           if (packs.length === 0) {
             done();
-            return { render: () => ["No packs installed"], invalidate() {}, handleInput() {} } as Component;
+            return { render: () => ["No packs installed"], invalidate() { }, handleInput() { } } as Component;
           }
           return createPackPickerSubmenu(
             config.active_pack,
