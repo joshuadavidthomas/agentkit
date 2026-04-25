@@ -80,6 +80,12 @@ class ClaudeSessionManager {
     session?.reset();
   }
 
+  markSessionSynced(sessionManager: PiSessionManager, leafId: string) {
+    const session = this.currentSession(sessionManager);
+    session?.setSessionManager(sessionManager);
+    session?.markSyncedThrough(leafId);
+  }
+
   shutdownSession(piSessionId: string) {
     const session = this.sessions.get(piSessionId);
     session?.close();
@@ -126,9 +132,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
     const leafId = ctx.sessionManager.getLeafId();
     if (!leafId) return;
 
-    const session = claudeSessions.currentSession(ctx.sessionManager);
-    session?.setSessionManager(ctx.sessionManager);
-    session?.markSyncedThrough(leafId);
+    claudeSessions.markSessionSynced(ctx.sessionManager, leafId);
   });
 
   pi.on("model_select", (event, ctx) => {
