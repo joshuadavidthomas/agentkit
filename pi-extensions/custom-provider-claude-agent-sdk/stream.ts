@@ -23,13 +23,10 @@ import {
 import {
   backfillAssistantContent,
   completeFromResult,
-  createStreamState,
-  failStream,
-  finishStream,
   handleClaudeStreamEvent,
-  startStream,
+  PiStreamState,
 } from "./pi-stream.js";
-import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
+import type { PromptBlock, PromptImageBlock, PromptTextBlock } from "./types.js";
 
 const require = createRequire(import.meta.url);
 
@@ -119,6 +116,8 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
 const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
   abortController,
   cwd: process.cwd(),
@@ -130,20 +129,20 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
   env: createSdkEnv(apiKey),
 });
 
-function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: StreamState) {
+function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: PiStreamState): boolean {
   if (message.type === "stream_event") {
-    handleClaudeStreamEvent(message.event, session, state);
-    return;
+    return handleClaudeStreamEvent(message.event, state, session.toolCalls);
   }
 
   if (message.type === "assistant") {
-    backfillAssistantContent(message, session, state);
-    return;
+    return backfillAssistantContent(message, state, session.toolCalls);
   }
 
   if (message.type === "result") {
-    completeFromResult(message, session, state);
+    return completeFromResult(message, state);
   }
+
+  return false;
 }
 
 function createAbortController(signal?: AbortSignal): AbortController {
@@ -159,10 +158,10 @@ function createAbortController(signal?: AbortSignal): AbortController {
   return abortController;
 }
 
-function attachState(session: ClaudeSession, model: Model<Api>, stream: AssistantMessageEventStream): StreamState {
-  const state = createStreamState(model, stream);
+function attachState(session: ClaudeSession, model: Model<Api>, stream: AssistantMessageEventStream): PiStreamState {
+  const state = new PiStreamState(model, stream);
   session.attachStreamState(state);
-  startStream(state);
+  state.start();
   return state;
 }
 
@@ -180,7 +179,7 @@ export function streamClaudeAgentSdkOneShot(
     let sdkQuery: ReturnType<typeof query> | undefined;
 
     if (abortController.signal.aborted) {
-      failStream(new Error("Claude Agent SDK one-shot request aborted"), state, true);
+      state.fail("Claude Agent SDK one-shot request aborted", true);
       session.detachStreamState(state);
       return;
     }
@@ -197,14 +196,16 @@ export function streamClaudeAgentSdkOneShot(
       });
 
       for await (const message of sdkQuery) {
-        handleSdkQueryMessage(message, session, state);
+        if (handleSdkQueryMessage(message, session, state)) {
+          session.detachStreamState(state);
+        }
       }
 
       if (!state.finished) {
-        finishStream(state, "stop");
+        state.finish("stop");
       }
     } catch (error) {
-      failStream(error, state, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+      state.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
     } finally {
       session.close();
       try {
@@ -234,9 +235,9 @@ export function streamClaudeAgentSdk(
   }
 
   if (context.messages[context.messages.length - 1]?.role === "toolResult") {
-    const state = createStreamState(model, stream);
-    startStream(state);
-    queueMicrotask(() => finishStream(state, "stop"));
+    const state = new PiStreamState(model, stream);
+    state.start();
+    queueMicrotask(() => state.finish("stop"));
     return stream;
   }
 
@@ -258,7 +259,7 @@ export function streamClaudeAgentSdk(
 
     if (options?.signal?.aborted) {
       abortPending();
-      failStream(new Error("Claude Agent SDK request aborted"), state, true);
+      state.fail("Claude Agent SDK request aborted", true);
       session.detachStreamState(state);
       return;
     }
@@ -299,17 +300,19 @@ export function streamClaudeAgentSdk(
         const currentState = session.currentStreamState;
         if (!currentState) continue;
 
-        handleSdkQueryMessage(message, session, currentState);
+        if (handleSdkQueryMessage(message, session, currentState)) {
+          session.detachStreamState(currentState);
+        }
       }
 
       const currentState = session.currentStreamState;
       if (currentState && !currentState.finished) {
-        finishStream(currentState, "stop");
+        currentState.finish("stop");
         session.detachStreamState(currentState);
       }
     } catch (error) {
       const currentState = session.currentStreamState ?? state;
-      failStream(error, currentState, abortController.signal.aborted || Boolean(options?.signal?.aborted));
+      currentState.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
       session.detachStreamState(currentState);
     } finally {
       options?.signal?.removeEventListener("abort", abortPending);

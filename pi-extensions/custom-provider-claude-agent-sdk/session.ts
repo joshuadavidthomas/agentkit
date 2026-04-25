@@ -3,15 +3,11 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, type SessionEntryData } from "./persistence.js";
+import { ToolCallMatcher } from "./tool-call-matcher.js";
 import { createMcpTextResult, type PiMcpResult } from "./tools.js";
-import type { StreamState } from "./types.js";
+import type { PiStreamState } from "./pi-stream.js";
 
 type SdkQuery = ReturnType<typeof query>;
-
-interface PendingToolCall {
-  toolName: string;
-  resolve: (result: CallToolResult) => void;
-}
 
 export class ClaudeSession {
   readonly piSessionId: string;
@@ -20,11 +16,8 @@ export class ClaudeSession {
   lastClaudeModelId: string | null;
   sessionManager: HandoffSessionReader | undefined;
   activeQuery: SdkQuery | null;
-  currentStreamState: StreamState | null;
-  pendingToolCalls: Map<string, PendingToolCall>;
-  pendingResults: Map<string, CallToolResult>;
-  turnToolCallIds: string[];
-  nextToolHandlerIndex: number;
+  currentStreamState: PiStreamState | null;
+  toolCalls: ToolCallMatcher;
 
   constructor(piSessionId: string, data?: Partial<SessionEntryData>, sessionManager?: HandoffSessionReader) {
     this.piSessionId = piSessionId;
@@ -34,10 +27,7 @@ export class ClaudeSession {
     this.sessionManager = sessionManager;
     this.activeQuery = null;
     this.currentStreamState = null;
-    this.pendingToolCalls = new Map();
-    this.pendingResults = new Map();
-    this.turnToolCallIds = [];
-    this.nextToolHandlerIndex = 0;
+    this.toolCalls = new ToolCallMatcher();
   }
 
   setSessionManager(sessionManager: HandoffSessionReader | undefined) {
@@ -85,69 +75,31 @@ export class ClaudeSession {
     if (this.activeQuery !== sdkQuery) return;
 
     this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
-    this.pendingResults.clear();
+    this.toolCalls.clearQueuedResults();
     this.activeQuery = null;
     this.currentStreamState = null;
   }
 
-  attachStreamState(state: StreamState) {
+  attachStreamState(state: PiStreamState) {
     this.currentStreamState = state;
   }
 
-  detachStreamState(state: StreamState) {
+  detachStreamState(state: PiStreamState) {
     if (this.currentStreamState === state) {
       this.currentStreamState = null;
     }
   }
 
-  resetToolCallIds() {
-    this.turnToolCallIds = [];
-    this.nextToolHandlerIndex = 0;
-  }
-
-  registerToolCallId(toolCallId: string) {
-    if (!this.turnToolCallIds.includes(toolCallId)) {
-      this.turnToolCallIds.push(toolCallId);
-    }
-  }
-
   handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    const toolCallId = this.turnToolCallIds[this.nextToolHandlerIndex++];
-    if (!toolCallId) {
-      return Promise.resolve(createMcpTextResult(`Tool ${toolName} was called before Pi received a matching tool call id.`, true));
-    }
-
-    const queued = this.pendingResults.get(toolCallId);
-    if (queued) {
-      this.pendingResults.delete(toolCallId);
-      return Promise.resolve(queued);
-    }
-
-    return new Promise<CallToolResult>((resolve) => {
-      this.pendingToolCalls.set(toolCallId, { toolName, resolve });
-    });
+    return this.toolCalls.handleMcpToolCall(toolName);
   }
 
   deliverToolResults(results: PiMcpResult[]) {
-    for (const result of results) {
-      const toolCallId = result.toolCallId;
-      if (!toolCallId) continue;
-
-      const pending = this.pendingToolCalls.get(toolCallId);
-      if (pending) {
-        this.pendingToolCalls.delete(toolCallId);
-        pending.resolve(result);
-      } else {
-        this.pendingResults.set(toolCallId, result);
-      }
-    }
+    this.toolCalls.deliverToolResults(results);
   }
 
   resolvePendingToolCalls(result: CallToolResult) {
-    for (const pending of this.pendingToolCalls.values()) {
-      pending.resolve(result);
-    }
-    this.pendingToolCalls.clear();
+    this.toolCalls.resolvePendingToolCalls(result);
   }
 
   abortActiveTurn(message: string) {
@@ -161,10 +113,9 @@ export class ClaudeSession {
 
   close() {
     this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
-    this.pendingResults.clear();
+    this.toolCalls.clearQueuedResults();
     this.currentStreamState = null;
-    this.turnToolCallIds = [];
-    this.nextToolHandlerIndex = 0;
+    this.toolCalls.resetTurn();
 
     const query = this.activeQuery;
     this.activeQuery = null;

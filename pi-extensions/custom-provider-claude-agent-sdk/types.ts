@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, AssistantMessageEventStream, Model, StopReason, ToolCall } from "@mariozechner/pi-ai";
+import type { StopReason, ToolCall } from "@mariozechner/pi-ai";
 
 export interface PromptTextBlock {
   type: "text";
@@ -33,33 +33,4 @@ export interface StreamToolCallStart {
   id: string;
   name: string;
   args: ToolCall["arguments"];
-}
-
-export interface StreamState {
-  readonly model: Model<Api>;
-  readonly output: AssistantMessage;
-  readonly stream: AssistantMessageEventStream;
-  readonly finished: boolean;
-
-  markStreamingContentReceived(): void;
-  acceptsAssistantBackfill(): boolean;
-  finishToolUseIfPresent(): boolean;
-  start(): void;
-  finish(reason: FinishedStopReason): void;
-  fail(error: unknown, aborted: boolean): void;
-
-  beginMessage(usage?: unknown): void;
-  applyUsage(usage: unknown): void;
-  setStopReason(reason: FinishedStopReason): void;
-  backfillText(text: string): void;
-  backfillThinking(thinking: string, signature: string): void;
-  backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): void;
-  beginTextBlock(sdkIndex: number): void;
-  appendTextDelta(delta: StreamDelta): void;
-  beginThinkingBlock(sdkIndex: number): void;
-  appendThinkingDelta(delta: StreamDelta): void;
-  appendThinkingSignature(signature: StreamSignature): void;
-  beginToolCall(toolCall: StreamToolCallStart): void;
-  appendToolCallJson(delta: StreamDelta): void;
-  finishContentBlock(sdkIndex: number): void;
 }

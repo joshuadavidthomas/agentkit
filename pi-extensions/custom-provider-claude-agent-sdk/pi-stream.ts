@@ -5,21 +5,20 @@ import {
   type AssistantMessage,
   type AssistantMessageEventStream,
   type Model,
-  type StopReason,
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
 import { parseClaudeStreamEvent, type ClaudeStreamEvent, type ProviderStreamEvent } from "./claude-stream-events.js";
-import type { ClaudeSession } from "./session.js";
+import type { ToolCallMatcher } from "./tool-call-matcher.js";
 import { stripMcpToolName } from "./tools.js";
-import type { FinishedStopReason, StreamDelta, StreamSignature, StreamState, StreamToolCallStart } from "./types.js";
+import type { FinishedStopReason, StreamDelta, StreamSignature, StreamToolCallStart } from "./types.js";
 
 type ActiveBlock =
   | { type: "text"; contentIndex: number }
   | { type: "thinking"; contentIndex: number }
   | { type: "toolCall"; contentIndex: number; partialJson: string };
 
-class PiStreamState implements StreamState {
+export class PiStreamState {
   readonly output: AssistantMessage;
 
   private activeBlocks = new Map<number, ActiveBlock>();
@@ -84,13 +83,13 @@ class PiStreamState implements StreamState {
     this.stream.end();
   }
 
-  fail(error: unknown, aborted: boolean) {
+  fail(message: string, aborted: boolean) {
     if (this.isFinished) return;
 
     this.start();
     this.isFinished = true;
     this.output.stopReason = aborted ? "aborted" : "error";
-    this.output.errorMessage = error instanceof Error ? error.message : String(error);
+    this.output.errorMessage = message;
     this.stream.push({ type: "error", reason: this.output.stopReason, error: this.output });
     this.stream.end();
   }
@@ -235,41 +234,25 @@ class PiStreamState implements StreamState {
   }
 }
 
-export function createStreamState(model: Model<Api>, stream: AssistantMessageEventStream): StreamState {
-  return new PiStreamState(model, stream);
-}
-
-export function startStream(state: StreamState) {
-  state.start();
-}
-
-export function finishStream(state: StreamState, reason: Extract<StopReason, "stop" | "length" | "toolUse">) {
-  state.finish(reason);
-}
-
-export function failStream(error: unknown, state: StreamState, aborted: boolean) {
-  state.fail(error, aborted);
-}
-
-export function handleClaudeStreamEvent(event: ClaudeStreamEvent, session: ClaudeSession, state: StreamState) {
+export function handleClaudeStreamEvent(event: ClaudeStreamEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   const providerEvent = parseClaudeStreamEvent(event);
-  if (!providerEvent) return;
+  if (!providerEvent) return false;
 
   state.markStreamingContentReceived();
-  applyProviderStreamEvent(providerEvent, session, state);
+  return applyProviderStreamEvent(providerEvent, state, toolCalls);
 }
 
 export function backfillAssistantContent(
   message: Extract<SDKMessage, { type: "assistant" }>,
-  session: ClaudeSession,
-  state: StreamState,
-) {
-  if (!state.acceptsAssistantBackfill()) return;
+  state: PiStreamState,
+  toolCalls: ToolCallMatcher,
+): boolean {
+  if (!state.acceptsAssistantBackfill()) return false;
 
   const blocks = (message.message as { content?: unknown; usage?: unknown }).content;
-  if (!Array.isArray(blocks)) return;
+  if (!Array.isArray(blocks)) return false;
 
-  session.resetToolCallIds();
+  toolCalls.resetTurn();
 
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
@@ -292,17 +275,15 @@ export function backfillAssistantContent(
       const toolCallId = typeof item.id === "string" ? item.id : `tool-${state.output.content.length}`;
       const rawName = typeof item.name === "string" ? item.name : "tool";
       state.backfillToolCall(toolCallId, stripMcpToolName(rawName), item.input as ToolCall["arguments"]);
-      session.registerToolCallId(toolCallId);
+      toolCalls.register(toolCallId);
     }
   }
 
-  if (state.finishToolUseIfPresent()) {
-    session.detachStreamState(state);
-  }
+  return state.finishToolUseIfPresent();
 }
 
-export function completeFromResult(result: SDKResultMessage, session: ClaudeSession, state: StreamState | null) {
-  if (!state || state.finished) return;
+export function completeFromResult(result: SDKResultMessage, state: PiStreamState | null): boolean {
+  if (!state || state.finished) return false;
 
   state.applyUsage(result.usage);
 
@@ -313,8 +294,7 @@ export function completeFromResult(result: SDKResultMessage, session: ClaudeSess
       state.backfillText(resultText);
     }
     state.fail(state.output.errorMessage, false);
-    session.detachStreamState(state);
-    return;
+    return true;
   }
 
   const hasText = state.output.content.some((block) => block.type === "text" && block.text.trim().length > 0);
@@ -323,30 +303,30 @@ export function completeFromResult(result: SDKResultMessage, session: ClaudeSess
   }
 
   state.finish(mapStopReason(result.stop_reason));
-  session.detachStreamState(state);
+  return true;
 }
 
-function applyProviderStreamEvent(event: ProviderStreamEvent, session: ClaudeSession, state: StreamState) {
+function applyProviderStreamEvent(event: ProviderStreamEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
   switch (event.type) {
     case "messageStart":
       state.beginMessage(event.usage);
-      session.resetToolCallIds();
-      return;
+      toolCalls.resetTurn();
+      return false;
     case "textStart":
       state.beginTextBlock(event.sdkIndex);
-      return;
+      return false;
     case "textDelta":
       state.appendTextDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
-      return;
+      return false;
     case "thinkingStart":
       state.beginThinkingBlock(event.sdkIndex);
-      return;
+      return false;
     case "thinkingDelta":
       state.appendThinkingDelta({ sdkIndex: event.sdkIndex, delta: event.delta });
-      return;
+      return false;
     case "thinkingSignature":
       state.appendThinkingSignature({ sdkIndex: event.sdkIndex, signature: event.signature });
-      return;
+      return false;
     case "toolCallStart": {
       const toolCall = {
         sdkIndex: event.sdkIndex,
@@ -355,23 +335,21 @@ function applyProviderStreamEvent(event: ProviderStreamEvent, session: ClaudeSes
         args: event.input as ToolCall["arguments"],
       };
       state.beginToolCall(toolCall);
-      session.registerToolCallId(toolCall.id);
-      return;
+      toolCalls.register(toolCall.id);
+      return false;
     }
     case "toolCallDelta":
       state.appendToolCallJson({ sdkIndex: event.sdkIndex, delta: event.delta });
-      return;
+      return false;
     case "contentBlockStop":
       state.finishContentBlock(event.sdkIndex);
-      return;
+      return false;
     case "messageDelta":
       state.setStopReason(mapStopReason(event.stopReason));
       state.applyUsage(event.usage);
-      return;
+      return false;
     case "messageStop":
-      if (state.finishToolUseIfPresent()) {
-        session.detachStreamState(state);
-      }
+      return state.finishToolUseIfPresent();
   }
 }
 
