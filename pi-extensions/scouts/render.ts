@@ -6,9 +6,10 @@
 
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getMarkdownTheme, keyHint, type Theme, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Markdown, Spacer, Text, visibleWidth } from "@mariozechner/pi-tui";
 
 import { cleanToolResult, formatToolCallParts, shorten } from "./display.ts";
+import { hasActiveScoutToolCalls, isParallelScoutMode, onScoutParallelStateChange } from "./state.ts";
 import type { DisplayItem, ScoutDetails } from "./types.ts";
 
 type ScoutStatus = ScoutDetails["status"];
@@ -38,10 +39,27 @@ function getScoutDetails(result: ScoutToolResult): ScoutDetails | undefined {
 
 const RUNNING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const RUNNING_SPINNER_INTERVAL_MS = 80;
+const COLLAPSED_SUMMARY_PREVIEW_LINES = 6;
+const PARALLEL_COLLAPSED_TOOL_PREVIEW = 3;
+const PARALLEL_COLLAPSED_SUMMARY_PREVIEW_LINES = 1;
 
 function getRunningSpinner(theme: Theme, frameIndex = 0): string {
   const frame = RUNNING_SPINNER_FRAMES[frameIndex % RUNNING_SPINNER_FRAMES.length] ?? RUNNING_SPINNER_FRAMES[0]!;
   return theme.fg("warning", frame);
+}
+
+function truncateVisible(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (visibleWidth(text) <= maxWidth) return text;
+
+  const ellipsis = "…";
+  const textWidth = Math.max(0, maxWidth - visibleWidth(ellipsis));
+  let result = "";
+  for (const char of text) {
+    if (visibleWidth(result + char) > textWidth) break;
+    result += char;
+  }
+  return result + ellipsis;
 }
 
 function getRunningStatusLabel(run: ScoutRunDetails, hasToolCalls: boolean): string {
@@ -120,6 +138,10 @@ class ScoutToolRowComponent extends Container {
   private detailText = new Text("", 2, 0);
   private bottomSpacer = new Spacer(1);
   private showingDetails = false;
+  private itemIcon = "";
+  private label = "";
+  private summary = "";
+  private theme?: Theme;
 
   constructor() {
     super();
@@ -136,8 +158,10 @@ class ScoutToolRowComponent extends Container {
       itemStatus = "done";
     }
 
-    const itemIcon = scoutStatusIcon(theme, itemStatus);
-    this.titleText.setText(`${itemIcon} ${theme.fg("toolTitle", label)} ${theme.fg("dim", summary)}`);
+    this.itemIcon = scoutStatusIcon(theme, itemStatus);
+    this.label = label;
+    this.summary = summary;
+    this.theme = theme;
 
     const cleaned = showResultDetails && item.result
       ? cleanToolResult(item.result)
@@ -160,6 +184,17 @@ class ScoutToolRowComponent extends Container {
       this.removeChild(this.bottomSpacer);
       this.showingDetails = false;
     }
+  }
+
+  override render(width: number): string[] {
+    if (this.theme) {
+      const prefix = `${this.itemIcon} ${this.theme.fg("toolTitle", this.label)}`;
+      const separator = this.summary ? " " : "";
+      const availableSummaryWidth = width - visibleWidth(prefix) - visibleWidth(separator);
+      const summary = truncateVisible(this.summary, availableSummaryWidth);
+      this.titleText.setText(`${prefix}${separator}${this.theme.fg("dim", summary)}`);
+    }
+    return super.render(width);
   }
 }
 
@@ -200,12 +235,28 @@ function stripLeadingSummaryHeading(text: string): string {
     .replace(/^(?:#{1,6}[ \t]*)?Summary[ \t]*\r?\n(?:[ \t]*\r?\n)*/i, "");
 }
 
+function compactPreviewLines(text: string, maxLines: number): string {
+  return text.split("\n").slice(0, maxLines).join("\n");
+}
+
+function firstPromptLine(prompt: string): string {
+  const lines = prompt.split(/\r?\n/);
+  const firstLine = lines[0]?.trim() ?? "";
+  const hasMore = lines.slice(1).some((line) => line.trim().length > 0);
+  if (!hasMore || !firstLine) return firstLine;
+  if (firstLine.endsWith("…") || firstLine.endsWith("...")) {
+    return firstLine.replace(/\.\.\.$/, "…");
+  }
+  return firstLine.replace(/[.!?;:]?$/, "…");
+}
+
 class ScoutTextBlockComponent extends Container {
   update(
     item: Extract<DisplayItem, { type: "text" }>,
     isFinalText: boolean,
     expanded: boolean,
     theme: Theme,
+    collapsedPreviewLines = 18,
   ): void {
     this.clear();
 
@@ -226,19 +277,20 @@ class ScoutTextBlockComponent extends Container {
       return;
     }
 
-    const lines = text.split("\n");
-    const preview = lines.slice(0, 18).join("\n");
+    const preview = compactPreviewLines(text, collapsedPreviewLines);
     this.addChild(new Markdown(preview, 0, 0, mdTheme));
-    if (lines.length > 18) {
-      this.addChild(new Text(theme.fg("dim", keyHint("app.tools.expand", "to expand full response")), 0, 0));
-    }
   }
 }
 
 class ScoutTextListComponent extends Container {
   private blocks: ScoutTextBlockComponent[] = [];
 
-  update(items: Array<Extract<DisplayItem, { type: "text" }>>, expanded: boolean, theme: Theme): void {
+  update(
+    items: Array<Extract<DisplayItem, { type: "text" }>>,
+    expanded: boolean,
+    theme: Theme,
+    collapsedPreviewLines = 18,
+  ): void {
     while (this.blocks.length < items.length) {
       this.blocks.push(new ScoutTextBlockComponent());
     }
@@ -250,35 +302,45 @@ class ScoutTextListComponent extends Container {
     const lastIndex = items.length - 1;
     for (let index = 0; index < items.length; index++) {
       const block = this.blocks[index]!;
-      block.update(items[index]!, index === lastIndex, expanded, theme);
+      block.update(items[index]!, index === lastIndex, expanded, theme, collapsedPreviewLines);
       this.addChild(block);
     }
   }
 }
 
-class ScoutResultHeaderComponent extends Container {
+function formatScoutStats(run: ScoutRunDetails, theme: Theme): string {
+  const toolCount = run.displayItems.filter((item) => item.type === "tool").length;
+  const elapsed = formatElapsed(run.startedAt, run.endedAt, run.status === "running");
+  return theme.fg(
+    "dim",
+    `${elapsed} • ${run.turns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"}`,
+  );
+}
+
+function getScoutStatusLabel(status: ScoutStatus, run: ScoutRunDetails, hasToolCalls: boolean): string {
+  if (status === "running") return getRunningStatusLabel(run, hasToolCalls);
+  return status;
+}
+
+class ScoutResultStatusComponent extends Container {
   private runningStatusText = new RunningStatusText();
   private lineText = new Text("", 0, 0);
 
   update(details: ScoutDetails, status: ScoutStatus, run: ScoutRunDetails, theme: Theme, requestRender?: () => void): void {
-    const items = run.displayItems;
-    const toolCount = items.filter((item) => item.type === "tool").length;
-    const totalTurns = run.turns;
-    const elapsed = formatElapsed(run.startedAt, run.endedAt, status === "running");
-    const stats = theme.fg(
-      "dim",
-      `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"} • ${totalTurns} turns • ${toolCount} tool${toolCount === 1 ? "" : "s"} • ${elapsed}`,
-    );
+    const stats = formatScoutStats(run, theme);
+    const toolCount = run.displayItems.filter((item) => item.type === "tool").length;
+    const hasToolCalls = toolCount > 0;
+    const statusLabel = theme.fg("dim", getScoutStatusLabel(status, run, hasToolCalls));
 
     this.clear();
     if (status === "running") {
-      this.runningStatusText.update(run, toolCount > 0, theme, requestRender, stats);
+      this.runningStatusText.update(run, hasToolCalls, theme, requestRender, stats);
       this.addChild(this.runningStatusText);
       return;
     }
 
     this.runningStatusText.stop();
-    this.lineText.setText(`${scoutStatusIcon(theme, status)} ${stats}`);
+    this.lineText.setText(`${scoutStatusIcon(theme, status)} ${statusLabel} ${theme.fg("dim", "•")} ${stats}`);
     this.addChild(this.lineText);
   }
 
@@ -303,22 +365,30 @@ class ScoutResultBodyComponent extends Container {
 
     const toolItems = run.displayItems.filter((item): item is Extract<DisplayItem, { type: "tool" }> => item.type === "tool");
     const textItems = run.displayItems.filter((item): item is Extract<DisplayItem, { type: "text" }> => item.type === "text" && !!item.text.trim());
+    const parallelCompact = isParallelScoutMode();
+    // TODO: Consider allowing expanded in-flight scouts by freezing volatile
+    // status rendering (static icon/no elapsed-time ticks) while expanded. Full
+    // detail plus an animated offscreen line can still trip Pi TUI's
+    // above-viewport full redraw fallback.
+    const canExpand = status !== "running" && !hasActiveScoutToolCalls();
+    const showExpanded = expanded && canExpand;
+    let hasCondensedDetails = false;
 
     if (status === "running") {
       if (toolItems.length > 0) {
         this.addChild(this.topSpacer);
-        const maxRunningTools = 5;
+        this.sectionLabelText.setText(theme.fg("dim", "Tool calls"));
+        this.addChild(this.sectionLabelText);
+        const maxRunningTools = showExpanded ? toolItems.length : parallelCompact ? PARALLEL_COLLAPSED_TOOL_PREVIEW : 5;
         const hiddenCount = Math.max(0, toolItems.length - maxRunningTools);
         if (hiddenCount > 0) {
-          this.hiddenCountText.setText(theme.fg("dim", `... ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`));
+          this.hiddenCountText.setText(theme.fg("dim", `… ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`));
           this.addChild(this.hiddenCountText);
+          hasCondensedDetails = true;
         }
-        this.toolList.update(toolItems.slice(-maxRunningTools), expanded, theme);
+        this.toolList.update(toolItems.slice(-maxRunningTools), showExpanded, theme);
         this.addChild(this.toolList);
-        if (!expanded) {
-          this.expandHintText.setText(theme.fg("dim", keyHint("app.tools.expand", "to expand tool details")));
-          this.addChild(this.expandHintText);
-        }
+        if (!showExpanded) hasCondensedDetails = true;
       }
       return;
     }
@@ -334,12 +404,20 @@ class ScoutResultBodyComponent extends Container {
       this.addChild(this.topSpacer);
       this.sectionLabelText.setText(theme.fg("dim", "Tool calls"));
       this.addChild(this.sectionLabelText);
-      this.toolList.update(toolItems, expanded, theme);
-      this.addChild(this.toolList);
-      if (!expanded) {
-        this.expandHintText.setText(theme.fg("dim", keyHint("app.tools.expand", "to expand tool details")));
-        this.addChild(this.expandHintText);
+      if (showExpanded) {
+        this.toolList.update(toolItems, showExpanded, theme);
+      } else {
+        const maxCollapsedTools = parallelCompact ? PARALLEL_COLLAPSED_TOOL_PREVIEW : 5;
+        const hiddenCount = Math.max(0, toolItems.length - maxCollapsedTools);
+        if (hiddenCount > 0) {
+          this.hiddenCountText.setText(theme.fg("dim", `… ${hiddenCount} earlier tool call${hiddenCount > 1 ? "s" : ""}`));
+          this.addChild(this.hiddenCountText);
+          hasCondensedDetails = true;
+        }
+        this.toolList.update(toolItems.slice(-maxCollapsedTools), showExpanded, theme);
+        hasCondensedDetails = true;
       }
+      this.addChild(this.toolList);
     }
 
     if (textItems.length > 0) {
@@ -350,25 +428,50 @@ class ScoutResultBodyComponent extends Container {
       }
       this.summaryLabelText.setText(theme.fg("dim", "Summary"));
       this.addChild(this.summaryLabelText);
-      this.textList.update(textItems, expanded, theme);
+      const visibleTextItems = showExpanded ? textItems : textItems.slice(-1);
+      const collapsedPreviewLines = parallelCompact
+        ? PARALLEL_COLLAPSED_SUMMARY_PREVIEW_LINES
+        : COLLAPSED_SUMMARY_PREVIEW_LINES;
+      this.textList.update(
+        visibleTextItems,
+        showExpanded,
+        theme,
+        showExpanded ? 18 : collapsedPreviewLines,
+      );
       this.addChild(this.textList);
+      if (!showExpanded && (textItems.length > visibleTextItems.length || textItems.some((item) => stripLeadingSummaryHeading(item.text).split("\n").length > collapsedPreviewLines))) {
+        hasCondensedDetails = true;
+      }
+    }
+
+    if (hasCondensedDetails && canExpand) {
+      this.addChild(this.summarySpacer);
+      this.expandHintText.setText(theme.fg("dim", keyHint("app.tools.expand", "to expand details")));
+      this.addChild(this.expandHintText);
     }
   }
 }
 
 class ScoutDetailsComponent extends Container {
-  private header = new ScoutResultHeaderComponent();
+  private titleText = new Text("", 0, 0);
   private promptText = new Text("", 0, 0);
   private body = new ScoutResultBodyComponent();
+  private footerSpacer = new Spacer(1);
+  private statusLine = new ScoutResultStatusComponent();
 
-  constructor() {
+  constructor(
+    private readonly scoutName: string,
+    private readonly titleSuffix?: string,
+  ) {
     super();
-    this.addChild(this.header);
+    this.addChild(this.titleText);
+    this.addChild(this.promptText);
     this.addChild(this.body);
+    this.addChild(this.statusLine);
   }
 
   stop(): void {
-    this.header.stop();
+    this.statusLine.stop();
   }
 
   update(
@@ -379,30 +482,47 @@ class ScoutDetailsComponent extends Container {
     theme: Theme,
     requestRender?: () => void,
   ): void {
+    const model = `${details.subagentProvider ?? "?"}/${details.subagentModelId ?? "?"}`;
     const prompt = run.query.trim();
+    const promptText = options.expanded && !hasActiveScoutToolCalls()
+      ? prompt
+      : firstPromptLine(prompt);
+    const titleParts = [
+      theme.fg("toolTitle", theme.bold(this.scoutName)),
+      theme.fg("muted", model),
+    ];
+    if (this.titleSuffix) titleParts.push(theme.fg("dim", this.titleSuffix));
 
-    this.header.update(details, status, run, theme, requestRender);
-    this.promptText.setText(theme.fg("muted", prompt));
+    this.titleText.setText(titleParts.join(" "));
+    this.promptText.setText(theme.fg("muted", promptText));
     this.body.update(status, run, options.expanded, theme);
+    this.statusLine.update(details, status, run, theme, requestRender);
 
     this.clear();
-    this.addChild(this.header);
-    if (prompt) this.addChild(this.promptText);
+    this.addChild(this.titleText);
+    if (promptText) this.addChild(this.promptText);
     this.addChild(this.body);
+    this.addChild(this.footerSpacer);
+    this.addChild(this.statusLine);
   }
 }
 
 export class ScoutResult extends Container {
   private fallback = new Text("", 0, 0);
-  private detailsComponent = new ScoutDetailsComponent();
+  private detailsComponent: ScoutDetailsComponent;
   private showingFallback = false;
+  private latestInvalidate?: () => void;
+  private stopObservingParallelState?: () => void;
 
   constructor(
     private result: ScoutToolResult,
     private options: ToolRenderResultOptions,
     private theme: Theme,
+    scoutName = "scout",
+    titleSuffix?: string,
   ) {
     super();
+    this.detailsComponent = new ScoutDetailsComponent(scoutName, titleSuffix);
     this.addChild(this.detailsComponent);
     this.update(result, options, theme);
   }
@@ -411,6 +531,10 @@ export class ScoutResult extends Container {
     this.result = result;
     this.options = options;
     this.theme = theme;
+    this.latestInvalidate = invalidate;
+    if (invalidate && !this.stopObservingParallelState) {
+      this.stopObservingParallelState = onScoutParallelStateChange(() => this.latestInvalidate?.());
+    }
 
     const details = getScoutDetails(this.result);
     const status = details?.status;
@@ -442,6 +566,7 @@ export class ScoutResult extends Container {
 
 type ScoutCallOptions = {
   theme: Theme;
+  executionStarted?: boolean;
   titleSuffix?: string;
 };
 
@@ -454,9 +579,11 @@ export class ScoutCall implements Component {
   invalidate(): void { }
 
   render(width: number): string[] {
-    const { theme, titleSuffix } = this.options;
+    const { theme, executionStarted, titleSuffix } = this.options;
+    if (executionStarted) return [];
+
     const titleParts = [theme.fg("toolTitle", theme.bold(this.scoutName))];
-    if (titleSuffix) titleParts.push(theme.fg("muted", titleSuffix));
+    if (titleSuffix) titleParts.push(theme.fg("dim", titleSuffix));
 
     return new Text(titleParts.join(" "), 0, 0).render(width);
   }

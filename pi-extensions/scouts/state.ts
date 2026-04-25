@@ -5,6 +5,70 @@ import type { ScoutDetails } from "./types.ts";
 type ScoutStatus = ScoutDetails["status"];
 type ScoutRunDetails = ScoutDetails["runs"][number];
 
+const SCOUT_PARALLEL_IDLE_DELAY_MS = 2_000;
+const activeScoutToolCalls = new Set<string>();
+const parallelStateListeners = new Set<() => void>();
+let parallelScoutMode = false;
+let nextSyntheticScoutToolCallId = 0;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+function notifyParallelStateChanged(): void {
+  for (const listener of parallelStateListeners) {
+    listener();
+  }
+}
+
+export function onScoutParallelStateChange(listener: () => void): () => void {
+  parallelStateListeners.add(listener);
+  return () => parallelStateListeners.delete(listener);
+}
+
+export function trackScoutToolCall(toolCallId: string | undefined): () => void {
+  const id = toolCallId || `synthetic-${++nextSyntheticScoutToolCallId}`;
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = undefined;
+  }
+
+  activeScoutToolCalls.add(id);
+  if (activeScoutToolCalls.size > 1) {
+    parallelScoutMode = true;
+  }
+  notifyParallelStateChanged();
+
+  let finished = false;
+  return () => {
+    if (finished) return;
+    finished = true;
+
+    // Keep parallel mode alive long enough for Pi to render the final tool
+    // result after execute() resolves. ToolExecutionComponent receives that
+    // result after the tool promise settles, so clearing synchronously here
+    // would make the final render miss the overlap that just occurred.
+    setTimeout(() => {
+      activeScoutToolCalls.delete(id);
+      notifyParallelStateChanged();
+      if (activeScoutToolCalls.size === 0) {
+        idleTimer = setTimeout(() => {
+          if (activeScoutToolCalls.size === 0) {
+            parallelScoutMode = false;
+            notifyParallelStateChanged();
+          }
+          idleTimer = undefined;
+        }, SCOUT_PARALLEL_IDLE_DELAY_MS);
+      }
+    }, 0);
+  };
+}
+
+export function isParallelScoutMode(): boolean {
+  return parallelScoutMode || activeScoutToolCalls.size > 1;
+}
+
+export function hasActiveScoutToolCalls(): boolean {
+  return activeScoutToolCalls.size > 0;
+}
+
 export function createInitialRun(query: string): ScoutRunDetails {
   return {
     status: "running",

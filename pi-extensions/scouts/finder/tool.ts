@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 import { executeScout } from "../execute.ts";
 import { ScoutCall, ScoutResult } from "../render.ts";
+import { trackScoutToolCall } from "../state.ts";
 import type { ScoutDetails } from "../types.ts";
 import { validateQuery } from "../validate.ts";
 import { FINDER_CONFIG, FinderParams } from "./config.ts";
@@ -13,20 +14,25 @@ export const FINDER_TOOL: ToolDefinition<typeof FinderParams, ScoutDetails> = {
     "Read-only workspace scout for coding and personal-assistant tasks. Use when exact file/folder locations are unknown, you'd otherwise do exploratory ls/rg/fd/find/grep/read, or you need targeted evidence from large directories. Finder handles the reconnaissance and returns concise, relevant output: Summary, Locations (path:lineStart-lineEnd), Evidence, and Searched. Usually omit the optional `model` parameter unless the user explicitly asked for a specific model/provider.",
   parameters: FinderParams,
 
-  async execute(_toolCallId, params, signal, onUpdate, ctx) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     const error = validateQuery(params);
     if (error) return error;
-    return executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
+    const finishTracking = trackScoutToolCall(toolCallId);
+    try {
+      return await executeScout(FINDER_CONFIG, params as Record<string, unknown>, signal, onUpdate, ctx);
+    } finally {
+      finishTracking();
+    }
   },
 
-  renderCall(_args, theme, _context) {
-    return new ScoutCall("finder", { theme });
+  renderCall(_args, theme, context) {
+    return new ScoutCall("finder", { theme, executionStarted: context.executionStarted });
   },
 
   renderResult(result, options, theme, context) {
     const component = context.lastComponent instanceof ScoutResult
       ? context.lastComponent
-      : new ScoutResult(result, options, theme);
+      : new ScoutResult(result, options, theme, "finder");
     component.update(result, options, theme, context.invalidate);
     return component;
   },

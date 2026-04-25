@@ -69,8 +69,7 @@ export function formatToolCallParts(name: string, args: Record<string, unknown>)
   switch (name) {
     case "bash": {
       const cmd = shortenPaths(((args.command as string) || "").trim());
-      const truncated = cmd.length > 100 ? cmd.slice(0, 97) + "..." : cmd;
-      return { label: "bash", summary: truncated };
+      return { label: "bash", summary: cmd };
     }
     case "read": {
       const readPath = shortenPath((args.path || "") as string);
@@ -83,11 +82,11 @@ export function formatToolCallParts(name: string, args: Record<string, unknown>)
       for (const key of previewKeys) {
         if (args[key] && typeof args[key] === "string") {
           const val = shortenPaths(args[key] as string);
-          return { label: name, summary: val.length > 80 ? val.slice(0, 77) + "..." : val };
+          return { label: name, summary: val };
         }
       }
       const s = JSON.stringify(args);
-      return { label: name, summary: s.length > 60 ? s.slice(0, 57) + "..." : s };
+      return { label: name, summary: s };
     }
   }
 }
@@ -105,7 +104,7 @@ export function cleanToolResult(raw: string, maxLines?: number): string {
 
   const lines = cleaned.split("\n");
   return lines.length > maxLines
-    ? lines.slice(0, maxLines).join("\n") + `\n... (${lines.length - maxLines} more lines)`
+    ? lines.slice(0, maxLines).join("\n") + `\n… (${lines.length - maxLines} more lines)`
     : cleaned;
 }
 
