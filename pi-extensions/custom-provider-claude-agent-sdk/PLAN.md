@@ -103,11 +103,11 @@ registration guard for accidental same-process double loads.
 - private `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
 - private `lastClaudeModelId: string | null`
 - private `sessionManager?: HandoffSessionReader` for branch-aware handoff/reset checks
-- private `activeTurn: ClaudeActiveTurn | null`
+- private `activeTurn: ClaudeTurn | null`
 - `.prepareForTurn()` builds fresh/delta pi-session handoff and resets stale branch state
 - `.closeActiveTurn()` tears down the current turn without clearing SDK continuity
 
-**`ClaudeActiveTurn`** owns active query/stream/tool rendezvous state:
+**`ClaudeTurn`** owns active query/stream/tool rendezvous state:
 - private active SDK query
 - current pi stream state
 - `toolCallMatcher: ToolCallMatcher` for matching streamed tool-call ids to SDK MCP handler promises

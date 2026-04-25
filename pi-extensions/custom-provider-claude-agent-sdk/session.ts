@@ -88,7 +88,7 @@ export class ClaudeSessionManager {
   }
 }
 
-export class ClaudeActiveTurn {
+export class ClaudeTurn {
   readonly toolCallMatcher = new ToolCallMatcher();
 
   private activeQuery: SdkQuery | null = null;
@@ -180,7 +180,7 @@ export class ClaudeSession {
   private syncedThroughEntryId: string | null;
   private lastClaudeModelId: string | null;
   private sessionManager: HandoffSessionReader | undefined;
-  private activeTurn: ClaudeActiveTurn | null = null;
+  private activeTurn: ClaudeTurn | null = null;
 
   constructor(
     piSessionId: string,
@@ -203,13 +203,13 @@ export class ClaudeSession {
     };
   }
 
-  currentTurn(): ClaudeActiveTurn | undefined {
+  currentTurn(): ClaudeTurn | undefined {
     return this.activeTurn ?? undefined;
   }
 
-  beginTurn(streamState: PiStreamState): ClaudeActiveTurn {
+  beginTurn(streamState: PiStreamState): ClaudeTurn {
     this.closeActiveTurn();
-    const turn = new ClaudeActiveTurn(streamState);
+    const turn = new ClaudeTurn(streamState);
     this.activeTurn = turn;
     return turn;
   }
@@ -251,7 +251,7 @@ export class ClaudeSession {
     return buildPiSessionHandoff(this.sessionManager, this);
   }
 
-  finishActiveTurn(turn: ClaudeActiveTurn, sdkQuery: SdkQuery) {
+  finishActiveTurn(turn: ClaudeTurn, sdkQuery: SdkQuery) {
     if (this.activeTurn !== turn) return;
     if (turn.finishActiveQuery(sdkQuery)) {
       this.activeTurn = null;

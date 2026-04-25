@@ -11,7 +11,7 @@ import {
 import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
-import { ClaudeActiveTurn, ClaudeSession } from "./session.js";
+import { ClaudeTurn, ClaudeSession } from "./session.js";
 import {
   buildPiMcpServer,
   createMcpTextResult,
@@ -87,7 +87,7 @@ export function streamClaudeAgentSdkOneShot(
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
-  const turn = new ClaudeActiveTurn(new PiStreamState(model, stream));
+  const turn = new ClaudeTurn(new PiStreamState(model, stream));
 
   void runOneShotQuery(turn, model, context, options);
 
@@ -95,7 +95,7 @@ export function streamClaudeAgentSdkOneShot(
 }
 
 async function runOneShotQuery(
-  turn: ClaudeActiveTurn,
+  turn: ClaudeTurn,
   model: Model<Api>,
   context: Context,
   options?: SimpleStreamOptions,
@@ -182,7 +182,7 @@ async function runSessionQuery(
 ) {
   const abortController = createAbortController(options?.signal);
   let sdkQuery: ReturnType<typeof query> | undefined;
-  let turn: ClaudeActiveTurn | undefined;
+  let turn: ClaudeTurn | undefined;
 
   if (abortController.signal.aborted) {
     const state = new PiStreamState(model, stream);
