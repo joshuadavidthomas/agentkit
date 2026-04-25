@@ -187,9 +187,8 @@ pi-extensions/custom-provider-claude-agent-sdk/
   been collapsed to `custom-provider-claude-agent-sdk` / `claude-agent-sdk`.
   Remaining polish: final regression, portability of Claude binary resolution,
   schema conversion breadth, and any remaining reentrancy guard if needed. The
-  provider now mirrors pi's built-in Anthropic model list and passes model ids
-  through a dedicated pi-model-id → Claude Code model-id mapping hook. A
-  same-load duplicate registration guard now prevents the common installed
+  provider now mirrors pi's built-in Anthropic model list and passes those model
+  ids directly to Claude Code. A same-load duplicate registration guard now prevents the common installed
   provider + explicit `-e` double-load case.
 
 ## Verified so far

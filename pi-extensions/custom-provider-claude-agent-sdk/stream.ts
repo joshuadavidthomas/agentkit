@@ -29,11 +29,6 @@ import {
 import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
 
 const require = createRequire(import.meta.url);
-const CLAUDE_CODE_MODEL_ID_OVERRIDES: Partial<Record<string, string>> = {};
-
-function toClaudeCodeModelId(piModelId: string): string {
-  return CLAUDE_CODE_MODEL_ID_OVERRIDES[piModelId] ?? piModelId;
-}
 
 function resolveClaudeExecutable(): string | undefined {
   if (process.platform !== "linux" || process.arch !== "x64") return undefined;
@@ -479,7 +474,7 @@ export function streamClaudeAgentSdkOneShot(
           abortController,
           cwd: process.cwd(),
           pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: toClaudeCodeModelId(model.id),
+          model: model.id,
           allowedTools: [],
           disallowedTools: DISALLOWED_BUILTIN_TOOLS,
           includePartialMessages: true,
@@ -578,7 +573,7 @@ export function streamClaudeAgentSdk(
           abortController,
           cwd: process.cwd(),
           pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: toClaudeCodeModelId(model.id),
+          model: model.id,
           resume: session.sdkSessionId ?? undefined,
           allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
           disallowedTools: DISALLOWED_BUILTIN_TOOLS,
