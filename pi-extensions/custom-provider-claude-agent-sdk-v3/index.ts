@@ -5,6 +5,21 @@ import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
 const sessions = new Map<string, ClaudeSession>();
+const DUPLICATE_LOAD_GUARD = Symbol.for("agentkit.claude-agent-sdk-v3.registration-in-progress");
+
+type DuplicateLoadGlobal = typeof globalThis & { [DUPLICATE_LOAD_GUARD]?: boolean };
+
+function claimProviderRegistration(): boolean {
+  const state = globalThis as DuplicateLoadGlobal;
+  if (state[DUPLICATE_LOAD_GUARD]) return false;
+
+  state[DUPLICATE_LOAD_GUARD] = true;
+  return true;
+}
+
+function releaseProviderRegistration() {
+  delete (globalThis as DuplicateLoadGlobal)[DUPLICATE_LOAD_GUARD];
+}
 
 function getOrCreateSession(piSessionId: string): ClaudeSession {
   let session = sessions.get(piSessionId);
@@ -20,7 +35,10 @@ function getCurrentSession(ctx: { sessionManager: { getSessionId(): string } }):
 }
 
 export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
+  if (!claimProviderRegistration()) return;
+
   pi.on("session_start", (event, ctx) => {
+    releaseProviderRegistration();
     const piSessionId = ctx.sessionManager.getSessionId();
     const session = new ClaudeSession(piSessionId, loadSessionEntry(ctx.sessionManager), ctx.sessionManager);
     sessions.set(piSessionId, session);
@@ -31,6 +49,8 @@ export default function claudeAgentSdkV3Provider(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    releaseProviderRegistration();
+
     const piSessionId = ctx.sessionManager.getSessionId();
     const session = sessions.get(piSessionId);
     session?.close();

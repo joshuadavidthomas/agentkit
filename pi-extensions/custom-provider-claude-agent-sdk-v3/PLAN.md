@@ -181,9 +181,11 @@ pi-extensions/custom-provider-claude-agent-sdk-v3/
   `claude-agent-sdk-v3/claude-sonnet-4-5`. The scout made tool calls and
   returned the expected path without the pi-claude-bridge shared-session
   stall. JSONL had matching finder tool call/result and no v1 custom entries.
-- **M6 — Polish. Remaining.** final provider naming/collapse, model
-  metadata, README, duplicate-load behavior, portability of Claude binary
-  resolution, schema conversion breadth, and any reentrancy guard if needed.
+- **M6 — Polish. In progress.** final provider naming/collapse, model
+  metadata, README, portability of Claude binary resolution, schema
+  conversion breadth, and any remaining reentrancy guard if needed. A
+  same-load duplicate registration guard now prevents the common installed
+  provider + explicit `-e` double-load case.
 
 ## Verified so far
 
@@ -212,13 +214,12 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
 - **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using v3 works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
 - **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.
-- **Duplicate v3 load:** Still unsupported. Avoid loading the installed provider again with `-e`; a reload-safe duplicate guard needs separate design.
+- **Duplicate v3 load:** The common installed provider + explicit `-e` same-load case is guarded. Continue avoiding duplicate loads in normal testing; the guard is defensive, not a supported multi-instance mode.
 
 ## Open questions
 
 - For normal turns, should we keep using `{ type: "preset", preset: "claude_code" }` plus append forever, or eventually move to a plainer prompt? M4 one-shot summarization already uses the caller's `systemPrompt` directly to avoid Claude Code repo/tool behavior polluting summaries.
-- Do we need an `ACTIVE_STREAM_SIMPLE_KEY`-style guard or other duplicate-load
-  detection? Duplicate v3 loads can happen during ad hoc testing with `-e`.
-  Decide before final provider collapse.
+- Is the same-load duplicate guard enough for final provider collapse, or do we
+  need a stronger pi-level extension identity/dedup mechanism?
 - Should complex tool schemas degrade to permissive `unknown` fields, or do we
   need fuller JSON Schema → Zod conversion for custom tools?
