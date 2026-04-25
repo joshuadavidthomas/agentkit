@@ -409,6 +409,35 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+function createBaseQueryOptions(model: Model<Api>, abortController: AbortController, apiKey?: string) {
+  return {
+    abortController,
+    cwd: process.cwd(),
+    pathToClaudeCodeExecutable: resolveClaudeExecutable(),
+    model: model.id,
+    disallowedTools: DISALLOWED_BUILTIN_TOOLS,
+    includePartialMessages: true,
+    settingSources: [],
+    env: createSdkEnv(apiKey),
+  };
+}
+
+function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: StreamState) {
+  if (message.type === "stream_event") {
+    handleStreamEvent(message.event, session, state);
+    return;
+  }
+
+  if (message.type === "assistant") {
+    backfillAssistantContent(message, session, state);
+    return;
+  }
+
+  if (message.type === "result") {
+    completeFromResult(message, session, state);
+  }
+}
+
 function createAbortController(signal?: AbortSignal): AbortController {
   const abortController = new AbortController();
   if (!signal) return abortController;
@@ -452,34 +481,15 @@ export function streamClaudeAgentSdkOneShot(
       sdkQuery = query({
         prompt: toSdkPrompt(extractLatestUserPrompt(context)),
         options: {
-          abortController,
-          cwd: process.cwd(),
-          pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: model.id,
+          ...createBaseQueryOptions(model, abortController, options?.apiKey),
           allowedTools: [],
-          disallowedTools: DISALLOWED_BUILTIN_TOOLS,
-          includePartialMessages: true,
-          settingSources: [],
           systemPrompt: context.systemPrompt,
-          env: createSdkEnv(options?.apiKey),
           tools: [],
         },
       });
 
       for await (const message of sdkQuery) {
-        if (message.type === "stream_event") {
-          handleStreamEvent(message.event, session, state);
-          continue;
-        }
-
-        if (message.type === "assistant") {
-          backfillAssistantContent(message, session, state);
-          continue;
-        }
-
-        if (message.type === "result") {
-          completeFromResult(message, session, state);
-        }
+        handleSdkQueryMessage(message, session, state);
       }
 
       if (!state.finished) {
@@ -558,22 +568,15 @@ export function streamClaudeAgentSdk(
       sdkQuery = query({
         prompt: toSdkPrompt(prompt),
         options: {
-          abortController,
-          cwd: process.cwd(),
-          pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-          model: model.id,
+          ...createBaseQueryOptions(model, abortController, options?.apiKey),
           resume: session.sdkSessionId ?? undefined,
           allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
-          disallowedTools: DISALLOWED_BUILTIN_TOOLS,
           permissionMode: "bypassPermissions",
-          includePartialMessages: true,
-          settingSources: [],
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
             append: context.systemPrompt,
           },
-          env: createSdkEnv(options?.apiKey),
           ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
         },
       });
@@ -588,19 +591,7 @@ export function streamClaudeAgentSdk(
         const currentState = session.currentStreamState;
         if (!currentState) continue;
 
-        if (message.type === "stream_event") {
-          handleStreamEvent(message.event, session, currentState);
-          continue;
-        }
-
-        if (message.type === "assistant") {
-          backfillAssistantContent(message, session, currentState);
-          continue;
-        }
-
-        if (message.type === "result") {
-          completeFromResult(message, session, currentState);
-        }
+        handleSdkQueryMessage(message, session, currentState);
       }
 
       const currentState = session.currentStreamState;
