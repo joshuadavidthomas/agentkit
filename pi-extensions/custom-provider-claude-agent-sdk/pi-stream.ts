@@ -7,10 +7,34 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import type { AssistantBackfill, TurnBlockDelta, TurnBlockStart, TurnEvent, TurnResult, TurnUpdate, TurnUsage } from "./claude-stream-events.js";
+import type {
+  AssistantBackfill,
+  FinishedStopReason,
+  TurnBlockDelta,
+  TurnBlockStart,
+  TurnEvent,
+  TurnResult,
+  TurnUpdate,
+  TurnUsage,
+} from "./claude-stream-events.js";
 import type { ToolCallMatcher } from "./tool-call-matcher.js";
 import { stripMcpToolName } from "./tools.js";
-import type { FinishedStopReason, StreamDelta, StreamSignature, StreamToolCallStart } from "./types.js";
+interface StreamDelta {
+  sourceBlockIndex: number;
+  delta: string;
+}
+
+interface StreamSignature {
+  sourceBlockIndex: number;
+  signature: string;
+}
+
+interface StreamToolCallStart {
+  sourceBlockIndex: number;
+  id: string;
+  name: string;
+  args: ToolCall["arguments"];
+}
 
 type ActiveBlock =
   | { type: "text"; contentIndex: number }

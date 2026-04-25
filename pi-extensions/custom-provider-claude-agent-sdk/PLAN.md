@@ -46,10 +46,10 @@ directory — but a few pieces are still good:
   Start from v2 provider/model config, then replace the static model list with
   pi's built-in Anthropic model registry. Provider/API ids now live directly in
   `index.ts`.
-- **`types.ts`** — port only the `PromptBlock` / `PromptTextBlock` /
-  `PromptImageBlock` shapes (~10 lines). Everything else (`Turn`,
-  `ExtensionBindings`) is tied to the unstable v2 SDK API and gets
-  rewritten.
+- **Prompt block shapes** — port only the `PromptBlock` /
+  `PromptTextBlock` / `PromptImageBlock` shapes (~10 lines), now colocated in
+  `prompt.ts`. Everything else (`Turn`, `ExtensionBindings`) is tied to the
+  unstable v2 SDK API and gets rewritten.
 
 Do **not** port:
 
@@ -146,7 +146,6 @@ pi-extensions/custom-provider-claude-agent-sdk/
 ├── PLAN.md                 (this file)
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring, provider/API ids)
-├── types.ts                (PromptBlock + small stream command types)
 ├── prompt.ts               (pi context/user prompt → Claude SDK prompt)
 ├── session.ts              (ClaudeSession identity/query lifecycle)
 ├── tool-call-matcher.ts    (tool-call id ↔ MCP handler rendezvous)

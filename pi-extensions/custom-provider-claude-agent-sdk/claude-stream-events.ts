@@ -1,8 +1,10 @@
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { FinishedStopReason } from "./types.js";
+import type { StopReason } from "@mariozechner/pi-ai";
 
-export type ClaudeStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
-export type ClaudeAssistantMessage = Extract<SDKMessage, { type: "assistant" }>;
+export type FinishedStopReason = Extract<StopReason, "stop" | "length" | "toolUse">;
+
+type ClaudeStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
+type ClaudeAssistantMessage = Extract<SDKMessage, { type: "assistant" }>;
 
 export function extractSessionId(message: SDKMessage): string | undefined {
   return typeof message.session_id === "string" ? message.session_id : undefined;

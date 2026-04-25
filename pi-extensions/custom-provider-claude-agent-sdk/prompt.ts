@@ -1,6 +1,21 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "@mariozechner/pi-ai";
-import type { PromptBlock, PromptImageBlock, PromptTextBlock } from "./types.js";
+
+interface PromptTextBlock {
+  type: "text";
+  text: string;
+}
+
+interface PromptImageBlock {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+    data: string;
+  };
+}
+
+type PromptBlock = PromptTextBlock | PromptImageBlock;
 
 export function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
   for (let i = context.messages.length - 1; i >= 0; i--) {
