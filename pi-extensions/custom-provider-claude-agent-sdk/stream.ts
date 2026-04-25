@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   createAssistantMessageEventStream,
   type Api,
@@ -68,11 +68,6 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
   env: createSdkEnv(apiKey),
 });
 
-function handleSdkQueryMessage(message: SDKMessage, turn: ClaudeActiveTurn, state: PiStreamState): boolean {
-  const update = parseClaudeMessage(message);
-  return update ? applyTurnUpdate(update, state, turn.toolCallMatcher) : false;
-}
-
 function createAbortController(signal?: AbortSignal): AbortController {
   const abortController = new AbortController();
   if (!signal) return abortController;
@@ -130,7 +125,8 @@ async function runOneShotQuery(
       const state = turn.streamState();
       if (!state) continue;
 
-      if (handleSdkQueryMessage(message, turn, state)) {
+      const update = parseClaudeMessage(message);
+      if (update && applyTurnUpdate(update, state, turn.toolCallMatcher)) {
         turn.detachStreamState(state);
       }
     }
@@ -243,7 +239,8 @@ async function runSessionQuery(
         const currentState = activeTurn.streamState();
         if (!currentState) continue;
 
-        if (handleSdkQueryMessage(message, activeTurn, currentState)) {
+        const update = parseClaudeMessage(message);
+        if (update && applyTurnUpdate(update, currentState, activeTurn.toolCallMatcher)) {
           activeTurn.detachStreamState(currentState);
         }
       }
