@@ -134,14 +134,19 @@ function debugLog(message: string): void {
 	} catch {}
 }
 
+interface ExportOptions {
+	skipCooldown?: boolean;
+	notifyGhUnavailable?: boolean;
+}
+
 async function doExport(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
-	skipCooldown: boolean,
+	options: ExportOptions = {},
 ): Promise<void> {
 	if (!enabled) return;
 	if (exporting) return;
-	if (!skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
+	if (!options.skipCooldown && Date.now() - lastExportTime < COOLDOWN_MS) return;
 
 	const sessionManager = ctx.sessionManager;
 	const sessionFile = sessionManager.getSessionFile();
@@ -159,7 +164,7 @@ async function doExport(
 		const authCheck = await runGh(["auth", "status"]);
 		ghAvailable = authCheck.code === 0;
 		if (!ghAvailable) {
-			if (!ghWarningShown) {
+			if (options.notifyGhUnavailable && !ghWarningShown) {
 				ghWarningShown = true;
 				const versionCheck = await runGh(["--version"]);
 				try {
@@ -253,19 +258,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		await doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		await doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		await doExport(pi, ctx, false);
+		await doExport(pi, ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		await doExport(pi, ctx, true);
+		await doExport(pi, ctx, { skipCooldown: true });
 		gistId = null;
 		lastExportTime = 0;
 	});
@@ -317,7 +322,7 @@ export default function (pi: ExtensionAPI) {
 				persistEnabled(ctx, enabled);
 				ctx.ui.notify(`Auto-share ${enabled ? "enabled" : "disabled"}`, "info");
 				if (enabled) {
-					await doExport(pi, ctx, true);
+					await doExport(pi, ctx, { skipCooldown: true, notifyGhUnavailable: true });
 				}
 				return;
 			}
