@@ -125,17 +125,17 @@ function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
   throw new Error("No user prompt found in context");
 }
 
-async function* singleSdkUserMessage(content: PromptBlock[]): AsyncGenerator<SDKUserMessage> {
-  yield {
-    type: "user",
-    message: { role: "user", content },
-    parent_tool_use_id: null,
-    shouldQuery: true,
-  };
-}
-
 function toSdkPrompt(prompt: string | PromptBlock[]): string | AsyncIterable<SDKUserMessage> {
-  return typeof prompt === "string" ? prompt : singleSdkUserMessage(prompt);
+  if (typeof prompt === "string") return prompt;
+
+  return (async function* () {
+    yield {
+      type: "user",
+      message: { role: "user", content: prompt },
+      parent_tool_use_id: null,
+      shouldQuery: true,
+    } satisfies SDKUserMessage;
+  })();
 }
 
 function mapStopReason(reason: string | null): Extract<StopReason, "stop" | "length" | "toolUse"> {
