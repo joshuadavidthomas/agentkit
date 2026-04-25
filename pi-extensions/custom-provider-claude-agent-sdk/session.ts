@@ -64,13 +64,13 @@ export class ClaudeSessionManager {
 
   resetSessionForStructuralChange(sessionManager: PiSessionManager) {
     const session = this.currentSession(sessionManager);
-    session?.setSessionManager(sessionManager);
+    session?.setHandoffReader(sessionManager);
     session?.resetContinuity();
   }
 
   markSessionSynced(sessionManager: PiSessionManager, leafId: string) {
     const session = this.currentSession(sessionManager);
-    session?.setSessionManager(sessionManager);
+    session?.setHandoffReader(sessionManager);
     session?.markSyncedThrough(leafId);
   }
 
@@ -176,10 +176,8 @@ export class ClaudeTurn {
 export class ClaudeSession {
   readonly piSessionId: string;
 
-  private sdkSessionId: string | null;
-  private syncedThroughEntryId: string | null;
-  private lastClaudeModelId: string | null;
-  private sessionManager: HandoffSessionReader | undefined;
+  private continuity: SessionEntryData;
+  private handoffReader: HandoffSessionReader | undefined;
   private activeTurn: ClaudeTurn | null = null;
 
   constructor(
@@ -189,18 +187,16 @@ export class ClaudeSession {
     private readonly persistSessionEntry?: PersistSessionEntry,
   ) {
     this.piSessionId = piSessionId;
-    this.sdkSessionId = data?.sdkSessionId ?? null;
-    this.syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
-    this.lastClaudeModelId = data?.lastClaudeModelId ?? null;
-    this.sessionManager = sessionManager;
+    this.continuity = {
+      sdkSessionId: data?.sdkSessionId ?? null,
+      syncedThroughEntryId: data?.syncedThroughEntryId ?? null,
+      lastClaudeModelId: data?.lastClaudeModelId ?? null,
+    };
+    this.handoffReader = sessionManager;
   }
 
   continuityState(): SessionEntryData {
-    return {
-      sdkSessionId: this.sdkSessionId,
-      syncedThroughEntryId: this.syncedThroughEntryId,
-      lastClaudeModelId: this.lastClaudeModelId,
-    };
+    return { ...this.continuity };
   }
 
   currentTurn(): ClaudeTurn | undefined {
@@ -214,41 +210,52 @@ export class ClaudeSession {
     return turn;
   }
 
-  setSessionManager(sessionManager: HandoffSessionReader | undefined) {
-    this.sessionManager = sessionManager;
+  setHandoffReader(handoffReader: HandoffSessionReader | undefined) {
+    this.handoffReader = handoffReader;
   }
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
-    if (this.sdkSessionId === sdkSessionId && this.lastClaudeModelId === claudeModelId) return;
+    if (this.continuity.sdkSessionId === sdkSessionId && this.continuity.lastClaudeModelId === claudeModelId) return;
 
-    this.sdkSessionId = sdkSessionId;
-    this.lastClaudeModelId = claudeModelId;
+    this.continuity = {
+      ...this.continuity,
+      sdkSessionId,
+      lastClaudeModelId: claudeModelId,
+    };
     this.persist();
   }
 
   markSyncedThrough(entryId: string) {
-    if (this.syncedThroughEntryId === entryId) return;
+    if (this.continuity.syncedThroughEntryId === entryId) return;
 
-    this.syncedThroughEntryId = entryId;
+    this.continuity = {
+      ...this.continuity,
+      syncedThroughEntryId: entryId,
+    };
     this.persist();
   }
 
   resetContinuity() {
     this.closeActiveTurn();
-    if (!this.sdkSessionId && !this.syncedThroughEntryId && !this.lastClaudeModelId) return;
+    if (!this.continuity.sdkSessionId && !this.continuity.syncedThroughEntryId && !this.continuity.lastClaudeModelId) return;
 
-    this.sdkSessionId = null;
-    this.syncedThroughEntryId = null;
-    this.lastClaudeModelId = null;
+    this.continuity = {
+      sdkSessionId: null,
+      syncedThroughEntryId: null,
+      lastClaudeModelId: null,
+    };
     this.persist();
   }
 
   prepareForTurn(): string | undefined {
-    if (this.sdkSessionId && (!this.syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
+    if (
+      this.continuity.sdkSessionId &&
+      (!this.continuity.syncedThroughEntryId || !this.handoffReader || !hasSyncedEntryOnCurrentBranch(this.handoffReader, this))
+    ) {
       this.resetContinuity();
     }
 
-    return buildPiSessionHandoff(this.sessionManager, this);
+    return buildPiSessionHandoff(this.handoffReader, this);
   }
 
   finishActiveTurn(turn: ClaudeTurn, sdkQuery: SdkQuery) {
