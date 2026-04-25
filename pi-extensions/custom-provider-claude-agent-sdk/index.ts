@@ -1,9 +1,11 @@
 import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
-import { API_ID, PROVIDER_ID } from "./identity.js";
 import { loadSessionEntry } from "./persistence.js";
 import { ClaudeSession } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
+
+export const PROVIDER_ID = "claude-agent-sdk";
+export const API_ID = "claude-agent-sdk";
 
 const PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
   .filter((model) => model.id.startsWith("claude-"))
