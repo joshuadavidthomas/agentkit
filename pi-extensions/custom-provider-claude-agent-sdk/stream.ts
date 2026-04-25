@@ -11,15 +11,10 @@ import {
 import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
-import { createMcpTextResult } from "./tool-call-matcher.js";
 import { ClaudeTurn, ClaudeSession } from "./session.js";
-import {
-  buildPiMcpServer,
-  DISALLOWED_BUILTIN_TOOLS,
-  extractToolResults,
-  MCP_SERVER_NAME,
-  MCP_TOOL_PREFIX,
-} from "./tools.js";
+import { buildPiMcpServer, DISALLOWED_BUILTIN_TOOLS } from "./tools/mcp-server.js";
+import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./tools/names.js";
+import { createMcpTextResult, extractToolResults } from "./tools/results.js";
 import {
   applyTurnUpdate,
   PiStreamState,
@@ -126,7 +121,7 @@ async function runOneShotQuery(
       if (!state) continue;
 
       const update = parseClaudeMessage(message);
-      if (update && applyTurnUpdate(update, state, turn.toolCallMatcher)) {
+      if (update && applyTurnUpdate(update, state, turn.toolBridge)) {
         turn.detachStreamState(state);
       }
     }
@@ -240,7 +235,7 @@ async function runSessionQuery(
         if (!currentState) continue;
 
         const update = parseClaudeMessage(message);
-        if (update && applyTurnUpdate(update, currentState, activeTurn.toolCallMatcher)) {
+        if (update && applyTurnUpdate(update, currentState, activeTurn.toolBridge)) {
           activeTurn.detachStreamState(currentState);
         }
       }

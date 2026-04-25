@@ -4,8 +4,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
-import { createMcpTextResult, ToolCallMatcher } from "./tool-call-matcher.js";
-import type { PiMcpResult } from "./tools.js";
+import { ToolBridge } from "./tools/bridge.js";
+import { createMcpTextResult, type PiMcpResult } from "./tools/results.js";
 
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
@@ -196,7 +196,7 @@ export class ClaudeSession {
 }
 
 export class ClaudeTurn {
-  readonly toolCallMatcher = new ToolCallMatcher();
+  readonly toolBridge = new ToolBridge();
 
   private activeQuery: SdkQuery | null = null;
   private currentStreamState: PiStreamState | null = null;
@@ -221,7 +221,7 @@ export class ClaudeTurn {
     if (this.activeQuery !== sdkQuery) return false;
 
     this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
-    this.toolCallMatcher.clearQueuedResults();
+    this.toolBridge.clearQueuedResults();
     this.activeQuery = null;
     this.currentStreamState = null;
     this.closeSdkQuery(sdkQuery);
@@ -240,15 +240,15 @@ export class ClaudeTurn {
   }
 
   handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    return this.toolCallMatcher.handleMcpToolCall(toolName);
+    return this.toolBridge.handleMcpToolCall(toolName);
   }
 
   deliverToolResults(results: PiMcpResult[]) {
-    this.toolCallMatcher.deliverToolResults(results);
+    this.toolBridge.deliverToolResults(results);
   }
 
   resolvePendingToolCalls(result: CallToolResult) {
-    this.toolCallMatcher.resolvePendingToolCalls(result);
+    this.toolBridge.resolvePendingToolCalls(result);
   }
 
   abort(message: string) {
@@ -262,9 +262,9 @@ export class ClaudeTurn {
 
   close(message = "Session closed") {
     this.resolvePendingToolCalls(createMcpTextResult(message, true));
-    this.toolCallMatcher.clearQueuedResults();
+    this.toolBridge.clearQueuedResults();
     this.currentStreamState = null;
-    this.toolCallMatcher.resetTurn();
+    this.toolBridge.resetTurn();
 
     const sdkQuery = this.activeQuery;
     this.activeQuery = null;

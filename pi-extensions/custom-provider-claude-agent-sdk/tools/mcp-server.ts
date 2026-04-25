@@ -1,10 +1,8 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { Context, Tool } from "@mariozechner/pi-ai";
+import type { Tool } from "@mariozechner/pi-ai";
 import { z } from "zod";
-
-export const MCP_SERVER_NAME = "pi-tools";
-export const MCP_TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`;
+import { MCP_SERVER_NAME } from "./names.js";
 
 export const DISALLOWED_BUILTIN_TOOLS = [
   "Read",
@@ -40,10 +38,6 @@ export const DISALLOWED_BUILTIN_TOOLS = [
   "TaskList",
   "TaskUpdate",
 ];
-
-export interface PiMcpResult extends CallToolResult {
-  toolCallId?: string;
-}
 
 type PiMcpToolHandler = (toolName: string) => Promise<CallToolResult>;
 
@@ -126,49 +120,4 @@ export function buildPiMcpServer(tools: Tool[] | undefined, handler: PiMcpToolHa
     version: "1.0.0",
     tools: mcpTools,
   });
-}
-
-export function stripMcpToolName(name: string): string {
-  return name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
-}
-
-function toolResultContentToMcpContent(content: unknown): CallToolResult["content"] {
-  if (typeof content === "string") return [{ type: "text", text: content }];
-  if (!Array.isArray(content)) return [{ type: "text", text: "" }];
-
-  const blocks: CallToolResult["content"] = [];
-  for (const item of content) {
-    if (!isRecord(item)) continue;
-
-    if (item.type === "text" && typeof item.text === "string") {
-      blocks.push({ type: "text", text: item.text });
-      continue;
-    }
-
-    if (item.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string") {
-      blocks.push({ type: "image", data: item.data, mimeType: item.mimeType });
-    }
-  }
-
-  return blocks.length > 0 ? blocks : [{ type: "text", text: "" }];
-}
-
-export function extractToolResults(context: Context): PiMcpResult[] {
-  const results: PiMcpResult[] = [];
-
-  for (let i = context.messages.length - 1; i >= 0; i--) {
-    const message = context.messages[i];
-
-    if (message.role === "assistant") break;
-
-    if (message.role === "toolResult") {
-      results.unshift({
-        content: toolResultContentToMcpContent(message.content),
-        isError: message.isError,
-        toolCallId: message.toolCallId,
-      });
-    }
-  }
-
-  return results;
 }

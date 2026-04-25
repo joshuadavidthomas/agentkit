@@ -17,8 +17,8 @@ import type {
   TurnUpdate,
   TurnUsage,
 } from "./claude-stream-events.js";
-import type { ToolCallMatcher } from "./tool-call-matcher.js";
-import { stripMcpToolName } from "./tools.js";
+import type { ToolBridge } from "./tools/bridge.js";
+import { stripMcpToolName } from "./tools/names.js";
 interface StreamDelta {
   sourceBlockIndex: number;
   delta: string;
@@ -252,24 +252,24 @@ export class PiStreamState {
   }
 }
 
-export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBridge: ToolBridge): boolean {
   switch (update.type) {
     case "event":
       state.markStreamingContentReceived();
-      return applyTurnEvent(update.event, state, toolCalls);
+      return applyTurnEvent(update.event, state, toolBridge);
     case "assistantBackfill":
-      return applyAssistantBackfill(update.backfill, state, toolCalls);
+      return applyAssistantBackfill(update.backfill, state, toolBridge);
     case "result":
       return applyTurnResult(update.result, state);
   }
 }
 
-function applyAssistantBackfill(backfill: AssistantBackfill[], state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+function applyAssistantBackfill(backfill: AssistantBackfill[], state: PiStreamState, toolBridge: ToolBridge): boolean {
   if (!state.acceptsAssistantBackfill() || backfill.length === 0) return false;
 
-  toolCalls.resetTurn();
+  toolBridge.resetTurn();
   for (const item of backfill) {
-    applyAssistantBackfillItem(item, state, toolCalls);
+    applyAssistantBackfillItem(item, state, toolBridge);
   }
 
   return state.finishToolUseIfPresent();
@@ -298,14 +298,14 @@ function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
   return true;
 }
 
-function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolCallMatcher): boolean {
+function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolBridge: ToolBridge): boolean {
   switch (event.type) {
     case "messageStarted":
       state.beginMessage(event.usage);
-      toolCalls.resetTurn();
+      toolBridge.resetTurn();
       return false;
     case "blockStarted":
-      applyBlockStart(event.block, state, toolCalls);
+      applyBlockStart(event.block, state, toolBridge);
       return false;
     case "blockDelta":
       applyBlockDelta(event.sourceBlockIndex, event.delta, state);
@@ -322,7 +322,7 @@ function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolCalls: ToolC
   }
 }
 
-function applyBlockStart(block: TurnBlockStart, state: PiStreamState, toolCalls: ToolCallMatcher) {
+function applyBlockStart(block: TurnBlockStart, state: PiStreamState, toolBridge: ToolBridge) {
   switch (block.kind) {
     case "text":
       state.beginTextBlock(block.sourceBlockIndex);
@@ -338,7 +338,7 @@ function applyBlockStart(block: TurnBlockStart, state: PiStreamState, toolCalls:
         args: block.input as ToolCall["arguments"],
       };
       state.beginToolCall(toolCall);
-      toolCalls.register(toolCall.id);
+      toolBridge.register(toolCall.id);
     }
   }
 }
@@ -359,7 +359,7 @@ function applyBlockDelta(sourceBlockIndex: number, delta: TurnBlockDelta, state:
   }
 }
 
-function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamState, toolCalls: ToolCallMatcher) {
+function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamState, toolBridge: ToolBridge) {
   switch (item.type) {
     case "text":
       state.backfillText(item.text);
@@ -370,7 +370,7 @@ function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamStat
     case "toolCall": {
       const name = stripMcpToolName(item.mcpToolName);
       state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"]);
-      toolCalls.register(item.id);
+      toolBridge.register(item.id);
     }
   }
 }

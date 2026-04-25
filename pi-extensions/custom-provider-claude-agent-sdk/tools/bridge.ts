@@ -1,15 +1,11 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { PiMcpResult } from "./tools.js";
-
-export function createMcpTextResult(text: string, isError = false): CallToolResult {
-  return { content: [{ type: "text", text }], isError };
-}
+import { createMcpTextResult, type PiMcpResult } from "./results.js";
 
 interface PendingToolCall {
   resolve: (result: CallToolResult) => void;
 }
 
-export class ToolCallMatcher {
+export class ToolBridge {
   private toolCallIds: string[] = [];
   private nextToolHandlerIndex = 0;
   private pendingToolCalls = new Map<string, PendingToolCall>();
@@ -68,5 +64,4 @@ export class ToolCallMatcher {
   clearQueuedResults() {
     this.pendingResults.clear();
   }
-
 }
