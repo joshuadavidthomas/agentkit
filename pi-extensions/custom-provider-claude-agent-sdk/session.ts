@@ -9,8 +9,12 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
-declare const piSessionIdBrand: unique symbol;
-export type PiSessionId = string & { readonly [piSessionIdBrand]: true };
+declare const brand: unique symbol;
+
+// TypeScript newtype-style helper for nominal IDs over primitive values.
+type Brand<Value, Name> = Value & { readonly [brand]: Name };
+
+export type PiSessionId = Brand<string, "PiSessionId">;
 
 export function piSessionId(value: string): PiSessionId {
   return value as PiSessionId;
