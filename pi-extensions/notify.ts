@@ -174,12 +174,12 @@ function getLastTurnSummary(entries: SessionEntry[]): string {
 /**
  * Find the first available model from our preferred list
  */
-async function selectSummaryModel(ctx: ExtensionContext) {
+async function selectSummaryModel(modelRegistry: ExtensionContext["modelRegistry"]) {
 	for (const { provider, id } of SUMMARY_MODELS) {
-		const model = ctx.modelRegistry.find(provider, id);
+		const model = modelRegistry.find(provider, id);
 		if (!model) continue;
 
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		const auth = await modelRegistry.getApiKeyAndHeaders(model);
 		if (!auth.ok) continue;
 
 		return { model, apiKey: auth.apiKey, headers: auth.headers };
@@ -190,8 +190,8 @@ async function selectSummaryModel(ctx: ExtensionContext) {
 /**
  * Generate a short notification summary using a quick model call
  */
-async function generateNotificationSummary(turnSummary: string, ctx: ExtensionContext): Promise<string> {
-	const selected = await selectSummaryModel(ctx);
+async function generateNotificationSummary(turnSummary: string, modelRegistry: ExtensionContext["modelRegistry"]): Promise<string> {
+	const selected = await selectSummaryModel(modelRegistry);
 	if (!selected) {
 		return "Ready for input";
 	}
@@ -278,18 +278,18 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const branch = ctx.sessionManager.getBranch();
+		const modelRegistry = ctx.modelRegistry;
 		const turnSummary = getLastTurnSummary(branch);
 		const projectName = getProjectName(ctx.cwd);
+		const notificationText = turnSummary
+			? await generateNotificationSummary(turnSummary, modelRegistry)
+			: "Ready for input";
 
-		// Delay the notification - if user sends another prompt, it'll be cancelled
-		pendingNotifyTimeout = setTimeout(async () => {
+		// Delay the notification - if user sends another prompt, it'll be cancelled.
+		// Do not capture ctx in this timer: extension contexts become stale after
+		// session replacement/reload.
+		pendingNotifyTimeout = setTimeout(() => {
 			pendingNotifyTimeout = null;
-
-			let notificationText = "Ready for input";
-			if (turnSummary) {
-				notificationText = await generateNotificationSummary(turnSummary, ctx);
-			}
-
 			notify(`Pi · ${projectName}`, notificationText);
 		}, NOTIFY_DELAY_MS);
 	});
