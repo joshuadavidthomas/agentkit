@@ -224,7 +224,7 @@ async function runSessionQuery(
       prompt: toSdkPrompt(prompt),
       options: {
         ...baseQueryOptions(model, abortController, options?.apiKey),
-        resume: session.sdkSessionId(),
+        resume: session.sdkSessionIdForResume(),
         allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
         permissionMode: "bypassPermissions",
         systemPrompt: {

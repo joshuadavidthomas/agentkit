@@ -92,7 +92,7 @@ export class ClaudeSession {
   readonly piSessionId: string;
   readonly toolCallMatcher = new ToolCallMatcher();
 
-  private sdkSessionIdValue: string | null;
+  private sdkSessionId: string | null;
   private syncedThroughEntryId: string | null;
   private lastClaudeModelId: string | null;
   private sessionManager: HandoffSessionReader | undefined;
@@ -106,7 +106,7 @@ export class ClaudeSession {
     private readonly persistSessionEntry?: PersistSessionEntry,
   ) {
     this.piSessionId = piSessionId;
-    this.sdkSessionIdValue = data?.sdkSessionId ?? null;
+    this.sdkSessionId = data?.sdkSessionId ?? null;
     this.syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
     this.lastClaudeModelId = data?.lastClaudeModelId ?? null;
     this.sessionManager = sessionManager;
@@ -114,14 +114,14 @@ export class ClaudeSession {
 
   continuityState(): SessionEntryData {
     return {
-      sdkSessionId: this.sdkSessionIdValue,
+      sdkSessionId: this.sdkSessionId,
       syncedThroughEntryId: this.syncedThroughEntryId,
       lastClaudeModelId: this.lastClaudeModelId,
     };
   }
 
-  sdkSessionId(): string | undefined {
-    return this.sdkSessionIdValue ?? undefined;
+  sdkSessionIdForResume(): string | undefined {
+    return this.sdkSessionId ?? undefined;
   }
 
   hasActiveQuery(): boolean {
@@ -137,9 +137,9 @@ export class ClaudeSession {
   }
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
-    if (this.sdkSessionIdValue === sdkSessionId && this.lastClaudeModelId === claudeModelId) return;
+    if (this.sdkSessionId === sdkSessionId && this.lastClaudeModelId === claudeModelId) return;
 
-    this.sdkSessionIdValue = sdkSessionId;
+    this.sdkSessionId = sdkSessionId;
     this.lastClaudeModelId = claudeModelId;
     this.persist();
   }
@@ -153,16 +153,16 @@ export class ClaudeSession {
 
   resetContinuity() {
     this.closeActiveTurn();
-    if (!this.sdkSessionIdValue && !this.syncedThroughEntryId && !this.lastClaudeModelId) return;
+    if (!this.sdkSessionId && !this.syncedThroughEntryId && !this.lastClaudeModelId) return;
 
-    this.sdkSessionIdValue = null;
+    this.sdkSessionId = null;
     this.syncedThroughEntryId = null;
     this.lastClaudeModelId = null;
     this.persist();
   }
 
   prepareForTurn(): string | undefined {
-    if (this.sdkSessionIdValue && (!this.syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
+    if (this.sdkSessionId && (!this.syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
       this.resetContinuity();
     }
 
