@@ -10,11 +10,6 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
-export interface ClaudeSessionContinuity {
-  sdkSessionId: string | null;
-  syncedThroughEntryId: string | null;
-}
-
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
 // The model registry is shared, so a later instance must not overwrite the
@@ -117,10 +112,11 @@ export class ClaudeSession {
     this.sessionManager = sessionManager;
   }
 
-  continuitySnapshot(): ClaudeSessionContinuity {
+  continuityState(): SessionEntryData {
     return {
       sdkSessionId: this.sdkSessionId,
       syncedThroughEntryId: this.syncedThroughEntryId,
+      lastClaudeModelId: this.lastClaudeModelId,
     };
   }
 
@@ -238,10 +234,6 @@ export class ClaudeSession {
   }
 
   private persist() {
-    this.persistSessionEntry?.({
-      sdkSessionId: this.sdkSessionId,
-      syncedThroughEntryId: this.syncedThroughEntryId,
-      lastClaudeModelId: this.lastClaudeModelId,
-    });
+    this.persistSessionEntry?.(this.continuityState());
   }
 }
