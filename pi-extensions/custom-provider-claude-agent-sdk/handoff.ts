@@ -168,8 +168,9 @@ function buildDeltaHandoff(
 }
 
 export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, session: ClaudeSession): boolean {
-  if (!session.syncedThroughEntryId) return false;
-  return sessionManager.getBranch().some((entry) => entry.id === session.syncedThroughEntryId);
+  const { syncedThroughEntryId } = session.continuitySnapshot();
+  if (!syncedThroughEntryId) return false;
+  return sessionManager.getBranch().some((entry) => entry.id === syncedThroughEntryId);
 }
 
 export function buildPiSessionHandoff(
@@ -181,11 +182,12 @@ export function buildPiSessionHandoff(
   const branch = sessionManager.getBranch();
   const currentPromptIndex = findCurrentPromptIndex(branch);
 
-  if (!session.sdkSessionId || !session.syncedThroughEntryId) {
+  const { sdkSessionId, syncedThroughEntryId } = session.continuitySnapshot();
+  if (!sdkSessionId || !syncedThroughEntryId) {
     return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
   }
 
-  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, session.syncedThroughEntryId);
+  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, syncedThroughEntryId);
 }
 
 export function buildContextMessagesHandoff(messages: unknown[]): string | undefined {

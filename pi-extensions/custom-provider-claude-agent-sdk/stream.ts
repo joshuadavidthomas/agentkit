@@ -163,7 +163,7 @@ export function streamClaudeAgentSdk(
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
 
-  if (session.activeQuery) {
+  if (session.hasActiveQuery()) {
     attachState(session, model, stream);
     session.deliverToolResults(extractToolResults(context));
     return stream;
@@ -224,7 +224,7 @@ async function runSessionQuery(
       prompt: toSdkPrompt(prompt),
       options: {
         ...baseQueryOptions(model, abortController, options?.apiKey),
-        resume: session.sdkSessionId ?? undefined,
+        resume: session.resumeSdkSessionId(),
         allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
         permissionMode: "bypassPermissions",
         systemPrompt: {
@@ -243,7 +243,7 @@ async function runSessionQuery(
         session.captureSdkSessionId(sdkSessionId, model.id);
       }
 
-      const currentState = session.currentStreamState;
+      const currentState = session.streamState();
       if (!currentState) continue;
 
       if (handleSdkQueryMessage(message, session, currentState)) {
@@ -251,13 +251,13 @@ async function runSessionQuery(
       }
     }
 
-    const currentState = session.currentStreamState;
+    const currentState = session.streamState();
     if (currentState && !currentState.finished) {
       currentState.finish("stop");
       session.detachStreamState(currentState);
     }
   } catch (error) {
-    const currentState = session.currentStreamState ?? state;
+    const currentState = session.streamState() ?? state;
     currentState.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
     session.detachStreamState(currentState);
   } finally {

@@ -10,6 +10,11 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
+export interface ClaudeSessionContinuity {
+  sdkSessionId: string | null;
+  syncedThroughEntryId: string | null;
+}
+
 function closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
   try {
     sdkQuery?.close();
@@ -100,12 +105,12 @@ export class ClaudeSession {
   readonly piSessionId: string;
   readonly toolCallMatcher = new ToolCallMatcher();
 
-  private _sdkSessionId: string | null;
-  private _syncedThroughEntryId: string | null;
-  private _lastClaudeModelId: string | null;
+  private sdkSessionId: string | null;
+  private syncedThroughEntryId: string | null;
+  private lastClaudeModelId: string | null;
   private sessionManager: HandoffSessionReader | undefined;
-  private _activeQuery: SdkQuery | null = null;
-  private _currentStreamState: PiStreamState | null = null;
+  private activeQuery: SdkQuery | null = null;
+  private currentStreamState: PiStreamState | null = null;
 
   constructor(
     piSessionId: string,
@@ -114,30 +119,29 @@ export class ClaudeSession {
     private readonly persistSessionEntry?: PersistSessionEntry,
   ) {
     this.piSessionId = piSessionId;
-    this._sdkSessionId = data?.sdkSessionId ?? null;
-    this._syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
-    this._lastClaudeModelId = data?.lastClaudeModelId ?? null;
+    this.sdkSessionId = data?.sdkSessionId ?? null;
+    this.syncedThroughEntryId = data?.syncedThroughEntryId ?? null;
+    this.lastClaudeModelId = data?.lastClaudeModelId ?? null;
     this.sessionManager = sessionManager;
   }
 
-  get sdkSessionId() {
-    return this._sdkSessionId;
+  continuitySnapshot(): ClaudeSessionContinuity {
+    return {
+      sdkSessionId: this.sdkSessionId,
+      syncedThroughEntryId: this.syncedThroughEntryId,
+    };
   }
 
-  get syncedThroughEntryId() {
-    return this._syncedThroughEntryId;
+  resumeSdkSessionId(): string | undefined {
+    return this.sdkSessionId ?? undefined;
   }
 
-  get lastClaudeModelId() {
-    return this._lastClaudeModelId;
+  hasActiveQuery(): boolean {
+    return Boolean(this.activeQuery);
   }
 
-  get activeQuery() {
-    return this._activeQuery;
-  }
-
-  get currentStreamState() {
-    return this._currentStreamState;
+  streamState(): PiStreamState | undefined {
+    return this.currentStreamState ?? undefined;
   }
 
   setSessionManager(sessionManager: HandoffSessionReader | undefined) {
@@ -145,32 +149,32 @@ export class ClaudeSession {
   }
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
-    if (this._sdkSessionId === sdkSessionId && this._lastClaudeModelId === claudeModelId) return;
+    if (this.sdkSessionId === sdkSessionId && this.lastClaudeModelId === claudeModelId) return;
 
-    this._sdkSessionId = sdkSessionId;
-    this._lastClaudeModelId = claudeModelId;
+    this.sdkSessionId = sdkSessionId;
+    this.lastClaudeModelId = claudeModelId;
     this.persist();
   }
 
   markSyncedThrough(entryId: string) {
-    if (this._syncedThroughEntryId === entryId) return;
+    if (this.syncedThroughEntryId === entryId) return;
 
-    this._syncedThroughEntryId = entryId;
+    this.syncedThroughEntryId = entryId;
     this.persist();
   }
 
   resetContinuity() {
     this.closeActiveTurn();
-    if (!this._sdkSessionId && !this._syncedThroughEntryId && !this._lastClaudeModelId) return;
+    if (!this.sdkSessionId && !this.syncedThroughEntryId && !this.lastClaudeModelId) return;
 
-    this._sdkSessionId = null;
-    this._syncedThroughEntryId = null;
-    this._lastClaudeModelId = null;
+    this.sdkSessionId = null;
+    this.syncedThroughEntryId = null;
+    this.lastClaudeModelId = null;
     this.persist();
   }
 
   prepareForTurn(): string | undefined {
-    if (this._sdkSessionId && (!this._syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
+    if (this.sdkSessionId && (!this.syncedThroughEntryId || !this.sessionManager || !hasSyncedEntryOnCurrentBranch(this.sessionManager, this))) {
       this.resetContinuity();
     }
 
@@ -178,26 +182,26 @@ export class ClaudeSession {
   }
 
   beginActiveQuery(sdkQuery: SdkQuery) {
-    this._activeQuery = sdkQuery;
+    this.activeQuery = sdkQuery;
   }
 
   finishActiveQuery(sdkQuery: SdkQuery) {
-    if (this._activeQuery !== sdkQuery) return;
+    if (this.activeQuery !== sdkQuery) return;
 
     this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
     this.toolCallMatcher.clearQueuedResults();
-    this._activeQuery = null;
-    this._currentStreamState = null;
+    this.activeQuery = null;
+    this.currentStreamState = null;
     closeSdkQuery(sdkQuery);
   }
 
   attachStreamState(state: PiStreamState) {
-    this._currentStreamState = state;
+    this.currentStreamState = state;
   }
 
   detachStreamState(state: PiStreamState) {
-    if (this._currentStreamState === state) {
-      this._currentStreamState = null;
+    if (this.currentStreamState === state) {
+      this.currentStreamState = null;
     }
   }
 
@@ -214,7 +218,7 @@ export class ClaudeSession {
   }
 
   abortActiveTurn(message: string) {
-    const state = this._currentStreamState;
+    const state = this.currentStreamState;
     if (state && !state.finished) {
       state.fail(message, true);
     }
@@ -225,19 +229,19 @@ export class ClaudeSession {
   closeActiveTurn() {
     this.resolvePendingToolCalls(createMcpTextResult("Session closed", true));
     this.toolCallMatcher.clearQueuedResults();
-    this._currentStreamState = null;
+    this.currentStreamState = null;
     this.toolCallMatcher.resetTurn();
 
-    const sdkQuery = this._activeQuery;
-    this._activeQuery = null;
+    const sdkQuery = this.activeQuery;
+    this.activeQuery = null;
     closeSdkQuery(sdkQuery);
   }
 
   private persist() {
     this.persistSessionEntry?.({
-      sdkSessionId: this._sdkSessionId,
-      syncedThroughEntryId: this._syncedThroughEntryId,
-      lastClaudeModelId: this._lastClaudeModelId,
+      sdkSessionId: this.sdkSessionId,
+      syncedThroughEntryId: this.syncedThroughEntryId,
+      lastClaudeModelId: this.lastClaudeModelId,
     });
   }
 }
