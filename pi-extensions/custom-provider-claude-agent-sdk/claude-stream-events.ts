@@ -4,6 +4,10 @@ import type { FinishedStopReason } from "./types.js";
 export type ClaudeStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
 export type ClaudeAssistantMessage = Extract<SDKMessage, { type: "assistant" }>;
 
+export function extractSessionId(message: SDKMessage): string | undefined {
+  return typeof message.session_id === "string" ? message.session_id : undefined;
+}
+
 export interface TurnUsage {
   inputTokens?: number;
   outputTokens?: number;

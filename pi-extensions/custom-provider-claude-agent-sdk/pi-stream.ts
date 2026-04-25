@@ -248,8 +248,8 @@ export function backfillAssistantContent(
   return state.finishToolUseIfPresent();
 }
 
-export function completeFromResult(result: TurnResult, state: PiStreamState | null): boolean {
-  if (!state || state.finished) return false;
+export function completeFromResult(result: TurnResult, state: PiStreamState): boolean {
+  if (state.finished) return false;
 
   state.applyUsage(result.usage);
 

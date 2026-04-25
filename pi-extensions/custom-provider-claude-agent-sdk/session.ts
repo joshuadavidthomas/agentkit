@@ -135,10 +135,10 @@ export class ClaudeSession {
     this._currentStreamState = null;
     this.toolCalls.resetTurn();
 
-    const query = this._activeQuery;
+    const sdkQuery = this._activeQuery;
     this._activeQuery = null;
     try {
-      query?.close();
+      sdkQuery?.close();
     } catch {
       // Ignore close failures.
     }

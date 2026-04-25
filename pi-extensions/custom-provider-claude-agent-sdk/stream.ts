@@ -11,6 +11,7 @@ import {
   type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import {
+  extractSessionId,
   parseClaudeAssistantMessage,
   parseClaudeResultMessage,
   parseClaudeStreamEvent,
@@ -205,7 +206,7 @@ export function streamClaudeAgentSdk(
       }
     };
 
-    if (options?.signal?.aborted) {
+    if (abortController.signal.aborted) {
       abortPending();
       state.fail("Claude Agent SDK request aborted", true);
       session.detachStreamState(state);
@@ -240,8 +241,8 @@ export function streamClaudeAgentSdk(
       session.beginQuery(sdkQuery);
 
       for await (const message of sdkQuery) {
-        const sdkSessionId = (message as { session_id?: unknown }).session_id;
-        if (typeof sdkSessionId === "string") {
+        const sdkSessionId = extractSessionId(message);
+        if (sdkSessionId) {
           session.captureSdkSessionId(pi, sdkSessionId, model.id);
         }
 
