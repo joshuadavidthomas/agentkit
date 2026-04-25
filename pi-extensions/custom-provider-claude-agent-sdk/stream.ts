@@ -44,30 +44,26 @@ function resolveClaudeExecutable(): string | undefined {
   }
 }
 
-function createEmptyOutput(model: Model<Api>): AssistantMessage {
-  return {
-    role: "assistant",
-    content: [],
-    api: model.api,
-    provider: model.provider,
-    model: model.id,
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: Date.now(),
-  };
-}
-
 function createStreamState(model: Model<Api>, stream: AssistantMessageEventStream): StreamState {
   return {
     model,
-    output: createEmptyOutput(model),
+    output: {
+      role: "assistant",
+      content: [],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
     stream,
     blockIndex: new Map(),
     toolJsonByIndex: new Map(),
