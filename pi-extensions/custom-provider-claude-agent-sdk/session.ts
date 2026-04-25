@@ -153,11 +153,7 @@ export class ClaudeSession {
   abortActiveTurn(message: string) {
     const state = this.currentStreamState;
     if (state && !state.finished) {
-      state.finished = true;
-      state.output.stopReason = "aborted";
-      state.output.errorMessage = message;
-      state.stream.push({ type: "error", reason: "aborted", error: state.output });
-      state.stream.end();
+      state.fail(message, true);
     }
 
     this.close();
