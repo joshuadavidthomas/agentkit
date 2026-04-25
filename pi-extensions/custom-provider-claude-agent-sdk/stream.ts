@@ -412,7 +412,7 @@ function completeFromResult(result: SDKResultMessage, session: ClaudeSession, st
 function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk-v3",
+    CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk",
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
   };
 

@@ -40,7 +40,7 @@ We're not copying files wholesale — v3 is a fresh directory — but a few piec
 are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
-  Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk-v3`.
+  Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
 - **`constants.ts`** (24 lines). Port `DEFAULT_PROVIDER_MODELS` (Sonnet 4.5
   ctx 200k / maxTokens 64k; Opus 4.7 ctx 1M / maxTokens 128k). Rename
   `PROVIDER_ID` to `claude-agent-sdk-v3`.
@@ -142,7 +142,7 @@ entry (if any). On `SessionShutdownEvent` we `.close()`.
 ## File layout
 
 ```
-pi-extensions/custom-provider-claude-agent-sdk-v3/
+pi-extensions/custom-provider-claude-agent-sdk/
 ├── PLAN.md                 (this file)
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring)

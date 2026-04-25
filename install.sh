@@ -46,17 +46,17 @@ fi
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
 
-# Retired extensions that may still exist as stale symlinks from older installs.
-RETIRED_EXTENSIONS=(
-    "custom-provider-claude-agent-sdk"
+# Stale extension links that may still exist from older installs.
+STALE_EXTENSION_LINKS=(
     "custom-provider-claude-agent-sdk-v2"
+    "custom-provider-claude-agent-sdk-v3"
 )
 
 mkdir -p "$PI_EXTENSIONS_DIR"
-for retired in "${RETIRED_EXTENSIONS[@]}"; do
-    if [[ -L "$PI_EXTENSIONS_DIR/$retired" ]]; then
-        rm "$PI_EXTENSIONS_DIR/$retired"
-        echo "Removed retired extension: $retired"
+for stale in "${STALE_EXTENSION_LINKS[@]}"; do
+    if [[ -L "$PI_EXTENSIONS_DIR/$stale" ]]; then
+        rm "$PI_EXTENSIONS_DIR/$stale"
+        echo "Removed stale extension link: $stale"
     fi
 done
 

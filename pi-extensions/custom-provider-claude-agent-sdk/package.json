@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-custom-provider-claude-agent-sdk-v3",
+  "name": "pi-extension-custom-provider-claude-agent-sdk",
   "private": true,
   "type": "module",
   "pi": {
