@@ -409,18 +409,16 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
   return env;
 }
 
-function createBaseQueryOptions(model: Model<Api>, abortController: AbortController, apiKey?: string) {
-  return {
-    abortController,
-    cwd: process.cwd(),
-    pathToClaudeCodeExecutable: resolveClaudeExecutable(),
-    model: model.id,
-    disallowedTools: DISALLOWED_BUILTIN_TOOLS,
-    includePartialMessages: true,
-    settingSources: [],
-    env: createSdkEnv(apiKey),
-  };
-}
+const createBaseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
+  abortController,
+  cwd: process.cwd(),
+  pathToClaudeCodeExecutable: resolveClaudeExecutable(),
+  model: model.id,
+  disallowedTools: DISALLOWED_BUILTIN_TOOLS,
+  includePartialMessages: true,
+  settingSources: [],
+  env: createSdkEnv(apiKey),
+});
 
 function handleSdkQueryMessage(message: SDKMessage, session: ClaudeSession, state: StreamState) {
   if (message.type === "stream_event") {
