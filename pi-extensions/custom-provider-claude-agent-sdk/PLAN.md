@@ -205,7 +205,8 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - post-compact continuity smoke test recalled `m4f-papaya, m4f-guava`
 - parent session successfully called `finder` scout also running this provider (`claude-agent-sdk/claude-sonnet-4-5`) and received the expected result
 - final identity smoke tests passed with `claude-agent-sdk/claude-sonnet-4-5` for no-tool, `read`, duplicate-load guard, and parent → `finder` scout
-- model list now comes from pi's built-in Anthropic registry via `getModels("anthropic")`
+- model list now comes from pi's built-in Anthropic registry via `getModels("anthropic")`; `claude-agent-sdk/claude-sonnet-4-6` was smoke-tested
+- final tmux regression with `claude-agent-sdk/claude-sonnet-4-6` passed no-tool continuity, `read`, `bash`, `write`, parallel `read`s, abort/recovery, `/compact` recall, and parent → `finder` scout
 - JSONL had matching tool calls/results, no orphan tool results, no missing tool results, final `claude-agent-sdk-session` entries, and no old `claude-agent-sdk-provider` entries when the provider was loaded only once
 
 ## Caveats / follow-ups
