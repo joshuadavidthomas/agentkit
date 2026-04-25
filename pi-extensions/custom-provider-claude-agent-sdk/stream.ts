@@ -8,7 +8,6 @@ import {
   type AssistantMessage,
   type AssistantMessageEventStream,
   type Context,
-  type ImageContent,
   type Model,
   type SimpleStreamOptions,
   type StopReason,
@@ -26,7 +25,7 @@ import {
   MCP_TOOL_PREFIX,
   stripMcpToolName,
 } from "./tools.js";
-import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from "./types.js";
+import type { PromptBlock, PromptTextBlock, StreamState } from "./types.js";
 
 const require = createRequire(import.meta.url);
 
@@ -95,7 +94,10 @@ function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
         return [{ type: "text", text: item.text }];
       }
 
-      if (isSupportedImage(item)) {
+      if (
+        item.type === "image" &&
+        (item.mimeType === "image/jpeg" || item.mimeType === "image/png" || item.mimeType === "image/gif" || item.mimeType === "image/webp")
+      ) {
         return [
           {
             type: "image",
@@ -123,10 +125,6 @@ function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
   throw new Error("No user prompt found in context");
 }
 
-function isSupportedImage(item: ImageContent): item is ImageContent & { mimeType: PromptImageBlock["source"]["media_type"] } {
-  return ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(item.mimeType);
-}
-
 async function* singleSdkUserMessage(content: PromptBlock[]): AsyncGenerator<SDKUserMessage> {
   yield {
     type: "user",
@@ -138,17 +136,6 @@ async function* singleSdkUserMessage(content: PromptBlock[]): AsyncGenerator<SDK
 
 function toSdkPrompt(prompt: string | PromptBlock[]): string | AsyncIterable<SDKUserMessage> {
   return typeof prompt === "string" ? prompt : singleSdkUserMessage(prompt);
-}
-
-function mergePromptWithHandoff(prompt: string | PromptBlock[], handoff: string | undefined): string | PromptBlock[] {
-  if (!handoff) return prompt;
-
-  const prefix = `${handoff}\n\nCurrent user message:\n`;
-  if (typeof prompt === "string") {
-    return `${prefix}${prompt}`;
-  }
-
-  return [{ type: "text", text: prefix }, ...prompt];
 }
 
 function mapStopReason(reason: string | null): Extract<StopReason, "stop" | "length" | "toolUse"> {
@@ -562,7 +549,12 @@ export function streamClaudeAgentSdk(
 
     try {
       const handoff = session.prepareForTurn(pi) ?? buildContextMessagesHandoff(context.messages);
-      const prompt = mergePromptWithHandoff(extractLatestUserPrompt(context), handoff);
+      let prompt = extractLatestUserPrompt(context);
+      if (handoff) {
+        const prefix = `${handoff}\n\nCurrent user message:\n`;
+        prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text", text: prefix }, ...prompt];
+      }
+
       sdkQuery = query({
         prompt: toSdkPrompt(prompt),
         options: {
