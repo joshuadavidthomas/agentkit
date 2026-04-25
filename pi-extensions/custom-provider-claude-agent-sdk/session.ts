@@ -9,8 +9,15 @@ import { createMcpTextResult, type PiMcpResult } from "./tools.js";
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
 
+declare const piSessionIdBrand: unique symbol;
+export type PiSessionId = string & { readonly [piSessionIdBrand]: true };
+
+export function piSessionId(value: string): PiSessionId {
+  return value as PiSessionId;
+}
+
 export class ClaudeSession {
-  readonly piSessionId: string;
+  readonly piSessionId: PiSessionId;
   readonly toolCalls = new ToolCallMatcher();
 
   private _sdkSessionId: string | null;
@@ -21,7 +28,7 @@ export class ClaudeSession {
   private _currentStreamState: PiStreamState | null = null;
 
   constructor(
-    piSessionId: string,
+    piSessionId: PiSessionId,
     data?: Partial<SessionEntryData>,
     sessionManager?: HandoffSessionReader,
     private readonly persistSessionEntry?: PersistSessionEntry,

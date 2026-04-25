@@ -93,12 +93,12 @@ loop and uses the SDK's own tool/runtime stack instead."
 
 ## Architecture
 
-**Single source of session state:** a `Map<piSessionId, ClaudeSession>`.
+**Single source of session state:** a `Map<PiSessionId, ClaudeSession>`.
 No `sharedSession`. The only other module/global state is a defensive duplicate
 registration guard for accidental same-process double loads.
 
 **`ClaudeSession`** owns per-pi-session identity and query lifecycle:
-- `piSessionId: string`
+- `piSessionId: PiSessionId`
 - private `sdkSessionId: string | null` (set after first successful query)
 - private `syncedThroughEntryId: string | null` (the latest pi branch entry known to be represented in the SDK session)
 - private `lastClaudeModelId: string | null`

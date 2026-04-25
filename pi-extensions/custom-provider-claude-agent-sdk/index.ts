@@ -2,7 +2,7 @@ import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
-import { ClaudeSession } from "./session.js";
+import { ClaudeSession, piSessionId, type PiSessionId } from "./session.js";
 import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
 
 export const PROVIDER_ID = "claude-agent-sdk";
@@ -46,31 +46,31 @@ function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager | und
 }
 
 class ClaudeSessionManager {
-  private readonly sessions = new Map<string, ClaudeSession>();
+  private readonly sessions = new Map<PiSessionId, ClaudeSession>();
 
-  constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) { }
+  constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) {}
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
-    const piSessionId = sessionManager.getSessionId();
-    this.sessions.get(piSessionId)?.close();
+    const id = piSessionId(sessionManager.getSessionId());
+    this.sessions.get(id)?.close();
 
-    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
-    this.sessions.set(piSessionId, session);
+    const session = new ClaudeSession(id, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
+    this.sessions.set(id, session);
     return session;
   }
 
   currentSession(sessionManager: PiSessionManager): ClaudeSession | undefined {
-    return this.sessions.get(sessionManager.getSessionId());
+    return this.sessions.get(piSessionId(sessionManager.getSessionId()));
   }
 
-  createSession(piSessionId: string): ClaudeSession {
-    const session = new ClaudeSession(piSessionId, undefined, undefined, this.persistSessionEntry);
-    this.sessions.set(piSessionId, session);
+  createSession(id: PiSessionId): ClaudeSession {
+    const session = new ClaudeSession(id, undefined, undefined, this.persistSessionEntry);
+    this.sessions.set(id, session);
     return session;
   }
 
-  getSession(piSessionId: string): ClaudeSession | undefined {
-    return this.sessions.get(piSessionId);
+  getSession(id: PiSessionId): ClaudeSession | undefined {
+    return this.sessions.get(id);
   }
 
   resetSessionForStructuralChange(sessionManager: PiSessionManager) {
@@ -85,10 +85,10 @@ class ClaudeSessionManager {
     session?.markSyncedThrough(leafId);
   }
 
-  shutdownSession(piSessionId: string) {
-    const session = this.sessions.get(piSessionId);
+  shutdownSession(id: PiSessionId) {
+    const session = this.sessions.get(id);
     session?.close();
-    this.sessions.delete(piSessionId);
+    this.sessions.delete(id);
 
     if (this.sessions.size === 0) {
       const state = globalThis as ClaudeSessionManagerGlobal;
@@ -112,7 +112,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    claudeSessions.shutdownSession(ctx.sessionManager.getSessionId());
+    claudeSessions.shutdownSession(piSessionId(ctx.sessionManager.getSessionId()));
   });
 
   pi.on("session_compact", (_event, ctx) => {
@@ -150,9 +150,10 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
         return streamClaudeAgentSdkOneShot(model, context, options);
       }
 
-      let session = claudeSessions.getSession(options.sessionId);
+      const id = piSessionId(options.sessionId);
+      let session = claudeSessions.getSession(id);
       if (!session) {
-        session = claudeSessions.createSession(options.sessionId);
+        session = claudeSessions.createSession(id);
       }
 
       return streamClaudeAgentSdk(session, model, context, options);
