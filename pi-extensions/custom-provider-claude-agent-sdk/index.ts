@@ -46,22 +46,10 @@ function claimProviderRuntime(): ClaudeAgentSdkRuntime | undefined {
   return runtime;
 }
 
-function releaseProviderRuntime(runtime: ClaudeAgentSdkRuntime) {
-  const state = globalThis as RuntimeGlobal;
-  if (state[ACTIVE_RUNTIME_KEY] === runtime) {
-    delete state[ACTIVE_RUNTIME_KEY];
-  }
-}
-
 class ClaudeAgentSdkRuntime {
   private readonly sessions = new Map<string, ClaudeSession>();
 
   install(pi: ExtensionAPI) {
-    this.registerSessionLifecycle(pi);
-    this.registerProvider(pi);
-  }
-
-  private registerSessionLifecycle(pi: ExtensionAPI) {
     pi.on("session_start", (event, ctx) => {
       const session = this.hydrateSession(pi, ctx.sessionManager);
 
@@ -73,7 +61,7 @@ class ClaudeAgentSdkRuntime {
     pi.on("session_shutdown", (_event, ctx) => {
       this.closeSession(ctx.sessionManager.getSessionId());
       if (this.sessions.size === 0) {
-        releaseProviderRuntime(this);
+        this.release();
       }
     });
 
@@ -103,9 +91,7 @@ class ClaudeAgentSdkRuntime {
 
       this.currentSession(ctx.sessionManager)?.abortActiveTurn("Claude Agent SDK request cancelled after switching models");
     });
-  }
 
-  private registerProvider(pi: ExtensionAPI) {
     pi.registerProvider(PROVIDER_ID, {
       baseUrl: "https://api.anthropic.com",
       apiKey: "ANTHROPIC_API_KEY",
@@ -157,6 +143,13 @@ class ClaudeAgentSdkRuntime {
     const session = this.sessions.get(piSessionId);
     session?.close();
     this.sessions.delete(piSessionId);
+  }
+
+  private release() {
+    const state = globalThis as RuntimeGlobal;
+    if (state[ACTIVE_RUNTIME_KEY] === this) {
+      delete state[ACTIVE_RUNTIME_KEY];
+    }
   }
 }
 
