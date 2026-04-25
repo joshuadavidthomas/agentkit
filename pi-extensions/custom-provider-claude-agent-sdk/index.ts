@@ -1,5 +1,4 @@
 import { getModels } from "@mariozechner/pi-ai";
-import type { Api, Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
@@ -49,11 +48,11 @@ function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager | und
 class ClaudeSessionManager {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) {}
+  constructor(private readonly persistSessionEntry: (data: SessionEntryData) => void) { }
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    this.currentSession(sessionManager)?.close();
+    this.sessions.get(piSessionId)?.close();
 
     const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
