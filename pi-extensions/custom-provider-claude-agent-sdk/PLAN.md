@@ -185,8 +185,8 @@ pi-extensions/custom-provider-claude-agent-sdk/
   stall. JSONL had matching finder tool call/result and no v1 custom entries.
 - **M6 — Polish. In progress.** Provider directory and public provider id have
   been collapsed to `custom-provider-claude-agent-sdk` / `claude-agent-sdk`.
-  Remaining polish: final regression, portability of Claude binary resolution,
-  schema conversion breadth, and any remaining reentrancy guard if needed. The
+  Remaining polish: final regression, schema conversion breadth, and any
+  remaining reentrancy guard if needed. The
   provider now mirrors pi's built-in Anthropic model list and passes those model
   ids directly to Claude Code. A same-load duplicate registration guard now prevents the common installed
   provider + explicit `-e` double-load case.
@@ -217,7 +217,7 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - **Abort coverage is partial:** Tested abort while a pi `bash` tool was running. Still untested: abort while Claude is streaming before a tool call, while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
 - **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
 - **Schema conversion is minimal:** TypeBox/JSON schema → Zod handles common object properties, arrays, enums, constants, and primitives. It does not deeply model nested object properties, oneOf/anyOf/allOf, nullable unions, numeric bounds, or string formats.
-- **Linux binary workaround:** the provider forces the glibc x64 Claude SDK binary on Linux x64 because SDK auto-selection picked the musl binary here, which failed due a missing musl loader. Make this more portable before finalizing.
+- **Linux binary workaround:** On this machine the SDK auto-selected its Linux x64 musl package, which failed due a missing musl loader, while the glibc package worked. `stream.ts` documents this local quirk and prefers the glibc binary only on Linux x64; other platforms fall back to SDK resolution.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
 - **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using this provider works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
 - **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.

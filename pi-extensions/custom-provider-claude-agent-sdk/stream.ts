@@ -30,6 +30,10 @@ import type { PromptBlock, PromptImageBlock, PromptTextBlock, StreamState } from
 
 const require = createRequire(import.meta.url);
 
+// Local Linux x64 quirk: the SDK resolver selected its musl package on this
+// machine, but the installed/working binary is the glibc package. Prefer that
+// known-good binary here; other platforms and missing packages fall back to the
+// SDK's normal executable resolution.
 function resolveClaudeExecutable(): string | undefined {
   if (process.platform !== "linux" || process.arch !== "x64") return undefined;
 
