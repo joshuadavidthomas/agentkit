@@ -46,20 +46,39 @@ fi
 PI_EXTENSIONS_DIR="$HOME/.pi/agent/extensions"
 PI_EXTENSIONS_SRC="$REPO_DIR/pi-extensions"
 
-# Extensions to skip (retired in favor of scouts)
-SKIP_EXTENSIONS="pi-subagents"
+# Stale extension links that may still exist from older installs.
+STALE_EXTENSION_LINKS=(
+    "custom-provider-claude-agent-sdk-v2"
+    "custom-provider-claude-agent-sdk-v3"
+)
+
+mkdir -p "$PI_EXTENSIONS_DIR"
+for stale in "${STALE_EXTENSION_LINKS[@]}"; do
+    if [[ -L "$PI_EXTENSIONS_DIR/$stale" ]]; then
+        rm "$PI_EXTENSIONS_DIR/$stale"
+        echo "Removed stale extension link: $stale"
+    fi
+done
+
+# Extensions to skip while walking pi-extensions/.
+SKIP_EXTENSIONS=(
+    "pi-subagents"
+)
 
 if [[ -d "$PI_EXTENSIONS_SRC" ]]; then
     mkdir -p "$PI_EXTENSIONS_DIR"
     for ext in "$PI_EXTENSIONS_SRC"/*; do
         [[ -e "$ext" ]] || continue
         ext_name=$(basename "$ext")
-        if echo "$SKIP_EXTENSIONS" | grep -qw "$ext_name"; then
-            # Remove stale symlink if it exists
-            if [[ -L "$PI_EXTENSIONS_DIR/$ext_name" ]]; then
-                rm "$PI_EXTENSIONS_DIR/$ext_name"
-                echo "Removed retired extension: $ext_name"
+        skip_extension=false
+        for skipped in "${SKIP_EXTENSIONS[@]}"; do
+            if [[ "$ext_name" == "$skipped" ]]; then
+                skip_extension=true
+                break
             fi
+        done
+
+        if [[ "$skip_extension" == true ]]; then
             continue
         fi
         ln -sfn "$ext" "$PI_EXTENSIONS_DIR/$ext_name"

@@ -28,7 +28,7 @@ const NERD_FONT_MAP = {
 } as const;
 
 const PROVIDER_MAP = {
-  "claude-bridge": "claude-code",
+  "claude-agent-sdk": "claude code",
   "github-copilot": "copilot",
   "google-antigravity": "google",
   "openai-codex": "openai",
@@ -37,7 +37,7 @@ const PROVIDER_MAP = {
 // Maps pi model provider IDs to vibeusage provider IDs
 const VIBEUSAGE_PROVIDER_MAP: Record<string, string> = {
   "anthropic": "claude",
-  "claude-bridge": "claude",
+  "claude-agent-sdk": "claude",
   "github-copilot": "copilot",
   "google": "gemini",
   "google-antigravity": "antigravity",
@@ -173,6 +173,14 @@ function refreshVibeusage(vibeProvider: string): void {
       vibeusageRequestRender?.();
     },
   );
+}
+
+function formatStatuslineModelName(model: { provider: string; name?: string; id: string }): string {
+  const rawModelName = model.name || model.id;
+  if (model.provider === "anthropic" || model.provider === "claude-agent-sdk") {
+    return rawModelName.replace(/^Claude\s+/i, "");
+  }
+  return rawModelName;
 }
 
 function getVibeusageOutput(piProvider: string | undefined): string | null {
@@ -452,7 +460,7 @@ export default function (pi: ExtensionAPI) {
 
           // Model: "󰚩 claude-sonnet-4 from anthropic" (bold blue)
           if (model) {
-            const modelName = formatModelName(model.name || model.id);
+            const modelName = formatStatuslineModelName(model);
             line1Parts.push(
               theme.fg("accent", theme.bold(`${NERD_FONT_MAP["ROBOT"]} ${modelName}`)) +
               theme.fg("dim", " from ") +
