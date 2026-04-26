@@ -16,6 +16,7 @@ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "../tools/names.js";
 import { extractToolResults } from "../tools/results.js";
 import { extractSessionId, parseClaudeMessage } from "./events.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
+import { SdkInputQueue } from "./queue.js";
 
 export type SdkQuery = ReturnType<typeof query>;
 
@@ -318,7 +319,7 @@ async function ensureLiveQuery(
   if (session.liveQuery()) return;
 
   const abortController = new AbortController();
-  const inputQueue = session.createInputQueue();
+  const inputQueue = new SdkInputQueue();
   const sdkQuery = query({
     prompt: inputQueue,
     options: {

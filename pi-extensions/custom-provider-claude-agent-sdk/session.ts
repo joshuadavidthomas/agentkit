@@ -138,10 +138,6 @@ export class ClaudeSession {
     this.inputQueue = inputQueue;
   }
 
-  createInputQueue(): SdkInputQueue {
-    return new SdkInputQueue();
-  }
-
   pushUserMessage(message: SdkUserMessage): boolean {
     return this.inputQueue?.push(message) ?? false;
   }
