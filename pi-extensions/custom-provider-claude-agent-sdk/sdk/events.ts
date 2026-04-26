@@ -5,6 +5,7 @@ export type FinishedStopReason = Extract<StopReason, "stop" | "length" | "toolUs
 
 type ClaudeStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"];
 type ClaudeAssistantMessage = Extract<SDKMessage, { type: "assistant" }>;
+type ClaudeAssistantUsage = ClaudeAssistantMessage["message"]["usage"];
 
 export function extractSessionId(message: SDKMessage): string | undefined {
   return typeof message.session_id === "string" ? message.session_id : undefined;
@@ -47,7 +48,7 @@ export type TurnResult =
 
 export type TurnUpdate =
   | { type: "event"; event: TurnEvent }
-  | { type: "assistantBackfill"; backfill: AssistantBackfill[] }
+  | { type: "assistantBackfill"; backfill: AssistantBackfill[]; usage?: TurnUsage }
   | { type: "result"; result: TurnResult };
 
 export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined {
@@ -57,7 +58,11 @@ export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined 
   }
 
   if (message.type === "assistant") {
-    return { type: "assistantBackfill", backfill: parseClaudeAssistantMessage(message) };
+    return {
+      type: "assistantBackfill",
+      backfill: parseClaudeAssistantMessage(message),
+      usage: parseClaudeAssistantUsage(message.message.usage),
+    };
   }
 
   if (message.type === "result") {
@@ -176,6 +181,17 @@ function parseClaudeUsage(usage: {
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
 } | null | undefined): TurnUsage | undefined {
+  if (!usage) return undefined;
+
+  return {
+    inputTokens: usage.input_tokens ?? undefined,
+    outputTokens: usage.output_tokens ?? undefined,
+    cacheReadTokens: usage.cache_read_input_tokens ?? undefined,
+    cacheWriteTokens: usage.cache_creation_input_tokens ?? undefined,
+  };
+}
+
+function parseClaudeAssistantUsage(usage: ClaudeAssistantUsage | null | undefined): TurnUsage | undefined {
   if (!usage) return undefined;
 
   return {

@@ -49,6 +49,7 @@ export class PiStreamState {
   private isFinished = false;
   private streamEventsReceived = false;
   private toolCallStarted = false;
+  private pendingFinishedStopReason: FinishedStopReason = "stop";
 
   constructor(readonly model: Model<Api>, readonly stream: AssistantMessageEventStream) {
     this.output = {
@@ -129,13 +130,22 @@ export class PiStreamState {
     this.output.usage.output = usage.outputTokens ?? this.output.usage.output;
     this.output.usage.cacheRead = usage.cacheReadTokens ?? this.output.usage.cacheRead;
     this.output.usage.cacheWrite = usage.cacheWriteTokens ?? this.output.usage.cacheWrite;
-    this.output.usage.totalTokens =
-      this.output.usage.input + this.output.usage.output + this.output.usage.cacheRead + this.output.usage.cacheWrite;
+    // Pi uses totalTokens as context/compaction pressure. Claude SDK cache-read
+    // tokens are provider billing/cache-hit accounting, not additional context
+    // window growth, so keep cacheRead for cost accounting but exclude it from
+    // totalTokens.
+    this.output.usage.totalTokens = this.output.usage.input + this.output.usage.output + this.output.usage.cacheWrite;
     calculateCost(this.model, this.output.usage);
   }
 
   setStopReason(reason: FinishedStopReason) {
     this.output.stopReason = reason;
+    this.pendingFinishedStopReason = reason;
+  }
+
+  finishWithPendingStopReason() {
+    if (this.isFinished) return;
+    this.finish(this.pendingFinishedStopReason);
   }
 
   backfillText(text: string) {
@@ -258,27 +268,56 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
       state.markStreamingContentReceived();
       return applyTurnEvent(update.event, state, toolBridge);
     case "assistantBackfill":
-      return applyAssistantBackfill(update.backfill, state, toolBridge);
+      return applyAssistantBackfill(update.backfill, update.usage, state, toolBridge);
     case "result":
       return applyTurnResult(update.result, state);
   }
 }
 
-function applyAssistantBackfill(backfill: AssistantBackfill[], state: PiStreamState, toolBridge: ToolBridge): boolean {
-  if (!state.acceptsAssistantBackfill() || backfill.length === 0) return false;
+function applyAssistantBackfill(
+  backfill: AssistantBackfill[],
+  usage: TurnUsage | undefined,
+  state: PiStreamState,
+  toolBridge: ToolBridge,
+): boolean {
+  // The assistant SDK message carries the most accurate usage (cache token
+  // stats from the Anthropic API), and arrives between the streamed
+  // message_stop and the SDK result message. Apply usage here so it lands in
+  // the done event, even when stream events already produced the visible
+  // content.
+  state.applyUsage(usage);
 
-  toolBridge.beginMessage();
-  for (const item of backfill) {
-    applyAssistantBackfillItem(item, state, toolBridge);
+  if (state.acceptsAssistantBackfill() && backfill.length > 0) {
+    toolBridge.beginMessage();
+    for (const item of backfill) {
+      applyAssistantBackfillItem(item, state, toolBridge);
+    }
+    if (state.finishToolUseIfPresent()) return true;
   }
 
-  return state.finishToolUseIfPresent();
+  // Finish the stream as soon as the assistant SDK message arrives, so the
+  // user-visible "working..." clears without waiting for the SDK result
+  // message. Only do this once visible text is present — some models (e.g.
+  // Haiku with thinking) deliver no text in stream events or the assistant
+  // message and only carry text in the result message; those turns must wait
+  // for applyTurnResult to backfill the text before finishing.
+  const hasText = state.output.content.some(
+    (block) => block.type === "text" && block.text.trim().length > 0,
+  );
+  if (hasText) {
+    state.finishWithPendingStopReason();
+  }
+  return false;
 }
 
 function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
-  if (state.finished) return false;
-
   state.applyUsage(result.usage);
+
+  if (state.finished) {
+    // Stream was already finished by the assistant message path. Apply any
+    // final usage tweak from result and detach.
+    return true;
+  }
 
   if (result.type === "error") {
     state.output.errorMessage = result.message;
