@@ -6,24 +6,24 @@ interface PendingToolCall {
 }
 
 export class ToolBridge {
-  private toolCallIds: string[] = [];
-  private nextToolHandlerIndex = 0;
+  private streamedIds: string[] = [];
+  private nextClaimIndex = 0;
   private pendingToolCalls = new Map<string, PendingToolCall>();
   private pendingResults = new Map<string, CallToolResult>();
 
   beginMessage() {
-    this.toolCallIds = [];
-    this.nextToolHandlerIndex = 0;
+    this.streamedIds = [];
+    this.nextClaimIndex = 0;
   }
 
   register(toolCallId: string) {
-    if (!this.toolCallIds.includes(toolCallId)) {
-      this.toolCallIds.push(toolCallId);
+    if (!this.streamedIds.includes(toolCallId)) {
+      this.streamedIds.push(toolCallId);
     }
   }
 
   handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    const toolCallId = this.toolCallIds[this.nextToolHandlerIndex++];
+    const toolCallId = this.streamedIds[this.nextClaimIndex++];
     if (!toolCallId) {
       return Promise.resolve(createMcpTextResult(`Tool ${toolName} was called before Pi received a matching tool call id.`, true));
     }
