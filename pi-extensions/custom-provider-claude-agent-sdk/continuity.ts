@@ -1,10 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const SESSION_ENTRY_TYPE = "claude-agent-sdk-session";
-
-export function isContinuityEntryType(customType: string | undefined): boolean {
-  return customType === SESSION_ENTRY_TYPE;
-}
+export const CONTINUITY_ENTRY_TYPE = "claude-agent-sdk-session";
 
 export interface SessionContinuity {
   sdkSessionId: string | null;
@@ -31,7 +27,7 @@ export function loadContinuity(sessionManager: SessionBranchReader): SessionCont
   };
 
   for (const entry of sessionManager.getBranch()) {
-    if (entry.type !== "custom" || !isContinuityEntryType(entry.customType)) continue;
+    if (entry.type !== "custom" || entry.customType !== CONTINUITY_ENTRY_TYPE) continue;
     data = normalizeSessionContinuity(entry.data);
   }
 
@@ -39,7 +35,7 @@ export function loadContinuity(sessionManager: SessionBranchReader): SessionCont
 }
 
 export function appendContinuity(pi: ExtensionAPI, data: SessionContinuity) {
-  pi.appendEntry<SessionContinuity>(SESSION_ENTRY_TYPE, data);
+  pi.appendEntry<SessionContinuity>(CONTINUITY_ENTRY_TYPE, data);
 }
 
 function normalizeSessionContinuity(value: unknown): SessionContinuity {

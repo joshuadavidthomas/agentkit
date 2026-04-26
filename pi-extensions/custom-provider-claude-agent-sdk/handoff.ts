@@ -1,5 +1,5 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { isContinuityEntryType, type SessionContinuity } from "./continuity.js";
+import { CONTINUITY_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
 
 export interface HandoffSessionReader {
   getBranch(): SessionEntry[];
@@ -151,7 +151,7 @@ function buildDeltaHandoff(
 
   const sections: string[] = [];
   for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
-    if (entry.type === "custom" && isContinuityEntryType(entry.customType)) continue;
+    if (entry.type === "custom" && entry.customType === CONTINUITY_ENTRY_TYPE) continue;
 
     const section = formatSessionEntryForHandoff(entry);
     if (!section) continue;
