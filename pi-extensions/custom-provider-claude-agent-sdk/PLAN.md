@@ -120,11 +120,13 @@ registration guard for accidental same-process double loads.
 
 **Tool bridge:** pi tools are advertised to Claude Code as SDK MCP tools, while
 execution stays in pi's normal tool loop. `tools/mcp-server.ts` builds a
-per-query SDK MCP server from pi tool definitions. `ToolBridge` records streamed
-pi-visible tool-call ids in order, maps SDK MCP handler invocations to those
-ids, and resolves the handler promise when pi delivers the matching `toolResult`
-in the next `streamSimple` turn. Execution stays in pi so permissions, tool
-rendering, extension hooks, persistence, and retries keep working.
+per-query SDK MCP server instance from pi tool definitions and exposes pi's
+TypeBox/JSON-Schema parameters directly as MCP `inputSchema` values. `ToolBridge`
+records streamed pi-visible tool-call ids in order, maps SDK MCP handler
+invocations to those ids, and resolves the handler promise when pi delivers the
+matching `toolResult` in the next `streamSimple` turn. Execution stays in pi so
+permissions, tool rendering, extension hooks, persistence, and retries keep
+working.
 
 **Compaction:** pi calls `completeSimple(model, { systemPrompt:
 SUMMARIZATION_SYSTEM_PROMPT, messages: [...] }, ...)`. In our
