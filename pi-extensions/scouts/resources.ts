@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   DefaultResourceLoader,
@@ -17,8 +17,8 @@ type ScoutResourceLoaderOptions = Omit<ResourceLoaderOptions, "cwd" | "agentDir"
   allowExtensions?: boolean;
 };
 
-function resolveClaudeBridgeExtensionPath(): string | undefined {
-  const candidate = resolve(dirname(process.execPath), "../lib/node_modules/pi-claude-bridge");
+function resolveClaudeAgentSdkExtensionPath(agentDir: string): string | undefined {
+  const candidate = resolve(agentDir, "extensions/custom-provider-claude-agent-sdk");
   return existsSync(candidate) ? candidate : undefined;
 }
 
@@ -61,13 +61,13 @@ export async function createScoutResourceLoader(
     return baseResourceLoader;
   }
 
-  const claudeBridgeExtensionPath = resolveClaudeBridgeExtensionPath();
-  if (!claudeBridgeExtensionPath) {
+  const claudeAgentSdkExtensionPath = resolveClaudeAgentSdkExtensionPath(agentDir);
+  if (!claudeAgentSdkExtensionPath) {
     return baseResourceLoader;
   }
 
-  const extensions = await loadExtensions([claudeBridgeExtensionPath], options.cwd);
-  return withOnlyExtensions(baseResourceLoader, options.cwd, claudeBridgeExtensionPath, extensions);
+  const extensions = await loadExtensions([claudeAgentSdkExtensionPath], options.cwd);
+  return withOnlyExtensions(baseResourceLoader, options.cwd, claudeAgentSdkExtensionPath, extensions);
 }
 
 export async function loadScoutSkills(cwd: string): Promise<Skill[]> {

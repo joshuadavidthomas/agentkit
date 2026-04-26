@@ -84,7 +84,7 @@ export const ORACLE_FAMILY_PARTNERS: Record<string, string[]> = {
 // this order when it wants a model family; explicit user-qualified overrides
 // like `anthropic/claude-opus-4-6` still stay exact.
 export const PRIMARY_PROVIDERS_BY_FAMILY: Record<string, string[]> = {
-  anthropic: ["claude-bridge", "anthropic"],
+  anthropic: ["claude-agent-sdk", "anthropic"],
   openai: ["openai", "openai-codex", "github-copilot"],
 };
 
@@ -105,7 +105,7 @@ export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
       balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
       deep: { modelId: "claude-opus-4-7", thinkingLevel: "high" },
     },
-    "claude-bridge": {
+    "claude-agent-sdk": {
       fast: { modelId: "claude-haiku-4-5", thinkingLevel: "low" },
       balanced: { modelId: "claude-sonnet-4-6", thinkingLevel: "medium" },
       deep: { modelId: "claude-opus-4-7", thinkingLevel: "high" },

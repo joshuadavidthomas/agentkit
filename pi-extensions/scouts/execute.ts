@@ -80,7 +80,7 @@ type ScoutRunPlan = {
 type AbortableSession = Pick<AgentSession, "abort">;
 
 function shouldLoadScoutExtensions(provider: string | undefined): boolean {
-  return provider?.toLowerCase() === "claude-bridge";
+  return provider?.toLowerCase() === "claude-agent-sdk";
 }
 
 function getEventTargetMaxListenersState(): EventTargetMaxListenersState {
