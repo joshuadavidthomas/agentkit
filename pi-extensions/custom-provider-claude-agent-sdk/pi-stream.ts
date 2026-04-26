@@ -130,8 +130,11 @@ export class PiStreamState {
     this.output.usage.output = usage.outputTokens ?? this.output.usage.output;
     this.output.usage.cacheRead = usage.cacheReadTokens ?? this.output.usage.cacheRead;
     this.output.usage.cacheWrite = usage.cacheWriteTokens ?? this.output.usage.cacheWrite;
-    this.output.usage.totalTokens =
-      this.output.usage.input + this.output.usage.output + this.output.usage.cacheRead + this.output.usage.cacheWrite;
+    // Pi uses totalTokens as context/compaction pressure. Claude SDK cache-read
+    // tokens are provider billing/cache-hit accounting, not additional context
+    // window growth, so keep cacheRead for cost accounting but exclude it from
+    // totalTokens.
+    this.output.usage.totalTokens = this.output.usage.input + this.output.usage.output + this.output.usage.cacheWrite;
     calculateCost(this.model, this.output.usage);
   }
 
