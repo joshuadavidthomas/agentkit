@@ -1,10 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const SESSION_ENTRY_TYPE = "claude-agent-sdk-session";
-const LEGACY_V3_SESSION_ENTRY_TYPE = "claude-agent-sdk-v3-session";
 
 export function isContinuityEntryType(customType: string | undefined): boolean {
-  return customType === SESSION_ENTRY_TYPE || customType === LEGACY_V3_SESSION_ENTRY_TYPE;
+  return customType === SESSION_ENTRY_TYPE;
 }
 
 export interface SessionContinuity {

@@ -88,6 +88,7 @@ const DISALLOWED_BUILTIN_TOOLS = [
   "TaskGet",
   "TaskList",
   "TaskUpdate",
+  "Lsp",
 ];
 
 const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
