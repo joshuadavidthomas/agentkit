@@ -271,19 +271,22 @@ const NOTIFY_DELAY_MS = 10_000;
 
 export default function (pi: ExtensionAPI) {
 	let pendingNotifyTimeout: ReturnType<typeof setTimeout> | null = null;
+	let notificationGeneration = 0;
 
 	// Cancel pending notification when a new prompt starts
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", () => {
+		notificationGeneration++;
 		if (pendingNotifyTimeout) {
 			clearTimeout(pendingNotifyTimeout);
 			pendingNotifyTimeout = null;
 		}
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", (_event, ctx) => {
 		// Cancel any existing pending notification
 		if (pendingNotifyTimeout) {
 			clearTimeout(pendingNotifyTimeout);
+			pendingNotifyTimeout = null;
 		}
 
 		let branch: SessionEntry[];
@@ -295,21 +298,28 @@ export default function (pi: ExtensionAPI) {
 			modelRegistry = ctx.modelRegistry;
 			projectName = getProjectName(ctx.cwd);
 		} catch (err) {
-			await logNotificationError(err);
+			void logNotificationError(err);
 			return;
 		}
 
+		const generation = ++notificationGeneration;
 		const turnSummary = getLastTurnSummary(branch);
-		const notificationText = turnSummary
-			? await generateNotificationSummary(turnSummary, modelRegistry)
-			: "Ready for input";
 
-		// Delay the notification - if user sends another prompt, it'll be cancelled.
-		// Do not capture ctx in this timer: extension contexts become stale after
-		// session replacement/reload.
-		pendingNotifyTimeout = setTimeout(() => {
-			pendingNotifyTimeout = null;
-			notify(`Pi · ${projectName}`, notificationText);
-		}, NOTIFY_DELAY_MS);
+		// Generate the summary in the background so agent_end does not keep Pi's
+		// working indicator alive. Only use values snapshotted above; extension
+		// contexts become stale after session replacement/reload.
+		void (async () => {
+			const notificationText = turnSummary
+				? await generateNotificationSummary(turnSummary, modelRegistry)
+				: "Ready for input";
+
+			if (generation !== notificationGeneration) return;
+
+			// Delay the notification - if user sends another prompt, it'll be cancelled.
+			pendingNotifyTimeout = setTimeout(() => {
+				pendingNotifyTimeout = null;
+				notify(`Pi · ${projectName}`, notificationText);
+			}, NOTIFY_DELAY_MS);
+		})().catch((err) => void logNotificationError(err));
 	});
 }
