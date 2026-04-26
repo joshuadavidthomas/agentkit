@@ -11,7 +11,7 @@ export class ToolBridge {
   private pendingToolCalls = new Map<string, PendingToolCall>();
   private pendingResults = new Map<string, CallToolResult>();
 
-  resetTurn() {
+  beginMessage() {
     this.toolCallIds = [];
     this.nextToolHandlerIndex = 0;
   }

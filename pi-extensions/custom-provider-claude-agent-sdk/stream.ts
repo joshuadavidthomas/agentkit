@@ -12,7 +12,7 @@ import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js"
 import { buildContextMessagesHandoff } from "./handoff.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { ClaudeTurn, ClaudeSession } from "./session.js";
-import { buildPiMcpServer, DISALLOWED_BUILTIN_TOOLS } from "./tools/mcp-server.js";
+import { buildPiMcpServer } from "./tools/mcp-server.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./tools/names.js";
 import { createMcpTextResult, extractToolResults } from "./tools/results.js";
 import {
@@ -51,6 +51,41 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const DISALLOWED_BUILTIN_TOOLS = [
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Bash",
+  "Agent",
+  "NotebookEdit",
+  "EnterWorktree",
+  "ExitWorktree",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+  "TeamCreate",
+  "TeamDelete",
+  "WebFetch",
+  "WebSearch",
+  "TodoRead",
+  "TodoWrite",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "RemoteTrigger",
+  "SendMessage",
+  "Skill",
+  "TaskOutput",
+  "TaskStop",
+  "ToolSearch",
+  "AskUserQuestion",
+  "TaskCreate",
+  "TaskGet",
+  "TaskList",
+  "TaskUpdate",
+];
 
 const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
   abortController,
@@ -152,7 +187,7 @@ export function streamClaudeAgentSdk(
   const activeTurn = session.currentTurn();
   if (activeTurn?.hasActiveQuery()) {
     activeTurn.attachStreamState(new PiStreamState(model, stream));
-    activeTurn.deliverToolResults(extractToolResults(context));
+    activeTurn.toolBridge.deliverToolResults(extractToolResults(context));
     return stream;
   }
 
@@ -190,9 +225,9 @@ async function runSessionQuery(
     const handoff = session.prepareForTurn() ?? buildContextMessagesHandoff(context.messages);
     turn = session.beginTurn(new PiStreamState(model, stream));
     const activeTurn = turn;
-    const mcpServer = buildPiMcpServer(context.tools, (toolName) => activeTurn.handleMcpToolCall(toolName));
+    const mcpServer = buildPiMcpServer(context.tools, (toolName) => activeTurn.toolBridge.handleMcpToolCall(toolName));
     const abortPending = () => {
-      activeTurn.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
+      activeTurn.toolBridge.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
       try {
         sdkQuery?.close();
       } catch {

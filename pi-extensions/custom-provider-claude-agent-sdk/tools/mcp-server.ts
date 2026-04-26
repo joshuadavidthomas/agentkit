@@ -4,41 +4,6 @@ import type { Tool } from "@mariozechner/pi-ai";
 import { z } from "zod";
 import { MCP_SERVER_NAME } from "./names.js";
 
-export const DISALLOWED_BUILTIN_TOOLS = [
-  "Read",
-  "Write",
-  "Edit",
-  "Glob",
-  "Grep",
-  "Bash",
-  "Agent",
-  "NotebookEdit",
-  "EnterWorktree",
-  "ExitWorktree",
-  "CronCreate",
-  "CronDelete",
-  "CronList",
-  "TeamCreate",
-  "TeamDelete",
-  "WebFetch",
-  "WebSearch",
-  "TodoRead",
-  "TodoWrite",
-  "EnterPlanMode",
-  "ExitPlanMode",
-  "RemoteTrigger",
-  "SendMessage",
-  "Skill",
-  "TaskOutput",
-  "TaskStop",
-  "ToolSearch",
-  "AskUserQuestion",
-  "TaskCreate",
-  "TaskGet",
-  "TaskList",
-  "TaskUpdate",
-];
-
 type PiMcpToolHandler = (toolName: string) => Promise<CallToolResult>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,11 +1,10 @@
 import type { query } from "@anthropic-ai/claude-agent-sdk";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { ToolBridge } from "./tools/bridge.js";
-import { createMcpTextResult, type PiMcpResult } from "./tools/results.js";
+import { createMcpTextResult } from "./tools/results.js";
 
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
@@ -220,7 +219,7 @@ export class ClaudeTurn {
   finishActiveQuery(sdkQuery: SdkQuery): boolean {
     if (this.activeQuery !== sdkQuery) return false;
 
-    this.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
+    this.toolBridge.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
     this.toolBridge.clearQueuedResults();
     this.activeQuery = null;
     this.currentStreamState = null;
@@ -239,18 +238,6 @@ export class ClaudeTurn {
     }
   }
 
-  handleMcpToolCall(toolName: string): Promise<CallToolResult> {
-    return this.toolBridge.handleMcpToolCall(toolName);
-  }
-
-  deliverToolResults(results: PiMcpResult[]) {
-    this.toolBridge.deliverToolResults(results);
-  }
-
-  resolvePendingToolCalls(result: CallToolResult) {
-    this.toolBridge.resolvePendingToolCalls(result);
-  }
-
   abort(message: string) {
     const state = this.currentStreamState;
     if (state && !state.finished) {
@@ -261,10 +248,10 @@ export class ClaudeTurn {
   }
 
   close(message = "Session closed") {
-    this.resolvePendingToolCalls(createMcpTextResult(message, true));
+    this.toolBridge.resolvePendingToolCalls(createMcpTextResult(message, true));
     this.toolBridge.clearQueuedResults();
     this.currentStreamState = null;
-    this.toolBridge.resetTurn();
+    this.toolBridge.beginMessage();
 
     const sdkQuery = this.activeQuery;
     this.activeQuery = null;

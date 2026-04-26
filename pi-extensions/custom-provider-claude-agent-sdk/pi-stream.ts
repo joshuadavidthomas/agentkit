@@ -267,7 +267,7 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
 function applyAssistantBackfill(backfill: AssistantBackfill[], state: PiStreamState, toolBridge: ToolBridge): boolean {
   if (!state.acceptsAssistantBackfill() || backfill.length === 0) return false;
 
-  toolBridge.resetTurn();
+  toolBridge.beginMessage();
   for (const item of backfill) {
     applyAssistantBackfillItem(item, state, toolBridge);
   }
@@ -302,7 +302,7 @@ function applyTurnEvent(event: TurnEvent, state: PiStreamState, toolBridge: Tool
   switch (event.type) {
     case "messageStarted":
       state.beginMessage(event.usage);
-      toolBridge.resetTurn();
+      toolBridge.beginMessage();
       return false;
     case "blockStarted":
       applyBlockStart(event.block, state, toolBridge);
