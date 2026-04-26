@@ -56,48 +56,12 @@ function shouldCloseLiveQueryAfterTurn(): boolean {
   return process.argv.includes("-p") || process.argv.includes("--print");
 }
 
-const DISALLOWED_BUILTIN_TOOLS = [
-  "Agent",
-  "AskUserQuestion",
-  "Bash",
-  "CronCreate",
-  "CronDelete",
-  "CronList",
-  "Edit",
-  "EnterPlanMode",
-  "EnterWorktree",
-  "ExitPlanMode",
-  "ExitWorktree",
-  "Glob",
-  "Grep",
-  "Lsp",
-  "NotebookEdit",
-  "Read",
-  "RemoteTrigger",
-  "SendMessage",
-  "Skill",
-  "TaskCreate",
-  "TaskGet",
-  "TaskList",
-  "TaskOutput",
-  "TaskStop",
-  "TaskUpdate",
-  "TeamCreate",
-  "TeamDelete",
-  "TodoRead",
-  "TodoWrite",
-  "ToolSearch",
-  "WebFetch",
-  "WebSearch",
-  "Write",
-];
-
 const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
   abortController,
   cwd: process.cwd(),
   pathToClaudeCodeExecutable: resolveClaudeExecutable(),
   model: model.id,
-  disallowedTools: DISALLOWED_BUILTIN_TOOLS,
+  tools: [],
   includePartialMessages: true,
   settingSources: [],
   env: createSdkEnv(apiKey),
@@ -150,7 +114,6 @@ async function runOneShotQuery(
         ...baseQueryOptions(model, abortController, options?.apiKey),
         allowedTools: [],
         systemPrompt: context.systemPrompt,
-        tools: [],
       },
     });
 
