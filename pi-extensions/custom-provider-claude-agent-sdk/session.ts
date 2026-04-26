@@ -300,19 +300,12 @@ export class ClaudeTurn {
     return this.completion;
   }
 
-  hasActiveQuery(): boolean {
-    return Boolean(this.currentStreamState);
-  }
-
   streamState(): PiStreamState | undefined {
     return this.currentStreamState ?? undefined;
   }
 
   streamOutputStopReason(): string | undefined {
     return this.currentStreamState?.output.stopReason ?? this.lastStopReason;
-  }
-
-  beginActiveQuery(_sdkQuery: SdkQuery) {
   }
 
   attachStreamState(state: PiStreamState) {

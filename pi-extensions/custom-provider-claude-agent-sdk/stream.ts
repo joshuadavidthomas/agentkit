@@ -153,7 +153,6 @@ async function runOneShotQuery(
         tools: [],
       },
     });
-    turn.beginActiveQuery(sdkQuery);
 
     for await (const message of sdkQuery) {
       const state = turn.streamState();
