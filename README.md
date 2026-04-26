@@ -44,9 +44,11 @@ Model definitions are sourced from [models.dev](https://models.dev) (65+ models)
 
 #### [custom-provider-claude-agent-sdk](./pi-extensions/custom-provider-claude-agent-sdk/)
 
-Claude Agent SDK provider using the SDK's stable `query()` API. It registers `claude-agent-sdk`, mirrors pi's built-in Anthropic Claude model list, streams Claude turns through pi, bridges pi tools through an in-process SDK MCP server, preserves pi's system prompt, and persists the SDK session id for later resume.
+Claude Agent SDK provider for pi using Anthropic's stable `query()` API. It registers the `claude-agent-sdk` provider and mirrors pi's built-in Anthropic Claude model list, so model IDs look like `claude-agent-sdk/claude-sonnet-4-6`.
 
-Retired first and second Claude Agent SDK provider attempts are archived under [`reference/pi-extensions/`](./reference/pi-extensions/) and are not installed by `install.sh`.
+The provider runs one live streaming SDK query per active pi session/branch. Claude sees pi tools through an in-process MCP server, but pi still executes the tools, renders them, records tool calls/results, and applies its normal permission and extension hooks. Built-in Claude Code tools are disabled so tool execution stays pi-native.
+
+Session continuity is persisted in pi custom session entries and restored on resume. Structural boundaries such as `/compact`, `/new`, forks, and branch/tree switches close/reset the live SDK query as needed; model switching away and back closes the process without resetting SDK continuity for the same pi session. Print mode closes the live query after each final turn so CLI invocations exit.
 
 #### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
 
