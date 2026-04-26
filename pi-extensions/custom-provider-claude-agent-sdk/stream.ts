@@ -138,8 +138,7 @@ async function runOneShotQuery(
   let sdkQuery: ReturnType<typeof query> | undefined;
 
   if (abortController.signal.aborted) {
-    turn.streamState()?.fail("Claude Agent SDK one-shot request aborted", true);
-    turn.close();
+    turn.abort("Claude Agent SDK one-shot request aborted");
     return;
   }
 
@@ -176,7 +175,7 @@ async function runOneShotQuery(
     } catch {
       // Ignore close failures.
     }
-    turn.close();
+    turn.abort("Claude Agent SDK one-shot request ended");
   }
 }
 
@@ -337,7 +336,7 @@ async function ensureLiveQuery(
   });
 
   void consumeLiveQuery(session, sdkQuery);
-  session.startLiveQuery(sdkQuery, inputQueue);
+  session.startLiveQuery(sdkQuery, inputQueue, abortController);
 }
 
 async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>) {

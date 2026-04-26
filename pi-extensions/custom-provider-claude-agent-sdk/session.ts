@@ -133,6 +133,7 @@ export class ClaudeSession {
   private activeTurn: ClaudeTurn | null = null;
   private requestedClaudeModelId: string | null = null;
   private sdkQuery: SdkQuery | null = null;
+  private sdkAbortController: AbortController | null = null;
   private inputQueue: SdkInputQueue | null = null;
 
   constructor(
@@ -162,15 +163,17 @@ export class ClaudeSession {
     return this.sdkQuery ?? undefined;
   }
 
-  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue) {
+  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue, abortController: AbortController) {
     this.inputQueue?.close();
     try {
+      this.sdkAbortController?.abort();
       this.sdkQuery?.close();
     } catch {
       // Ignore close failures.
     }
 
     this.sdkQuery = sdkQuery;
+    this.sdkAbortController = abortController;
     this.inputQueue = inputQueue;
   }
 
@@ -193,7 +196,7 @@ export class ClaudeSession {
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
-    this.closeActiveTurn();
+    this.abortActiveTurn("Turn replaced");
     const turn = new ClaudeTurn(streamState);
     this.activeTurn = turn;
     return turn;
@@ -253,11 +256,6 @@ export class ClaudeSession {
     this.activeTurn = null;
   }
 
-  closeActiveTurn() {
-    this.activeTurn?.close();
-    this.activeTurn = null;
-  }
-
   abortActiveTurn(message: string) {
     this.activeTurn?.abort(message);
     this.activeTurn = null;
@@ -268,14 +266,17 @@ export class ClaudeSession {
   }
 
   closeLiveQuery(message = "Session closed") {
-    this.closeActiveTurn();
+    this.abortActiveTurn(message);
     this.inputQueue?.close();
     this.inputQueue = null;
     this.requestedClaudeModelId = null;
 
     const sdkQuery = this.sdkQuery;
+    const abortController = this.sdkAbortController;
     this.sdkQuery = null;
+    this.sdkAbortController = null;
     try {
+      abortController?.abort();
       sdkQuery?.close();
     } catch {
       // Ignore close failures.
@@ -336,18 +337,14 @@ export class ClaudeTurn {
       state.fail(message, true);
     }
 
-    this.close("Session closed");
+    this.end(message);
   }
 
   finish() {
-    this.toolBridge.resolvePendingWithError("Turn ended");
-    this.toolBridge.clearQueuedResults();
-    this.lastStopReason = this.currentStreamState?.output.stopReason ?? this.lastStopReason;
-    this.currentStreamState = null;
-    this.complete();
+    this.end("Turn ended");
   }
 
-  close(message = "Session closed") {
+  private end(message: string) {
     this.toolBridge.resolvePendingWithError(message);
     this.toolBridge.clearQueuedResults();
     this.lastStopReason = this.currentStreamState?.output.stopReason ?? this.lastStopReason;
