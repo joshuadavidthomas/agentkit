@@ -200,16 +200,16 @@ pi-extensions/custom-provider-claude-agent-sdk/
   `claude-agent-sdk/claude-sonnet-4-5`. The scout made tool calls and
   returned the expected path without the pi-claude-bridge shared-session
   stall. JSONL had matching finder tool call/result and no v1 custom entries.
-- **M6 — Polish. In progress.** Provider directory and public provider id have
-  been collapsed to `custom-provider-claude-agent-sdk` / `claude-agent-sdk`.
-  The provider now mirrors pi's built-in Anthropic model list and passes those
-  model ids directly to Claude Code. A same-load duplicate registration guard
-  prevents the common installed provider + explicit `-e` double-load case.
-  Recent polish split prompt marshalling, Claude stream parsing, pi stream
-  application, and tool-call matching into separate modules. Remaining polish:
-  re-evaluate the provider event layer, tighten the `ClaudeSession` API further,
-  final regression, schema conversion breadth, and any remaining reentrancy guard
-  if needed.
+- **M6 — Polish. Implemented and regression-tested.** Provider directory and
+  public provider id have been collapsed to `custom-provider-claude-agent-sdk` /
+  `claude-agent-sdk`. The provider mirrors pi's built-in Anthropic model list
+  and passes those model ids directly to Claude Code. A same-load duplicate
+  registration guard prevents the common installed provider + explicit `-e`
+  double-load case. Recent polish split prompt marshalling, Claude stream
+  parsing, pi stream application, and tool bridging into separate modules.
+  The provider now keeps one live streaming-input SDK `query()` per active pi
+  session/branch, owned by `ClaudeSession`, with `ClaudeTurn` scoped to one pi
+  stream window.
 
 ## Verified so far
 
@@ -228,15 +228,22 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - model list now comes from pi's built-in Anthropic registry via `getModels("anthropic")`; `claude-agent-sdk/claude-sonnet-4-6` was smoke-tested
 - final tmux regression with `claude-agent-sdk/claude-sonnet-4-6` passed no-tool continuity, `read`, `bash`, `write`, parallel `read`s, abort/recovery, `/compact` recall, and parent → `finder` scout
 - JSONL had matching tool calls/results, no orphan tool results, no missing tool results, final `claude-agent-sdk-session` entries, and no old `claude-agent-sdk-provider` entries when the provider was loaded only once
+- live streaming SDK query rewrite passed `npm run typecheck`, print-mode text/tool smokes, and interactive text/text reuse with the same SDK session id
+- interactive tool continuation after prior text turns worked on the same live SDK session
+- abort during text generation and abort during post-tool continuation both ended the active stream, kept the live SDK session usable, and recovered on the next prompt
+- `/compact` reset SDK continuity to `null` and the next provider turn started a new SDK session id
+- model switch away/back closed the live SDK query process without resetting persisted SDK continuity, then resumed successfully when switching back
+- `/new` started a new pi session and the subsequent provider turn succeeded
+- mid-turn model switch ended the active provider stream with `Operation aborted` instead of hanging
 
 ## Caveats / follow-ups
 
 - **Duplicate load:** If the provider is installed globally and also passed via `-e`, pi can load two instances. That previously produced duplicate custom entries and reset/persist churn. The same-load guard prevents the common case.
 - **Old v1/v2 provider attempts:** Archived under `reference/pi-extensions/` and no longer installed by `install.sh`. Clean runs should not write the old v1 `claude-agent-sdk-provider` custom entry.
 - **Permission UX coverage is shallow:** `write` to `/tmp` worked and used normal pi tool rendering. A destructive/guarded edit/command should still be manually or tmux-tested for confirm/deny behavior.
-- **Abort coverage is partial:** Tested abort while a pi `bash` tool was running. Still untested: abort while Claude is streaming before a tool call, while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
+- **Abort coverage is partial:** Tested abort while Claude is streaming, while a pi `bash` tool was running, and during post-tool continuation. Still untested: abort while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
 - **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
-- **Schema conversion is minimal:** TypeBox/JSON schema → Zod handles common object properties, arrays, enums, constants, and primitives. It does not deeply model nested object properties, oneOf/anyOf/allOf, nullable unions, numeric bounds, or string formats.
+- **Schema bridge:** pi TypeBox/JSON-Schema parameters are now exposed directly as MCP `inputSchema` values through a real MCP server. We intentionally avoid lossy runtime JSON Schema → Zod conversion.
 - **Linux binary workaround:** On this machine the SDK auto-selected its Linux x64 musl package, which failed due a missing musl loader, while the glibc package worked. `stream.ts` documents this local quirk and prefers the glibc binary only on Linux x64; other platforms fall back to SDK resolution.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
 - **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using this provider works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
