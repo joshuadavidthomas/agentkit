@@ -134,7 +134,6 @@ export class ClaudeSession {
   private requestedClaudeModelId: string | null = null;
   private sdkQuery: SdkQuery | null = null;
   private inputQueue: SdkInputQueue | null = null;
-  private outputPump: Promise<void> | null = null;
 
   constructor(
     piSessionId: string,
@@ -163,7 +162,7 @@ export class ClaudeSession {
     return this.sdkQuery ?? undefined;
   }
 
-  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue, outputPump: Promise<void>) {
+  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue) {
     this.inputQueue?.close();
     try {
       this.sdkQuery?.close();
@@ -173,7 +172,6 @@ export class ClaudeSession {
 
     this.sdkQuery = sdkQuery;
     this.inputQueue = inputQueue;
-    this.outputPump = outputPump;
   }
 
   createInputQueue(): SdkInputQueue {
@@ -190,8 +188,8 @@ export class ClaudeSession {
 
   async setModel(modelId: string) {
     if (this.requestedClaudeModelId === modelId) return;
-    await this.sdkQuery?.setModel(modelId);
     this.requestedClaudeModelId = modelId;
+    await this.sdkQuery?.setModel(modelId);
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
@@ -274,7 +272,6 @@ export class ClaudeSession {
     this.inputQueue?.close();
     this.inputQueue = null;
     this.requestedClaudeModelId = null;
-    this.outputPump = null;
 
     const sdkQuery = this.sdkQuery;
     this.sdkQuery = null;

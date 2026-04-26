@@ -192,7 +192,7 @@ export function streamClaudeAgentSdk(
   if (activeTurn) {
     activeTurn.attachStreamState(new PiStreamState(model, stream));
     activeTurn.toolBridge.deliverToolResults(extractToolResults(context));
-    void finishToolContinuation(session, activeTurn);
+    void finishToolContinuation(session, activeTurn, options?.signal);
     return stream;
   }
 
@@ -208,13 +208,23 @@ export function streamClaudeAgentSdk(
   return stream;
 }
 
-async function finishToolContinuation(session: ClaudeSession, turn: ClaudeTurn) {
-  await turn.done();
-  if (turn.streamOutputStopReason() !== "toolUse") {
-    session.finishActiveTurn(turn);
-    if (shouldCloseLiveQueryAfterTurn()) {
-      session.closeLiveQuery("Print-mode turn finished");
+async function finishToolContinuation(session: ClaudeSession, turn: ClaudeTurn, signal?: AbortSignal) {
+  const abortPending = () => {
+    turn.abort("Operation aborted");
+    void session.liveQuery()?.interrupt().catch(() => session.closeLiveQuery("Operation aborted"));
+  };
+  signal?.addEventListener("abort", abortPending, { once: true });
+
+  try {
+    await turn.done();
+    if (turn.streamOutputStopReason() !== "toolUse") {
+      session.finishActiveTurn(turn);
+      if (shouldCloseLiveQueryAfterTurn()) {
+        session.closeLiveQuery("Print-mode turn finished");
+      }
     }
+  } finally {
+    signal?.removeEventListener("abort", abortPending);
   }
 }
 
@@ -308,7 +318,7 @@ async function ensureLiveQuery(
 ) {
   if (session.liveQuery()) return;
 
-  const abortController = createAbortController(options?.signal);
+  const abortController = new AbortController();
   const inputQueue = session.createInputQueue();
   const sdkQuery = query({
     prompt: inputQueue,
@@ -326,8 +336,8 @@ async function ensureLiveQuery(
     },
   });
 
-  const outputPump = consumeLiveQuery(session, sdkQuery);
-  session.startLiveQuery(sdkQuery, inputQueue, outputPump);
+  void consumeLiveQuery(session, sdkQuery);
+  session.startLiveQuery(sdkQuery, inputQueue);
 }
 
 async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>) {
@@ -349,7 +359,9 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
       }
     }
   } catch (error) {
-    session.abortActiveTurn(errorMessage(error));
+    if (session.liveQuery() === sdkQuery) {
+      session.abortActiveTurn(errorMessage(error));
+    }
   } finally {
     if (session.liveQuery() === sdkQuery) {
       session.closeLiveQuery("Claude SDK query ended");
