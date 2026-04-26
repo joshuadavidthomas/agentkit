@@ -1,51 +1,12 @@
-import type { query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { loadContinuity, appendContinuity, type SessionContinuity } from "./continuity.js";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
-import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
+import type { SdkQuery } from "./sdk/query.js";
+import { SdkInputQueue, type SdkUserMessage } from "./sdk/queue.js";
 import { ToolBridge } from "./tools/bridge.js";
 
-type SdkQuery = ReturnType<typeof query>;
-type PersistSessionEntry = (data: SessionEntryData) => void;
-
-export class SdkInputQueue implements AsyncIterable<SDKUserMessage> {
-  private pending: SDKUserMessage[] = [];
-  private waiters: Array<(result: IteratorResult<SDKUserMessage>) => void> = [];
-  private closed = false;
-
-  push(message: SDKUserMessage): boolean {
-    if (this.closed) return false;
-
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ value: message, done: false });
-      return true;
-    }
-
-    this.pending.push(message);
-    return true;
-  }
-
-  close() {
-    if (this.closed) return;
-
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ value: undefined, done: true });
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
-    return {
-      next: () => {
-        const message = this.pending.shift();
-        if (message) return Promise.resolve({ value: message, done: false });
-        if (this.closed) return Promise.resolve({ value: undefined, done: true });
-        return new Promise((resolve) => this.waiters.push(resolve));
-      },
-    };
-  }
-}
+type PersistSessionEntry = (data: SessionContinuity) => void;
 
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
@@ -66,7 +27,7 @@ export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManage
   const state = globalThis as ClaudeSessionManagerGlobal;
   if (state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY]) return undefined;
 
-  const manager = new ClaudeSessionManager((data) => appendSessionEntry(pi, data));
+  const manager = new ClaudeSessionManager((data) => appendContinuity(pi, data));
   state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY] = manager;
   return manager;
 }
@@ -80,7 +41,7 @@ export class ClaudeSessionManager {
     const piSessionId = sessionManager.getSessionId();
     this.sessions.get(piSessionId)?.closeLiveQuery("Session hydrated");
 
-    const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
+    const session = new ClaudeSession(piSessionId, loadContinuity(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
     return session;
   }
@@ -128,7 +89,7 @@ export class ClaudeSessionManager {
 export class ClaudeSession {
   readonly piSessionId: string;
 
-  private continuity: SessionEntryData;
+  private continuity: SessionContinuity;
   private handoffReader: HandoffSessionReader | undefined;
   private activeTurn: ClaudeTurn | null = null;
   private requestedClaudeModelId: string | null = null;
@@ -138,7 +99,7 @@ export class ClaudeSession {
 
   constructor(
     piSessionId: string,
-    data?: Partial<SessionEntryData>,
+    data?: Partial<SessionContinuity>,
     sessionManager?: HandoffSessionReader,
     private readonly persistSessionEntry?: PersistSessionEntry,
   ) {
@@ -151,7 +112,7 @@ export class ClaudeSession {
     this.handoffReader = sessionManager;
   }
 
-  continuityState(): SessionEntryData {
+  continuityState(): SessionContinuity {
     return { ...this.continuity };
   }
 
@@ -181,7 +142,7 @@ export class ClaudeSession {
     return new SdkInputQueue();
   }
 
-  pushUserMessage(message: SDKUserMessage): boolean {
+  pushUserMessage(message: SdkUserMessage): boolean {
     return this.inputQueue?.push(message) ?? false;
   }
 

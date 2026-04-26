@@ -1,5 +1,5 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { isClaudeAgentSdkSessionEntryType, type SessionEntryData } from "./persistence.js";
+import { isContinuityEntryType, type SessionContinuity } from "./continuity.js";
 
 export interface HandoffSessionReader {
   getBranch(): SessionEntry[];
@@ -151,7 +151,7 @@ function buildDeltaHandoff(
 
   const sections: string[] = [];
   for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
-    if (entry.type === "custom" && isClaudeAgentSdkSessionEntryType(entry.customType)) continue;
+    if (entry.type === "custom" && isContinuityEntryType(entry.customType)) continue;
 
     const section = formatSessionEntryForHandoff(entry);
     if (!section) continue;
@@ -166,14 +166,14 @@ function buildDeltaHandoff(
   return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
 }
 
-export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionEntryData): boolean {
+export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionContinuity): boolean {
   if (!continuity.syncedThroughEntryId) return false;
   return sessionManager.getBranch().some((entry) => entry.id === continuity.syncedThroughEntryId);
 }
 
 export function buildPiSessionHandoff(
   sessionManager: HandoffSessionReader | undefined,
-  continuity: SessionEntryData,
+  continuity: SessionContinuity,
 ): string | undefined {
   if (!sessionManager) return undefined;
 

@@ -16,7 +16,7 @@ import type {
   TurnResult,
   TurnUpdate,
   TurnUsage,
-} from "./claude-stream-events.js";
+} from "./sdk/events.js";
 import type { ToolBridge } from "./tools/bridge.js";
 import { stripMcpToolName } from "./tools/names.js";
 interface StreamDelta {

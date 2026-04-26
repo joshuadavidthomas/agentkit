@@ -42,13 +42,13 @@ directory — but a few pieces are still good:
 
 - **`package.json`** (11 lines). Structure + dep pins + pi extension config.
   Rename `"name"` to `pi-extension-custom-provider-claude-agent-sdk`.
-- **Provider identity plus local model setup in `index.ts` / `stream.ts`**.
+- **Provider identity plus local model setup in `index.ts` / `sdk/query.ts`**.
   Start from v2 provider/model config, then replace the static model list with
   pi's built-in Anthropic model registry. Provider/API ids now live directly in
   `index.ts`.
 - **Prompt block shapes** — port only the `PromptBlock` /
   `PromptTextBlock` / `PromptImageBlock` shapes (~10 lines), now colocated in
-  `prompt.ts`. Everything else (`Turn`, `ExtensionBindings`) is tied to the
+  `sdk/prompt.ts`. Everything else (`Turn`, `ExtensionBindings`) is tied to the
   unstable v2 SDK API and gets rewritten.
 
 Do **not** port:
@@ -60,8 +60,7 @@ Do **not** port:
 
 v1 at `reference/pi-extensions/custom-provider-claude-agent-sdk/` is a
 reference, not a source of ports. Two ideas worth lifting as we build: the
-`persistence.ts`
-pattern (`pi.appendEntry(SESSION_ENTRY_TYPE, { sdkSessionId,
+continuity-entry pattern (`pi.appendEntry(SESSION_ENTRY_TYPE, { sdkSessionId,
 syncedThroughEntryId, lastClaudeModelId })` for per-pi-session SDK session
 IDs) and the README's framing that "this provider ignores pi's normal tool
 loop and uses the SDK's own tool/runtime stack instead."
@@ -99,7 +98,7 @@ registration guard for accidental same-process double loads.
 
 **`ClaudeSession`** owns per-pi-session identity, SDK continuity, and the live SDK query:
 - `piSessionId: string`
-- private `continuity: SessionEntryData` (`sdkSessionId`, `syncedThroughEntryId`, `lastClaudeModelId`)
+- private `continuity: SessionContinuity` (`sdkSessionId`, `syncedThroughEntryId`, `lastClaudeModelId`)
 - private `handoffReader?: HandoffSessionReader` for branch-aware handoff/reset checks
 - private `activeTurn: ClaudeTurn | null`
 - private live SDK query plus SDK input queue for streaming-input mode
@@ -117,7 +116,7 @@ registration guard for accidental same-process double loads.
   2. If the session has an active `ClaudeTurn`, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers through `ToolBridge`, and return without starting a new SDK query.
   3. Otherwise ensure the session has one live streaming-input SDK `query()` backed by an `AsyncIterable<SDKUserMessage>` queue. The live query uses `resume: sdkSessionId ?? undefined`, `systemPrompt: { type: "preset", preset: "claude_code", append: callerSystemPrompt }` (append, don't replace), `includePartialMessages: true`, `allowedTools: ["mcp__pi-tools__*"]`, `disallowedTools: DISALLOWED_BUILTIN_TOOLS`, and `permissionMode: "bypassPermissions"`.
   4. Replace the live query's MCP servers for this turn with `query.setMcpServers({ "pi-tools": buildPiMcpServer(context.tools, ...) })`, then push the current user message into the SDK input queue.
-  5. A background output pump translates SDK stream events through `claude-stream-events.ts` into provider events and applies them to the active turn's `PiStreamState`.
+  5. A background output pump translates SDK stream events through `sdk/events.ts` into provider events and applies them to the active turn's `PiStreamState`.
   6. When SDK messages expose a `session_id`, capture the new `sdkSessionId` and persist it.
 
 **Tool bridge:** pi tools are advertised to Claude Code as SDK MCP tools, while
@@ -159,18 +158,20 @@ pi-extensions/custom-provider-claude-agent-sdk/
 ├── PLAN.md                 (this file)
 ├── package.json            (ported from v2, renamed)
 ├── index.ts                (provider registration, event wiring, provider/API ids)
-├── prompt.ts               (pi context/user prompt → Claude SDK prompt)
 ├── session.ts              (ClaudeSessionManager + ClaudeSession identity/query lifecycle)
-├── stream.ts               (Claude SDK query orchestration)
-├── claude-stream-events.ts (Claude SDK stream event → provider event)
-├── pi-stream.ts            (provider event/result → pi stream/message state)
-├── tools/
-│   ├── bridge.ts           (turn-local pi tool-call/result ↔ SDK MCP handler bridge)
-│   ├── mcp-server.ts       (pi tool definitions → SDK MCP server)
-│   ├── names.ts            (MCP server/tool naming)
-│   └── results.ts          (pi tool result messages → MCP results)
 ├── handoff.ts              (pi session/context handoff construction)
-└── persistence.ts          (appendEntry helpers)
+├── continuity.ts           (SDK session continuity custom entries)
+├── pi-stream.ts            (provider event/result → pi stream/message state)
+├── sdk/
+│   ├── events.ts           (Claude SDK stream event → provider event)
+│   ├── prompt.ts           (pi context/user prompt → Claude SDK prompt)
+│   ├── query.ts            (Claude SDK query orchestration)
+│   └── queue.ts            (streaming SDK user-message input queue)
+└── tools/
+    ├── bridge.ts           (turn-local pi tool-call/result ↔ SDK MCP handler bridge)
+    ├── mcp-server.ts       (pi tool definitions → SDK MCP server)
+    ├── names.ts            (MCP server/tool naming)
+    └── results.ts          (pi tool result messages → MCP results)
 ```
 
 ## Milestones
@@ -178,7 +179,7 @@ pi-extensions/custom-provider-claude-agent-sdk/
 - **M1 — Skeleton. Done.** Register provider; `streamSimple` runs a fresh
   `query()` each call (no resume, no tools). Emits text/thinking/done.
   Enough to pick the provider in pi and get a streamed text reply.
-- **M2 — Session continuity. Done.** Add `ClaudeSession` + persistence.
+- **M2 — Session continuity. Done.** Add `ClaudeSession` + continuity entries.
   Capture `sdkSessionId` from SDK messages, `resume` on subsequent turns,
   store via `appendEntry`, reconstruct on `SessionStartEvent`, track
   `syncedThroughEntryId`, reset on branch/tree mismatch, and build provider-native
@@ -244,7 +245,7 @@ M3 was verified with tmux-backed interactive pi sessions and JSONL checks:
 - **Abort coverage is partial:** Tested abort while Claude is streaming, while a pi `bash` tool was running, and during post-tool continuation. Still untested: abort while an MCP handler is waiting before pi returns a result, and while mixed parallel tools are mid-flight.
 - **Parallel coverage is partial:** Two parallel `read` calls worked. Still test mixed parallel calls and one-success/one-error batches.
 - **Schema bridge:** pi TypeBox/JSON-Schema parameters are now exposed directly as MCP `inputSchema` values through a real MCP server. We intentionally avoid lossy runtime JSON Schema → Zod conversion.
-- **Linux binary workaround:** On this machine the SDK auto-selected its Linux x64 musl package, which failed due a missing musl loader, while the glibc package worked. `stream.ts` documents this local quirk and prefers the glibc binary only on Linux x64; other platforms fall back to SDK resolution.
+- **Linux binary workaround:** On this machine the SDK auto-selected its Linux x64 musl package, which failed due a missing musl loader, while the glibc package worked. `sdk/query.ts` documents this local quirk and prefers the glibc binary only on Linux x64; other platforms fall back to SDK resolution.
 - **Concurrent same-session access:** Running print-mode against the same session file while the TUI session was still open timed out. After closing TUI, print-mode resume worked. Treat same-session concurrent use as unsupported unless pi provides locking semantics.
 - **Scout/subagent coexistence coverage is shallow:** Parent + `finder` scout both using this provider works. Still test librarian/specialist/oracle and failure/abort paths if we want broader confidence.
 - **Compaction edge coverage:** M4 smoke test passes for ordinary `/compact` and post-compact continuation. Still test split-turn compaction, custom compaction instructions, and compaction while an active tool/query is pending.

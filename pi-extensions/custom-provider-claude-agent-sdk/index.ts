@@ -1,7 +1,7 @@
 import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import { claimClaudeSessionManager } from "./session.js";
-import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./stream.js";
+import { streamClaudeAgentSdk, streamClaudeAgentSdkOneShot } from "./sdk/query.js";
 
 export const PROVIDER_ID = "claude-agent-sdk";
 export const API_ID = "claude-agent-sdk";

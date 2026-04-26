@@ -8,17 +8,16 @@ import {
   type Model,
   type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
-import { extractSessionId, parseClaudeMessage } from "./claude-stream-events.js";
-import { buildContextMessagesHandoff } from "./handoff.js";
+import { buildContextMessagesHandoff } from "../handoff.js";
+import { PiStreamState, applyTurnUpdate } from "../pi-stream.js";
+import { ClaudeSession, ClaudeTurn } from "../session.js";
+import { buildPiMcpServer } from "../tools/mcp-server.js";
+import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "../tools/names.js";
+import { extractToolResults } from "../tools/results.js";
+import { extractSessionId, parseClaudeMessage } from "./events.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
-import { ClaudeTurn, ClaudeSession } from "./session.js";
-import { buildPiMcpServer } from "./tools/mcp-server.js";
-import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./tools/names.js";
-import { extractToolResults } from "./tools/results.js";
-import {
-  applyTurnUpdate,
-  PiStreamState,
-} from "./pi-stream.js";
+
+export type SdkQuery = ReturnType<typeof query>;
 
 const require = createRequire(import.meta.url);
 
