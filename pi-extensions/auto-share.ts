@@ -155,6 +155,7 @@ async function doExport(
 	const sessionName = sessionManager.getSessionName();
 	const systemPrompt = ctx.getSystemPrompt();
 	const themeName = ctx.ui.theme.name;
+	const notify = ctx.hasUI ? ctx.ui.notify : undefined;
 	const activeToolNames = new Set(pi.getActiveTools());
 	const tools = pi.getAllTools()
 		.filter((t) => activeToolNames.has(t.name))
@@ -167,14 +168,10 @@ async function doExport(
 			if (options.notifyGhUnavailable && !ghWarningShown) {
 				ghWarningShown = true;
 				const versionCheck = await runGh(["--version"]);
-				try {
-					if (versionCheck.code !== 0) {
-						ctx.ui.notify("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
-					} else {
-						ctx.ui.notify("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
-					}
-				} catch {
-					// The session may have ended while checking gh; skip notification.
+				if (versionCheck.code !== 0) {
+					notify?.("auto-share: gh CLI not found. Install from https://cli.github.com/", "warning");
+				} else {
+					notify?.("auto-share: gh is not logged in. Run 'gh auth login'.", "warning");
 				}
 			}
 			return;
@@ -257,16 +254,16 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
-		await doExport(pi, ctx);
+	pi.on("agent_end", (_event, ctx) => {
+		void doExport(pi, ctx).catch((err) => debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`));
 	});
 
-	pi.on("session_compact", async (_event, ctx) => {
-		await doExport(pi, ctx);
+	pi.on("session_compact", (_event, ctx) => {
+		void doExport(pi, ctx).catch((err) => debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`));
 	});
 
-	pi.on("session_tree", async (_event, ctx) => {
-		await doExport(pi, ctx);
+	pi.on("session_tree", (_event, ctx) => {
+		void doExport(pi, ctx).catch((err) => debugLog(`Export failed: ${err instanceof Error ? err.message : String(err)}`));
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
