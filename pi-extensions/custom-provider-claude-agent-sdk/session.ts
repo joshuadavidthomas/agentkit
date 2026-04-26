@@ -77,7 +77,7 @@ export class ClaudeSessionManager {
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
-    this.sessions.get(piSessionId)?.closeActiveTurn();
+    this.sessions.get(piSessionId)?.closeLiveQuery("Session hydrated");
 
     const session = new ClaudeSession(piSessionId, loadSessionEntry(sessionManager), sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
@@ -112,7 +112,7 @@ export class ClaudeSessionManager {
 
   shutdownSession(piSessionId: string) {
     const session = this.sessions.get(piSessionId);
-    session?.closeActiveTurn();
+    session?.closeLiveQuery("Session shutdown");
     this.sessions.delete(piSessionId);
 
     if (this.sessions.size === 0) {

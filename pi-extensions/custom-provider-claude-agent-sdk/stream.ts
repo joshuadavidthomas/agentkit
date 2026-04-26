@@ -348,6 +348,8 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
   } catch (error) {
     session.abortActiveTurn(errorMessage(error));
   } finally {
-    session.closeLiveQuery("Claude SDK query ended");
+    if (session.liveQuery() === sdkQuery) {
+      session.closeLiveQuery("Claude SDK query ended");
+    }
   }
 }
