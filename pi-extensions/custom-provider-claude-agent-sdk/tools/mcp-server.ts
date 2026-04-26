@@ -24,7 +24,7 @@ export function buildPiMcpServer(tools: PiTool[] | undefined, handler: PiMcpTool
   }]));
   const server = new McpServer({ name: MCP_SERVER_NAME, version: "1.0.0" });
 
-  server.server.registerCapabilities({ tools: { listChanged: true } });
+  server.server.registerCapabilities({ tools: {} });
 
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [...mcpTools.values()],
