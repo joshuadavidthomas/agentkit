@@ -22,7 +22,7 @@ export type SdkQuery = ReturnType<typeof query>;
 
 const require = createRequire(import.meta.url);
 
-// Local Linux x64 quirk: the SDK resolver selected its musl package on this
+// Local Linux x64 quirk: the SDK resolver selected its musl package on my
 // machine, but the installed/working binary is the glibc package. Prefer that
 // known-good binary here; other platforms and missing packages fall back to the
 // SDK's normal executable resolution.
