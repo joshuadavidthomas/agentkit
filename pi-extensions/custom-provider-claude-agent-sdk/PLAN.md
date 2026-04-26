@@ -97,30 +97,32 @@ loop and uses the SDK's own tool/runtime stack instead."
 No `sharedSession`. The only other module/global state is a defensive duplicate
 registration guard for accidental same-process double loads.
 
-**`ClaudeSession`** owns per-pi-session identity and SDK continuity:
+**`ClaudeSession`** owns per-pi-session identity, SDK continuity, and the live SDK query:
 - `piSessionId: string`
 - private `continuity: SessionEntryData` (`sdkSessionId`, `syncedThroughEntryId`, `lastClaudeModelId`)
 - private `handoffReader?: HandoffSessionReader` for branch-aware handoff/reset checks
 - private `activeTurn: ClaudeTurn | null`
+- private live SDK query plus SDK input queue for streaming-input mode
 - `.prepareForTurn()` builds fresh/delta pi-session handoff and resets stale branch state
-- `.closeActiveTurn()` tears down the current turn without clearing SDK continuity
+- `.closeLiveQuery()` tears down the current SDK process without clearing persisted continuity
 
-**`ClaudeTurn`** owns active query/stream/tool bridge state:
-- private active SDK query
+**`ClaudeTurn`** owns one pi turn over the live SDK query:
 - current pi stream state
+- completion for the current pi stream window
 - `toolBridge: ToolBridge` for bridging streamed pi tool-call ids/results with SDK MCP handler promises
 
 **Provider entry:**
 - `streamSimple(model, context, options)`:
   1. Resolve or create `ClaudeSession` for current pi session.
-  2. If the session has an active SDK query, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers through `ToolBridge`, and return without starting a new SDK query.
-  3. Otherwise build SDK options: `resume: sdkSessionId ?? undefined`, `systemPrompt: { type: "preset", preset: "claude_code", append: callerSystemPrompt }` (append, don't replace), `mcpServers: { "pi-tools": buildPiMcpServer(context.tools, ...) }`, `includePartialMessages: true`, `allowedTools: ["mcp__pi-tools__*"]`, `disallowedTools: DISALLOWED_BUILTIN_TOOLS`, `permissionMode: "bypassPermissions"`.
-  4. Iterate the AsyncGenerator in the background, translate SDK stream events through `claude-stream-events.ts` into provider events, then apply them to `PiStreamState`.
-  5. When SDK messages expose a `session_id`, capture the new `sdkSessionId` and persist it.
+  2. If the session has an active `ClaudeTurn`, treat the call as tool-result delivery: attach a new pi stream, extract `toolResult` messages from the tail of `context.messages`, resolve pending MCP handlers through `ToolBridge`, and return without starting a new SDK query.
+  3. Otherwise ensure the session has one live streaming-input SDK `query()` backed by an `AsyncIterable<SDKUserMessage>` queue. The live query uses `resume: sdkSessionId ?? undefined`, `systemPrompt: { type: "preset", preset: "claude_code", append: callerSystemPrompt }` (append, don't replace), `includePartialMessages: true`, `allowedTools: ["mcp__pi-tools__*"]`, `disallowedTools: DISALLOWED_BUILTIN_TOOLS`, and `permissionMode: "bypassPermissions"`.
+  4. Replace the live query's MCP servers for this turn with `query.setMcpServers({ "pi-tools": buildPiMcpServer(context.tools, ...) })`, then push the current user message into the SDK input queue.
+  5. A background output pump translates SDK stream events through `claude-stream-events.ts` into provider events and applies them to the active turn's `PiStreamState`.
+  6. When SDK messages expose a `session_id`, capture the new `sdkSessionId` and persist it.
 
 **Tool bridge:** pi tools are advertised to Claude Code as SDK MCP tools, while
-execution stays in pi's normal tool loop. `tools/mcp-server.ts` builds a
-per-query SDK MCP server instance from pi tool definitions and exposes pi's
+execution stays in pi's normal tool loop. `tools/mcp-server.ts` builds an SDK
+MCP server instance from the current pi tool definitions and exposes pi's
 TypeBox/JSON-Schema parameters directly as MCP `inputSchema` values. `ToolBridge`
 records streamed pi-visible tool-call ids in order, maps SDK MCP handler
 invocations to those ids, and resolves the handler promise when pi delivers the
@@ -134,13 +136,13 @@ SUMMARIZATION_SYSTEM_PROMPT, messages: [...] }, ...)`. In our
 `ClaudeSession`; we run a one-shot fresh `query()` with an ephemeral
 session, no tools, no `resume`, and the caller's `systemPrompt` used directly,
 then return the summary text. On the next normal turn, `SessionCompactEvent`
-tells us to reset `sdkSessionId` on the live `ClaudeSession` so the next
-`query()` starts a new SDK session seeded from pi's compacted context/handoff.
+tells us to reset `sdkSessionId` on the live `ClaudeSession` so the next live
+SDK query starts a new SDK session seeded from pi's compacted context/handoff.
 
 **Persistence:** `pi.appendEntry<SessionEntry>(SESSION_ENTRY_TYPE,
 { sdkSessionId, syncedThroughEntryId, lastClaudeModelId })`. On
 `SessionStartEvent` we reconstruct `ClaudeSession` from the most recent
-entry (if any). On `SessionShutdownEvent` we `.closeActiveTurn()`.
+entry (if any). On `SessionShutdownEvent` we `.closeLiveQuery()`.
 
 ## File layout
 

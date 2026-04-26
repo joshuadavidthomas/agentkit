@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   createAssistantMessageEventStream,
   type Api,
@@ -51,6 +51,10 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+function shouldCloseLiveQueryAfterTurn(): boolean {
+  return process.argv.includes("-p") || process.argv.includes("--print");
+}
 
 const DISALLOWED_BUILTIN_TOOLS = [
   "Read",
@@ -168,11 +172,12 @@ async function runOneShotQuery(
   } catch (error) {
     turn.streamState()?.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
   } finally {
-    if (sdkQuery) {
-      turn.finishActiveQuery(sdkQuery);
-    } else {
-      turn.close();
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
     }
+    turn.close();
   }
 }
 
@@ -185,9 +190,10 @@ export function streamClaudeAgentSdk(
   const stream = createAssistantMessageEventStream();
 
   const activeTurn = session.currentTurn();
-  if (activeTurn?.hasActiveQuery()) {
+  if (activeTurn) {
     activeTurn.attachStreamState(new PiStreamState(model, stream));
     activeTurn.toolBridge.deliverToolResults(extractToolResults(context));
+    void finishToolContinuation(session, activeTurn);
     return stream;
   }
 
@@ -203,6 +209,16 @@ export function streamClaudeAgentSdk(
   return stream;
 }
 
+async function finishToolContinuation(session: ClaudeSession, turn: ClaudeTurn) {
+  await turn.done();
+  if (turn.streamOutputStopReason() !== "toolUse") {
+    session.finishActiveTurn(turn);
+    if (shouldCloseLiveQueryAfterTurn()) {
+      session.closeLiveQuery("Print-mode turn finished");
+    }
+  }
+}
+
 async function runSessionQuery(
   session: ClaudeSession,
   model: Model<Api>,
@@ -210,90 +226,129 @@ async function runSessionQuery(
   context: Context,
   options?: SimpleStreamOptions,
 ) {
-  const abortController = createAbortController(options?.signal);
-  let sdkQuery: ReturnType<typeof query> | undefined;
-  let turn: ClaudeTurn | undefined;
-
-  if (abortController.signal.aborted) {
+  if (options?.signal?.aborted) {
     const state = new PiStreamState(model, stream);
     state.start();
     state.fail("Claude Agent SDK request aborted", true);
     return;
   }
 
+  let turn: ClaudeTurn | undefined;
+  let closeAfterTurn = false;
+
   try {
     const handoff = session.prepareForTurn() ?? buildContextMessagesHandoff(context.messages);
     turn = session.beginTurn(new PiStreamState(model, stream));
     const activeTurn = turn;
-    const mcpServer = buildPiMcpServer(context.tools, (toolName) => activeTurn.toolBridge.handleMcpToolCall(toolName));
+    const mcpServer = buildPiMcpServer(context.tools, (toolName) => {
+      const currentTurn = session.currentTurn();
+      if (!currentTurn) throw new Error(`No active pi turn for tool ${toolName}`);
+      return currentTurn.toolBridge.handleMcpToolCall(toolName);
+    });
+
+    await ensureLiveQuery(session, model, context, options, mcpServer);
+    await session.setModel(model.id);
+    await session.setMcpServers(mcpServer ? { [MCP_SERVER_NAME]: mcpServer } : {});
+
     const abortPending = () => {
-      activeTurn.toolBridge.resolvePendingWithError("Operation aborted");
-      try {
-        sdkQuery?.close();
-      } catch {
-        // Ignore close failures.
-      }
+      activeTurn.abort("Operation aborted");
+      void session.liveQuery()?.interrupt().catch(() => session.closeLiveQuery("Operation aborted"));
     };
     options?.signal?.addEventListener("abort", abortPending, { once: true });
 
     try {
-      let prompt = extractLatestUserPrompt(context);
-      if (handoff) {
-        const prefix = `${handoff}\n\nCurrent user message:\n`;
-        prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text", text: prefix }, ...prompt];
-      }
-
-      sdkQuery = query({
-        prompt: toSdkPrompt(prompt),
-        options: {
-          ...baseQueryOptions(model, abortController, options?.apiKey),
-          resume: session.continuityState().sdkSessionId ?? undefined,
-          allowedTools: mcpServer ? [`${MCP_TOOL_PREFIX}*`] : [],
-          permissionMode: "bypassPermissions",
-          systemPrompt: {
-            type: "preset",
-            preset: "claude_code",
-            append: context.systemPrompt,
-          },
-          ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { tools: [] }),
-        },
-      });
-      activeTurn.beginActiveQuery(sdkQuery);
-
-      for await (const message of sdkQuery) {
-        const sdkSessionId = extractSessionId(message);
-        if (sdkSessionId) {
-          session.captureSdkSessionId(sdkSessionId, model.id);
-        }
-
-        const currentState = activeTurn.streamState();
-        if (!currentState) continue;
-
-        const update = parseClaudeMessage(message);
-        if (update && applyTurnUpdate(update, currentState, activeTurn.toolBridge)) {
-          activeTurn.detachStreamState(currentState);
-        }
-      }
-
-      const currentState = activeTurn.streamState();
-      if (currentState && !currentState.finished) {
-        currentState.finish("stop");
-        activeTurn.detachStreamState(currentState);
-      }
+      session.pushUserMessage(toSdkUserMessage(promptForTurn(context, handoff)));
+      await activeTurn.done();
+      closeAfterTurn = activeTurn.streamOutputStopReason() !== "toolUse";
     } finally {
       options?.signal?.removeEventListener("abort", abortPending);
     }
   } catch (error) {
     const currentState = turn?.streamState();
-    currentState?.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
+    currentState?.fail(errorMessage(error), Boolean(options?.signal?.aborted));
     if (currentState) {
       turn?.detachStreamState(currentState);
     }
+    session.closeLiveQuery(errorMessage(error));
   } finally {
-    if (turn && sdkQuery) {
-      session.finishActiveTurn(turn, sdkQuery);
-    } else if (turn) {
-      session.closeActiveTurn();
+    if (turn && closeAfterTurn) {
+      session.finishActiveTurn(turn);
     }
+    if (closeAfterTurn && shouldCloseLiveQueryAfterTurn()) {
+      session.closeLiveQuery("Print-mode turn finished");
+    }
+  }
+}
+
+function promptForTurn(context: Context, handoff: string | undefined) {
+  let prompt = extractLatestUserPrompt(context);
+  if (handoff) {
+    const prefix = `${handoff}\n\nCurrent user message:\n`;
+    prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text" as const, text: prefix }, ...prompt];
+  }
+  return prompt;
+}
+
+function toSdkUserMessage(prompt: ReturnType<typeof extractLatestUserPrompt>): SDKUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: prompt },
+    parent_tool_use_id: null,
+    shouldQuery: true,
+  };
+}
+
+async function ensureLiveQuery(
+  session: ClaudeSession,
+  model: Model<Api>,
+  context: Context,
+  options: SimpleStreamOptions | undefined,
+  mcpServer: ReturnType<typeof buildPiMcpServer>,
+) {
+  if (session.liveQuery()) return;
+
+  const abortController = createAbortController(options?.signal);
+  const inputQueue = session.createInputQueue();
+  const sdkQuery = query({
+    prompt: inputQueue,
+    options: {
+      ...baseQueryOptions(model, abortController, options?.apiKey),
+      resume: session.continuityState().sdkSessionId ?? undefined,
+      allowedTools: [`${MCP_TOOL_PREFIX}*`],
+      permissionMode: "bypassPermissions",
+      systemPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        append: context.systemPrompt,
+      },
+      ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { mcpServers: {} }),
+    },
+  });
+
+  const outputPump = consumeLiveQuery(session, sdkQuery, model);
+  session.startLiveQuery(sdkQuery, inputQueue, outputPump);
+}
+
+async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>, model: Model<Api>) {
+  try {
+    for await (const message of sdkQuery) {
+      const sdkSessionId = extractSessionId(message);
+      if (sdkSessionId) {
+        session.captureSdkSessionId(sdkSessionId, model.id);
+      }
+
+      const activeTurn = session.currentTurn();
+      const currentState = activeTurn?.streamState();
+      if (!activeTurn || !currentState) continue;
+
+      const update = parseClaudeMessage(message);
+      if (update && applyTurnUpdate(update, currentState, activeTurn.toolBridge)) {
+        activeTurn.detachStreamState(currentState);
+      }
+    }
+  } catch (error) {
+    session.abortActiveTurn(errorMessage(error));
+  } finally {
+    session.closeLiveQuery("Claude SDK query ended");
   }
 }

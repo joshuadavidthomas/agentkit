@@ -1,4 +1,4 @@
-import type { query } from "@anthropic-ai/claude-agent-sdk";
+import type { query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
@@ -7,6 +7,44 @@ import { ToolBridge } from "./tools/bridge.js";
 
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
+
+export class SdkInputQueue implements AsyncIterable<SDKUserMessage> {
+  private pending: SDKUserMessage[] = [];
+  private waiters: Array<(result: IteratorResult<SDKUserMessage>) => void> = [];
+  private closed = false;
+
+  push(message: SDKUserMessage) {
+    if (this.closed) throw new Error("Claude SDK input stream is closed");
+
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter({ value: message, done: false });
+      return;
+    }
+
+    this.pending.push(message);
+  }
+
+  close() {
+    if (this.closed) return;
+
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter({ value: undefined, done: true });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    return {
+      next: () => {
+        const message = this.pending.shift();
+        if (message) return Promise.resolve({ value: message, done: false });
+        if (this.closed) return Promise.resolve({ value: undefined, done: true });
+        return new Promise((resolve) => this.waiters.push(resolve));
+      },
+    };
+  }
+}
 
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
@@ -92,6 +130,9 @@ export class ClaudeSession {
   private continuity: SessionEntryData;
   private handoffReader: HandoffSessionReader | undefined;
   private activeTurn: ClaudeTurn | null = null;
+  private sdkQuery: SdkQuery | null = null;
+  private inputQueue: SdkInputQueue | null = null;
+  private outputPump: Promise<void> | null = null;
 
   constructor(
     piSessionId: string,
@@ -114,6 +155,39 @@ export class ClaudeSession {
 
   currentTurn(): ClaudeTurn | undefined {
     return this.activeTurn ?? undefined;
+  }
+
+  liveQuery(): SdkQuery | undefined {
+    return this.sdkQuery ?? undefined;
+  }
+
+  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue, outputPump: Promise<void>) {
+    this.inputQueue?.close();
+    try {
+      this.sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+
+    this.sdkQuery = sdkQuery;
+    this.inputQueue = inputQueue;
+    this.outputPump = outputPump;
+  }
+
+  createInputQueue(): SdkInputQueue {
+    return new SdkInputQueue();
+  }
+
+  pushUserMessage(message: SDKUserMessage) {
+    this.inputQueue?.push(message);
+  }
+
+  async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0]) {
+    return this.sdkQuery?.setMcpServers(servers);
+  }
+
+  async setModel(modelId: string) {
+    await this.sdkQuery?.setModel(modelId);
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
@@ -149,7 +223,7 @@ export class ClaudeSession {
   }
 
   resetContinuity() {
-    this.closeActiveTurn();
+    this.closeLiveQuery();
     if (!this.continuity.sdkSessionId && !this.continuity.syncedThroughEntryId && !this.continuity.lastClaudeModelId) return;
 
     this.continuity = {
@@ -171,11 +245,10 @@ export class ClaudeSession {
     return buildPiSessionHandoff(this.handoffReader, this.continuity);
   }
 
-  finishActiveTurn(turn: ClaudeTurn, sdkQuery: SdkQuery) {
+  finishActiveTurn(turn: ClaudeTurn) {
     if (this.activeTurn !== turn) return;
-    if (turn.finishActiveQuery(sdkQuery)) {
-      this.activeTurn = null;
-    }
+    turn.finish();
+    this.activeTurn = null;
   }
 
   closeActiveTurn() {
@@ -188,6 +261,21 @@ export class ClaudeSession {
     this.activeTurn = null;
   }
 
+  closeLiveQuery(message = "Session closed") {
+    this.closeActiveTurn();
+    this.inputQueue?.close();
+    this.inputQueue = null;
+    this.outputPump = null;
+
+    const sdkQuery = this.sdkQuery;
+    this.sdkQuery = null;
+    try {
+      sdkQuery?.close();
+    } catch {
+      // Ignore close failures.
+    }
+  }
+
   private persist() {
     this.persistSessionEntry?.(this.continuityState());
   }
@@ -196,44 +284,50 @@ export class ClaudeSession {
 export class ClaudeTurn {
   readonly toolBridge = new ToolBridge();
 
-  private activeQuery: SdkQuery | null = null;
   private currentStreamState: PiStreamState | null = null;
+  private lastStopReason: string | undefined;
+  private completion: Promise<void>;
+  private complete!: () => void;
 
   constructor(streamState: PiStreamState) {
+    this.completion = new Promise((resolve) => {
+      this.complete = resolve;
+    });
     this.attachStreamState(streamState);
   }
 
+  done(): Promise<void> {
+    return this.completion;
+  }
+
   hasActiveQuery(): boolean {
-    return Boolean(this.activeQuery);
+    return Boolean(this.currentStreamState);
   }
 
   streamState(): PiStreamState | undefined {
     return this.currentStreamState ?? undefined;
   }
 
-  beginActiveQuery(sdkQuery: SdkQuery) {
-    this.activeQuery = sdkQuery;
+  streamOutputStopReason(): string | undefined {
+    return this.currentStreamState?.output.stopReason ?? this.lastStopReason;
   }
 
-  finishActiveQuery(sdkQuery: SdkQuery): boolean {
-    if (this.activeQuery !== sdkQuery) return false;
-
-    this.toolBridge.resolvePendingWithError("Query ended");
-    this.toolBridge.clearQueuedResults();
-    this.activeQuery = null;
-    this.currentStreamState = null;
-    this.closeSdkQuery(sdkQuery);
-    return true;
+  beginActiveQuery(_sdkQuery: SdkQuery) {
   }
 
   attachStreamState(state: PiStreamState) {
+    this.completion = new Promise((resolve) => {
+      this.complete = resolve;
+    });
     this.currentStreamState = state;
     state.start();
   }
 
   detachStreamState(state: PiStreamState) {
     if (this.currentStreamState === state) {
+      this.lastStopReason = state.output.stopReason;
       this.currentStreamState = null;
+      this.complete();
     }
   }
 
@@ -246,23 +340,21 @@ export class ClaudeTurn {
     this.close("Session closed");
   }
 
+  finish() {
+    this.toolBridge.resolvePendingWithError("Turn ended");
+    this.toolBridge.clearQueuedResults();
+    this.lastStopReason = this.currentStreamState?.output.stopReason ?? this.lastStopReason;
+    this.currentStreamState = null;
+    this.complete();
+  }
+
   close(message = "Session closed") {
     this.toolBridge.resolvePendingWithError(message);
     this.toolBridge.clearQueuedResults();
+    this.lastStopReason = this.currentStreamState?.output.stopReason ?? this.lastStopReason;
     this.currentStreamState = null;
     this.toolBridge.beginMessage();
-
-    const sdkQuery = this.activeQuery;
-    this.activeQuery = null;
-    this.closeSdkQuery(sdkQuery);
-  }
-
-  private closeSdkQuery(sdkQuery: SdkQuery | null | undefined) {
-    try {
-      sdkQuery?.close();
-    } catch {
-      // Ignore close failures.
-    }
+    this.complete();
   }
 }
 
