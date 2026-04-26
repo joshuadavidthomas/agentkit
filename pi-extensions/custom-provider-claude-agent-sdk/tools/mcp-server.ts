@@ -20,7 +20,6 @@ export function buildPiMcpServer(tools: PiTool[] | undefined, handler: PiMcpTool
     name: tool.name,
     description: tool.description,
     inputSchema: tool.parameters as McpTool["inputSchema"],
-    annotations: { readOnlyHint: tool.name !== "bash" && tool.name !== "edit" && tool.name !== "write" },
   }]));
   const server = new McpServer({ name: MCP_SERVER_NAME, version: "1.0.0" });
 
