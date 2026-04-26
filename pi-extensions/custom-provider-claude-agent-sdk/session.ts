@@ -13,16 +13,17 @@ export class SdkInputQueue implements AsyncIterable<SDKUserMessage> {
   private waiters: Array<(result: IteratorResult<SDKUserMessage>) => void> = [];
   private closed = false;
 
-  push(message: SDKUserMessage) {
-    if (this.closed) throw new Error("Claude SDK input stream is closed");
+  push(message: SDKUserMessage): boolean {
+    if (this.closed) return false;
 
     const waiter = this.waiters.shift();
     if (waiter) {
       waiter({ value: message, done: false });
-      return;
+      return true;
     }
 
     this.pending.push(message);
+    return true;
   }
 
   close() {
@@ -130,6 +131,7 @@ export class ClaudeSession {
   private continuity: SessionEntryData;
   private handoffReader: HandoffSessionReader | undefined;
   private activeTurn: ClaudeTurn | null = null;
+  private requestedClaudeModelId: string | null = null;
   private sdkQuery: SdkQuery | null = null;
   private inputQueue: SdkInputQueue | null = null;
   private outputPump: Promise<void> | null = null;
@@ -178,8 +180,8 @@ export class ClaudeSession {
     return new SdkInputQueue();
   }
 
-  pushUserMessage(message: SDKUserMessage) {
-    this.inputQueue?.push(message);
+  pushUserMessage(message: SDKUserMessage): boolean {
+    return this.inputQueue?.push(message) ?? false;
   }
 
   async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0]) {
@@ -187,7 +189,9 @@ export class ClaudeSession {
   }
 
   async setModel(modelId: string) {
+    if (this.requestedClaudeModelId === modelId) return;
     await this.sdkQuery?.setModel(modelId);
+    this.requestedClaudeModelId = modelId;
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
@@ -261,10 +265,15 @@ export class ClaudeSession {
     this.activeTurn = null;
   }
 
+  currentModelId(): string | null {
+    return this.requestedClaudeModelId ?? this.continuity.lastClaudeModelId;
+  }
+
   closeLiveQuery(message = "Session closed") {
     this.closeActiveTurn();
     this.inputQueue?.close();
     this.inputQueue = null;
+    this.requestedClaudeModelId = null;
     this.outputPump = null;
 
     const sdkQuery = this.sdkQuery;

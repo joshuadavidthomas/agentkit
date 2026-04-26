@@ -57,7 +57,7 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   pi.on("model_select", (event, ctx) => {
     if (event.previousModel?.provider !== PROVIDER_ID || event.model.provider === PROVIDER_ID) return;
 
-    claudeSessions.currentSession(ctx.sessionManager)?.abortActiveTurn("Claude Agent SDK request cancelled after switching models");
+    claudeSessions.currentSession(ctx.sessionManager)?.closeLiveQuery("Claude Agent SDK request cancelled after switching models");
   });
 
   pi.registerProvider(PROVIDER_ID, {

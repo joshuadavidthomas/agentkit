@@ -256,7 +256,9 @@ async function runSessionQuery(
     options?.signal?.addEventListener("abort", abortPending, { once: true });
 
     try {
-      session.pushUserMessage(toSdkUserMessage(promptForTurn(context, handoff)));
+      if (!session.pushUserMessage(toSdkUserMessage(promptForTurn(context, handoff)))) {
+        throw new Error("Claude SDK input stream is closed");
+      }
       await activeTurn.done();
       closeAfterTurn = activeTurn.streamOutputStopReason() !== "toolUse";
     } finally {
@@ -324,16 +326,17 @@ async function ensureLiveQuery(
     },
   });
 
-  const outputPump = consumeLiveQuery(session, sdkQuery, model);
+  const outputPump = consumeLiveQuery(session, sdkQuery);
   session.startLiveQuery(sdkQuery, inputQueue, outputPump);
 }
 
-async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>, model: Model<Api>) {
+async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>) {
   try {
     for await (const message of sdkQuery) {
       const sdkSessionId = extractSessionId(message);
-      if (sdkSessionId) {
-        session.captureSdkSessionId(sdkSessionId, model.id);
+      const modelId = session.currentModelId();
+      if (sdkSessionId && modelId) {
+        session.captureSdkSessionId(sdkSessionId, modelId);
       }
 
       const activeTurn = session.currentTurn();
