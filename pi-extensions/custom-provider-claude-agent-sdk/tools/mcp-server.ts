@@ -12,24 +12,16 @@ import { MCP_SERVER_NAME } from "./names.js";
 
 type PiMcpToolHandler = (toolName: string) => Promise<CallToolResult>;
 
-function toolAnnotations(toolName: string): McpTool["annotations"] {
-  return { readOnlyHint: toolName !== "bash" && toolName !== "edit" && toolName !== "write" };
-}
-
-function toMcpTool(tool: PiTool): McpTool {
-  return {
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.parameters as McpTool["inputSchema"],
-    annotations: toolAnnotations(tool.name),
-  };
-}
-
 export function buildPiMcpServer(tools: PiTool[] | undefined, handler: PiMcpToolHandler) {
   const piTools = tools ?? [];
   if (piTools.length === 0) return undefined;
 
-  const mcpTools = new Map(piTools.map((tool) => [tool.name, toMcpTool(tool)]));
+  const mcpTools = new Map(piTools.map((tool) => [tool.name, {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.parameters as McpTool["inputSchema"],
+    annotations: { readOnlyHint: tool.name !== "bash" && tool.name !== "edit" && tool.name !== "write" },
+  }]));
   const server = new McpServer({ name: MCP_SERVER_NAME, version: "1.0.0" });
 
   server.server.registerCapabilities({ tools: { listChanged: true } });
