@@ -139,6 +139,14 @@ then return the summary text. On the next normal turn, `SessionCompactEvent`
 tells us to reset `sdkSessionId` on the live `ClaudeSession` so the next live
 SDK query starts a new SDK session seeded from pi's compacted context/handoff.
 
+**Model switching:** switching away from `claude-agent-sdk` within the same pi
+session closes the live SDK query process but does not reset persisted SDK
+continuity. The pi session identity has not changed, so the Claude SDK session
+identity should not change either. If another provider adds messages while this
+provider is inactive, the next `claude-agent-sdk` turn resumes the same SDK
+session and uses pi handoff/context to bridge entries added after
+`syncedThroughEntryId`.
+
 **Persistence:** `pi.appendEntry<SessionEntry>(SESSION_ENTRY_TYPE,
 { sdkSessionId, syncedThroughEntryId, lastClaudeModelId })`. On
 `SessionStartEvent` we reconstruct `ClaudeSession` from the most recent
