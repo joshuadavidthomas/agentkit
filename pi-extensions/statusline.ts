@@ -175,14 +175,6 @@ function refreshVibeusage(vibeProvider: string): void {
   );
 }
 
-function formatStatuslineModelName(model: { provider: string; name?: string; id: string }): string {
-  const rawModelName = model.name || model.id;
-  if (model.provider === "anthropic" || model.provider === "claude-agent-sdk") {
-    return rawModelName.replace(/^Claude\s+/i, "");
-  }
-  return rawModelName;
-}
-
 function getVibeusageOutput(piProvider: string | undefined): string | null {
   const vibeProvider = piProvider ? VIBEUSAGE_PROVIDER_MAP[piProvider] : null;
   if (!vibeProvider) return null;
@@ -460,7 +452,7 @@ export default function (pi: ExtensionAPI) {
 
           // Model: "󰚩 claude-sonnet-4 from anthropic" (bold blue)
           if (model) {
-            const modelName = formatStatuslineModelName(model);
+            const modelName = formatModelName(model.name || model.id);
             line1Parts.push(
               theme.fg("accent", theme.bold(`${NERD_FONT_MAP["ROBOT"]} ${modelName}`)) +
               theme.fg("dim", " from ") +
