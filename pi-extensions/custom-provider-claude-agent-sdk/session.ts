@@ -4,7 +4,6 @@ import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessi
 import { appendSessionEntry, loadSessionEntry, type SessionEntryData } from "./persistence.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { ToolBridge } from "./tools/bridge.js";
-import { createMcpTextResult } from "./tools/results.js";
 
 type SdkQuery = ReturnType<typeof query>;
 type PersistSessionEntry = (data: SessionEntryData) => void;
@@ -219,7 +218,7 @@ export class ClaudeTurn {
   finishActiveQuery(sdkQuery: SdkQuery): boolean {
     if (this.activeQuery !== sdkQuery) return false;
 
-    this.toolBridge.resolvePendingToolCalls(createMcpTextResult("Query ended", true));
+    this.toolBridge.resolvePendingWithError("Query ended");
     this.toolBridge.clearQueuedResults();
     this.activeQuery = null;
     this.currentStreamState = null;
@@ -248,7 +247,7 @@ export class ClaudeTurn {
   }
 
   close(message = "Session closed") {
-    this.toolBridge.resolvePendingToolCalls(createMcpTextResult(message, true));
+    this.toolBridge.resolvePendingWithError(message);
     this.toolBridge.clearQueuedResults();
     this.currentStreamState = null;
     this.toolBridge.beginMessage();

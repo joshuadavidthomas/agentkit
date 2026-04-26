@@ -14,7 +14,7 @@ import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { ClaudeTurn, ClaudeSession } from "./session.js";
 import { buildPiMcpServer } from "./tools/mcp-server.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./tools/names.js";
-import { createMcpTextResult, extractToolResults } from "./tools/results.js";
+import { extractToolResults } from "./tools/results.js";
 import {
   applyTurnUpdate,
   PiStreamState,
@@ -227,7 +227,7 @@ async function runSessionQuery(
     const activeTurn = turn;
     const mcpServer = buildPiMcpServer(context.tools, (toolName) => activeTurn.toolBridge.handleMcpToolCall(toolName));
     const abortPending = () => {
-      activeTurn.toolBridge.resolvePendingToolCalls(createMcpTextResult("Operation aborted", true));
+      activeTurn.toolBridge.resolvePendingWithError("Operation aborted");
       try {
         sdkQuery?.close();
       } catch {

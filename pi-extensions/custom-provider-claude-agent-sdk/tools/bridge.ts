@@ -61,6 +61,10 @@ export class ToolBridge {
     this.pendingToolCalls.clear();
   }
 
+  resolvePendingWithError(message: string) {
+    this.resolvePendingToolCalls(createMcpTextResult(message, true));
+  }
+
   clearQueuedResults() {
     this.pendingResults.clear();
   }
