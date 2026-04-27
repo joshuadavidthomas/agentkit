@@ -7,6 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
+import { debug } from "./sdk/debug.js";
 import type {
   AssistantBackfill,
   FinishedStopReason,
@@ -19,6 +20,14 @@ import type {
 } from "./sdk/events.js";
 import type { ToolBridge } from "./tools/bridge.js";
 import { stripMcpToolName } from "./tools/names.js";
+//
+// Throttle JSON.parse on streaming tool input. Anthropic emits input_json_delta
+// chunks at high frequency; reparsing the entire accumulated buffer on every
+// delta is O(n²) in tool input size and dominates CPU on large Edit/Write
+// payloads. Live consumers see the raw delta immediately; the structured
+// arguments lag by at most this interval, then settle to exact on block_stop.
+const TOOL_INPUT_PARSE_THROTTLE_MS = 50;
+
 interface StreamDelta {
   sourceBlockIndex: number;
   delta: string;
@@ -39,7 +48,7 @@ interface StreamToolCallStart {
 type ActiveBlock =
   | { type: "text"; contentIndex: number }
   | { type: "thinking"; contentIndex: number }
-  | { type: "toolCall"; contentIndex: number; partialJson: string };
+  | { type: "toolCall"; contentIndex: number; partialJson: string; lastParseAt: number };
 
 export class PiStreamState {
   readonly output: AssistantMessage;
@@ -48,8 +57,9 @@ export class PiStreamState {
   private started = false;
   private isFinished = false;
   private streamEventsReceived = false;
-  private toolCallStarted = false;
   private pendingFinishedStopReason: FinishedStopReason = "stop";
+  private readonly turnStartedAt = performance.now();
+  private firstDeltaLogged = false;
 
   constructor(readonly model: Model<Api>, readonly stream: AssistantMessageEventStream) {
     this.output = {
@@ -84,10 +94,14 @@ export class PiStreamState {
   }
 
   finishToolUseIfPresent() {
-    if (!this.toolCallStarted) return false;
+    if (!this.hasToolCall()) return false;
 
     this.finish("toolUse");
     return true;
+  }
+
+  hasToolCall() {
+    return this.output.content.some((block) => block.type === "toolCall");
   }
 
   start() {
@@ -105,11 +119,24 @@ export class PiStreamState {
     this.output.stopReason = reason;
     this.stream.push({ type: "done", reason, message: this.output });
     this.stream.end();
+    debug("time:turnTotal", {
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      stopReason: reason,
+    });
   }
 
   fail(message: string, aborted: boolean) {
-    if (this.isFinished) return;
+    if (this.isFinished) {
+      debug("stream:fail", { skipped: "already-finished", aborted });
+      return;
+    }
 
+    debug("stream:fail", {
+      aborted,
+      message,
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      contentBlocks: this.output.content.length,
+    });
     this.start();
     this.isFinished = true;
     this.output.stopReason = aborted ? "aborted" : "error";
@@ -126,10 +153,10 @@ export class PiStreamState {
   applyUsage(usage: TurnUsage | undefined) {
     if (!usage) return;
 
-    this.output.usage.input = usage.inputTokens ?? this.output.usage.input;
-    this.output.usage.output = usage.outputTokens ?? this.output.usage.output;
-    this.output.usage.cacheRead = usage.cacheReadTokens ?? this.output.usage.cacheRead;
-    this.output.usage.cacheWrite = usage.cacheWriteTokens ?? this.output.usage.cacheWrite;
+    this.output.usage.input = Math.max(this.output.usage.input, usage.inputTokens ?? 0);
+    this.output.usage.output = Math.max(this.output.usage.output, usage.outputTokens ?? 0);
+    this.output.usage.cacheRead = Math.max(this.output.usage.cacheRead, usage.cacheReadTokens ?? 0);
+    this.output.usage.cacheWrite = Math.max(this.output.usage.cacheWrite, usage.cacheWriteTokens ?? 0);
     // Pi uses totalTokens as context/compaction pressure. Claude SDK cache-read
     // tokens are provider billing/cache-hit accounting, not additional context
     // window growth, so keep cacheRead for cost accounting but exclude it from
@@ -141,6 +168,10 @@ export class PiStreamState {
   setStopReason(reason: FinishedStopReason) {
     this.output.stopReason = reason;
     this.pendingFinishedStopReason = reason;
+  }
+
+  hasMeaningfulStopReason(): boolean {
+    return this.pendingFinishedStopReason !== "stop";
   }
 
   finishWithPendingStopReason() {
@@ -165,14 +196,53 @@ export class PiStreamState {
     } as ThinkingContent);
   }
 
-  backfillToolCall(id: string, name: string, args: ToolCall["arguments"]) {
-    this.toolCallStarted = true;
+  backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): boolean {
+    const existing = this.output.content.find((b) => b.type === "toolCall" && b.id === id);
+    if (existing && existing.type === "toolCall") {
+      const existingKeys = existing.arguments ? Object.keys(existing.arguments) : [];
+      const incomingKeys = args && typeof args === "object" ? Object.keys(args) : [];
+
+      // Claude Code's preset emits tool_use as content_block_start with
+      // input: {} and surfaces the real args only via the assistant message
+      // backfill — input_json_delta never fires. Merge backfill args into the
+      // streaming-side block when it would otherwise leave args empty.
+      if (existingKeys.length === 0 && incomingKeys.length > 0) {
+        existing.arguments = args;
+        debug("stream:backfillToolCall", {
+          id,
+          name,
+          outcome: "merged-into-existing",
+          argsKeys: incomingKeys,
+          argsBytes: JSON.stringify(args ?? {}).length,
+        });
+        return false;
+      }
+
+      debug("stream:backfillToolCall", {
+        id,
+        name,
+        outcome: "skipped-already-populated",
+        existingArgsKeys: existingKeys,
+        incomingArgsKeys: incomingKeys,
+        incomingArgsBytes: JSON.stringify(args ?? {}).length,
+      });
+      return false;
+    }
+
+    debug("stream:backfillToolCall", {
+      id,
+      name,
+      outcome: "added",
+      argsKeys: args && typeof args === "object" ? Object.keys(args) : [],
+      argsBytes: JSON.stringify(args ?? {}).length,
+    });
     this.output.content.push({
       type: "toolCall",
       id,
       name,
       arguments: args,
     });
+    return true;
   }
 
   beginTextBlock(sourceBlockIndex: number) {
@@ -190,6 +260,7 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "text") return;
 
+    this.markFirstDelta("text");
     block.text += delta;
     this.stream.push({ type: "text_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
@@ -209,6 +280,7 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "thinking") return;
 
+    this.markFirstDelta("thinking");
     block.thinking += delta;
     this.stream.push({ type: "thinking_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
@@ -225,10 +297,16 @@ export class PiStreamState {
 
   beginToolCall({ sourceBlockIndex, id, name, args }: StreamToolCallStart) {
     this.start();
-    this.toolCallStarted = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
-    this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "" });
+    this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "", lastParseAt: 0 });
+    debug("stream:beginToolCall", {
+      sourceBlockIndex,
+      id,
+      name,
+      initialArgsKeys: args && typeof args === "object" ? Object.keys(args) : [],
+      initialArgsBytes: JSON.stringify(args ?? {}).length,
+    });
     this.stream.push({ type: "toolcall_start", contentIndex, partial: this.output });
   }
 
@@ -239,9 +317,23 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "toolCall") return;
 
+    this.markFirstDelta("toolCall");
     active.partialJson += delta;
-    block.arguments = parseToolArguments(active.partialJson, block.arguments);
+    const now = Date.now();
+    if (now - active.lastParseAt >= TOOL_INPUT_PARSE_THROTTLE_MS) {
+      block.arguments = parseToolArguments(active.partialJson, block.arguments);
+      active.lastParseAt = now;
+    }
     this.stream.push({ type: "toolcall_delta", contentIndex: active.contentIndex, delta, partial: this.output });
+  }
+
+  private markFirstDelta(kind: string) {
+    if (this.firstDeltaLogged) return;
+    this.firstDeltaLogged = true;
+    debug("time:firstDelta", {
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      kind,
+    });
   }
 
   finishContentBlock(sourceBlockIndex: number) {
@@ -257,6 +349,14 @@ export class PiStreamState {
       this.stream.push({ type: "thinking_end", contentIndex: active.contentIndex, content: block.thinking, partial: this.output });
     } else if (block?.type === "toolCall" && active.type === "toolCall") {
       block.arguments = parseToolArguments(active.partialJson, block.arguments);
+      debug("stream:finishToolCall", {
+        id: block.id,
+        name: block.name,
+        partialJsonBytes: active.partialJson.length,
+        partialJsonPreview: active.partialJson.slice(0, 400),
+        finalArgsKeys: block.arguments ? Object.keys(block.arguments) : [],
+        finalArgsBytes: JSON.stringify(block.arguments ?? {}).length,
+      });
       this.stream.push({ type: "toolcall_end", contentIndex: active.contentIndex, toolCall: block, partial: this.output });
     }
   }
@@ -268,7 +368,7 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
       state.markStreamingContentReceived();
       return applyTurnEvent(update.event, state, toolBridge);
     case "assistantBackfill":
-      return applyAssistantBackfill(update.backfill, update.usage, state, toolBridge);
+      return applyAssistantBackfill(update.backfill, update.stopReason, update.usage, state, toolBridge);
     case "result":
       return applyTurnResult(update.result, state);
   }
@@ -276,37 +376,39 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
 
 function applyAssistantBackfill(
   backfill: AssistantBackfill[],
+  stopReason: FinishedStopReason,
   usage: TurnUsage | undefined,
   state: PiStreamState,
   toolBridge: ToolBridge,
 ): boolean {
-  // The assistant SDK message carries the most accurate usage (cache token
-  // stats from the Anthropic API), and arrives between the streamed
-  // message_stop and the SDK result message. Apply usage here so it lands in
-  // the done event, even when stream events already produced the visible
-  // content.
+  // The live SDK stream emits assistant messages with stop_reason: null.
+  // The authoritative stop_reason arrives via stream_event: message_delta.
+  // Don't let the backfill's null→"stop" overwrite a meaningful stop reason
+  // already set by stream events.
+  if (stopReason !== "stop" || !state.hasMeaningfulStopReason()) {
+    state.setStopReason(stopReason);
+  }
   state.applyUsage(usage);
 
-  if (state.acceptsAssistantBackfill() && backfill.length > 0) {
-    toolBridge.beginMessage();
-    for (const item of backfill) {
-      applyAssistantBackfillItem(item, state, toolBridge);
+  if (backfill.length > 0) {
+    if (state.acceptsAssistantBackfill()) {
+      toolBridge.beginMessage();
+      for (const item of backfill) {
+        applyAssistantBackfillItem(item, state, toolBridge);
+      }
+    } else {
+      // Claude Code can emit streamed thinking/text and then later surface the
+      // final tool_use only on assistant backfill. Do not drop those delayed
+      // tool calls just because earlier stream events arrived.
+      for (const item of backfill) {
+        if (item.type === "toolCall") {
+          applyAssistantBackfillItem(item, state, toolBridge);
+        }
+      }
     }
     if (state.finishToolUseIfPresent()) return true;
   }
 
-  // Finish the stream as soon as the assistant SDK message arrives, so the
-  // user-visible "working..." clears without waiting for the SDK result
-  // message. Only do this once visible text is present — some models (e.g.
-  // Haiku with thinking) deliver no text in stream events or the assistant
-  // message and only carry text in the result message; those turns must wait
-  // for applyTurnResult to backfill the text before finishing.
-  const hasText = state.output.content.some(
-    (block) => block.type === "text" && block.text.trim().length > 0,
-  );
-  if (hasText) {
-    state.finishWithPendingStopReason();
-  }
   return false;
 }
 
@@ -331,6 +433,11 @@ function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
   const hasText = state.output.content.some((block) => block.type === "text" && block.text.trim().length > 0);
   if (!hasText && result.text) {
     state.backfillText(result.text);
+  }
+
+  if (result.stopReason === "toolUse" && !state.hasToolCall()) {
+    state.setStopReason("toolUse");
+    return false;
   }
 
   state.finish(result.stopReason);
@@ -408,8 +515,9 @@ function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamStat
       return;
     case "toolCall": {
       const name = stripMcpToolName(item.mcpToolName);
-      state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"]);
-      toolBridge.register(item.id);
+      if (state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"])) {
+        toolBridge.register(item.id);
+      }
     }
   }
 }

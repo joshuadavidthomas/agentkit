@@ -1,15 +1,6 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { SESSION_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
-
-export interface HandoffSessionReader {
-  getBranch(): SessionEntry[];
-  getEntries(): SessionEntry[];
-}
-
-function truncateText(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars - 1)}…`;
-}
+import type { SessionManager } from "./session.js";
+import { debug } from "./sdk/debug.js";
 
 function extractContentText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -32,7 +23,7 @@ function extractContentText(content: unknown): string {
 
     if (block.type === "toolCall") {
       const name = typeof block.name === "string" ? block.name : "tool";
-      const args = block.arguments ? truncateText(JSON.stringify(block.arguments), 800) : "{}";
+      const args = block.arguments ? JSON.stringify(block.arguments) : "{}";
       parts.push(`[Tool call ${name} ${args}]`);
     }
   }
@@ -46,30 +37,30 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
 
   if (entry.role === "user") {
     const text = extractContentText(entry.content);
-    return text ? `User:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `User:\n${text}` : undefined;
   }
 
   if (entry.role === "assistant") {
     const text = extractContentText(entry.content);
-    return text ? `Assistant:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `Assistant:\n${text}` : undefined;
   }
 
   if (entry.role === "toolResult") {
     const toolName = typeof entry.toolName === "string" ? entry.toolName : "tool";
     const text = extractContentText(entry.content);
     const prefix = entry.isError ? `Tool result (${toolName}, error):` : `Tool result (${toolName}):`;
-    return text ? `${prefix}\n${truncateText(text, 4000)}` : prefix;
+    return text ? `${prefix}\n${text}` : prefix;
   }
 
   if (entry.role === "bashExecution") {
     const command = typeof entry.command === "string" ? entry.command : "";
     const output = typeof entry.output === "string" ? entry.output : "";
-    return truncateText(`Ran \`${command}\`\n\n${output || "(no output)"}`, 4000);
+    return `Ran \`${command}\`\n\n${output || "(no output)"}`;
   }
 
   if (entry.role === "custom") {
     const text = extractContentText(entry.content);
-    return text ? `Context:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `Context:\n${text}` : undefined;
   }
 
   if (entry.role === "compactionSummary" && typeof entry.summary === "string") {
@@ -83,39 +74,11 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
   return undefined;
 }
 
-function formatSessionEntryForHandoff(entry: SessionEntry): string | undefined {
-  if (entry.type === "message") {
-    return formatAgentMessageForHandoff(entry.message);
-  }
-
-  if (entry.type === "custom_message") {
-    const text = extractContentText(entry.content);
-    return text ? `Context:\n${truncateText(text, 4000)}` : undefined;
-  }
-
-  if (entry.type === "model_change") {
-    return `Model switched to ${entry.provider}/${entry.modelId}.`;
-  }
-
-  if (entry.type === "compaction") {
-    return `The Pi session compacted part of this interval into the following summary:\n\n<summary>\n${entry.summary}\n</summary>`;
-  }
-
-  if (entry.type === "branch_summary") {
-    return `The following is a summary of a branch that this conversation came back from:\n\n<summary>\n${entry.summary}\n</summary>`;
-  }
-
-  return undefined;
-}
-
 function joinHandoffSections(title: string, sections: string[]): string | undefined {
   const cleaned = sections.map((section) => section.trim()).filter(Boolean);
   if (cleaned.length === 0) return undefined;
 
-  return truncateText(
-    `${title}\n\nUse this as authoritative prior conversation history for continuity. Do not answer this handoff by itself; answer only the current user message that follows.\n\n${cleaned.join("\n\n")}`,
-    20000,
-  );
+  return `${title}\n\nUse this as authoritative prior conversation history for continuity. The user's next message follows in a separate turn.\n\n${cleaned.join("\n\n")}`;
 }
 
 function findCurrentPromptIndex(branch: SessionEntry[]): number {
@@ -128,63 +91,41 @@ function findCurrentPromptIndex(branch: SessionEntry[]): number {
   return -1;
 }
 
-function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentPromptIndex: number): string | undefined {
+function buildFreshSeedHandoff(sessionManager: SessionManager, currentPromptIndex: number): string | undefined {
   const branch = sessionManager.getBranch();
   const targetLeafId = currentPromptIndex > 0 ? branch[currentPromptIndex - 1]?.id ?? null : null;
   const visible = buildSessionContext(sessionManager.getEntries(), targetLeafId).messages;
   const sections = visible.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
+  const handoff = joinHandoffSections("Pi session handoff for Claude Agent SDK:", sections);
 
-  return joinHandoffSections("Pi session handoff for Claude Agent SDK:", sections);
-}
+  debug("handoff:freshSeed", {
+    branchLength: branch.length,
+    currentPromptIndex,
+    targetLeafId,
+    visibleMessages: visible.length,
+    sections: sections.length,
+    bytes: handoff?.length ?? 0,
+  });
 
-function buildDeltaHandoff(
-  sessionManager: HandoffSessionReader,
-  branch: SessionEntry[],
-  currentPromptIndex: number,
-  syncedThroughEntryId: string,
-): string | undefined {
-  const endIndex = currentPromptIndex >= 0 ? currentPromptIndex : branch.length;
-  const syncedIndex = branch.findIndex((entry) => entry.id === syncedThroughEntryId);
-  if (syncedIndex < 0 || syncedIndex > endIndex) {
-    return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
-  }
-
-  const sections: string[] = [];
-  for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
-    if (entry.type === "custom" && entry.customType === SESSION_ENTRY_TYPE) continue;
-
-    const section = formatSessionEntryForHandoff(entry);
-    if (!section) continue;
-
-    if (entry.type === "compaction") {
-      sections.length = 0;
-    }
-
-    sections.push(section);
-  }
-
-  return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
-}
-
-export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionContinuity): boolean {
-  if (!continuity.syncedThroughEntryId) return false;
-  return sessionManager.getBranch().some((entry) => entry.id === continuity.syncedThroughEntryId);
+  return handoff;
 }
 
 export function buildPiSessionHandoff(
-  sessionManager: HandoffSessionReader | undefined,
-  continuity: SessionContinuity,
+  sessionManager: SessionManager | undefined,
 ): string | undefined {
-  if (!sessionManager) return undefined;
+  if (!sessionManager) {
+    debug("handoff:buildPiSessionHandoff", { skipped: "no-session-manager" });
+    return undefined;
+  }
 
   const branch = sessionManager.getBranch();
   const currentPromptIndex = findCurrentPromptIndex(branch);
 
-  if (!continuity.sdkSessionId || !continuity.syncedThroughEntryId) {
-    return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
-  }
-
-  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, continuity.syncedThroughEntryId);
+  debug("handoff:buildPiSessionHandoff", {
+    branchLength: branch.length,
+    currentPromptIndex,
+  });
+  return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
 }
 
 export function buildContextMessagesHandoff(messages: unknown[]): string | undefined {
@@ -199,6 +140,14 @@ export function buildContextMessagesHandoff(messages: unknown[]): string | undef
 
   const priorMessages = currentPromptIndex >= 0 ? messages.slice(0, currentPromptIndex) : messages;
   const sections = priorMessages.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
+  const handoff = joinHandoffSections("Pi context handoff for Claude Agent SDK:", sections);
 
-  return joinHandoffSections("Pi context handoff for Claude Agent SDK:", sections);
+  debug("handoff:contextFallback", {
+    totalMessages: messages.length,
+    priorMessages: priorMessages.length,
+    sections: sections.length,
+    bytes: handoff?.length ?? 0,
+  });
+
+  return handoff;
 }

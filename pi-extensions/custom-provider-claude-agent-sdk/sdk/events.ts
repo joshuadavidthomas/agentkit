@@ -48,7 +48,7 @@ export type TurnResult =
 
 export type TurnUpdate =
   | { type: "event"; event: TurnEvent }
-  | { type: "assistantBackfill"; backfill: AssistantBackfill[]; usage?: TurnUsage }
+  | { type: "assistantBackfill"; backfill: AssistantBackfill[]; stopReason: FinishedStopReason; usage?: TurnUsage }
   | { type: "result"; result: TurnResult };
 
 export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined {
@@ -61,11 +61,13 @@ export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined 
     return {
       type: "assistantBackfill",
       backfill: parseClaudeAssistantMessage(message),
+      stopReason: mapStopReason(message.message.stop_reason),
       usage: parseClaudeAssistantUsage(message.message.usage),
     };
   }
 
   if (message.type === "result") {
+    if (isShouldQueryFalseAck(message)) return undefined;
     return { type: "result", result: parseClaudeResultMessage(message) };
   }
 
@@ -157,6 +159,18 @@ function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): Assistant
   }
 
   return backfill;
+}
+
+// The SDK emits a synthetic result event after consuming a shouldQuery: false
+// user message — the SDK's way of saying "appended to transcript, no turn
+// fired." It carries stop_reason: null and zero token usage. The real result
+// for the merged querying message arrives later with a real stop_reason and
+// non-zero usage. num_turns is not a reliable discriminator: observed 3 on
+// the ack vs 1 on the real result.
+function isShouldQueryFalseAck(result: SDKResultMessage): boolean {
+  if (result.is_error) return false;
+  if (result.stop_reason !== null) return false;
+  return !result.usage?.input_tokens && !result.usage?.output_tokens;
 }
 
 function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {

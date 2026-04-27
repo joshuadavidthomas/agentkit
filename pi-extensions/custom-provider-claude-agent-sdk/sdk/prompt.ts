@@ -1,12 +1,12 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "@mariozechner/pi-ai";
 
-interface PromptTextBlock {
+export interface PromptTextBlock {
   type: "text";
   text: string;
 }
 
-interface PromptImageBlock {
+export interface PromptImageBlock {
   type: "image";
   source: {
     type: "base64";
@@ -15,7 +15,7 @@ interface PromptImageBlock {
   };
 }
 
-type PromptBlock = PromptTextBlock | PromptImageBlock;
+export type PromptBlock = PromptTextBlock | PromptImageBlock;
 
 export function extractLatestUserPrompt(context: Context): string | PromptBlock[] {
   for (let i = context.messages.length - 1; i >= 0; i--) {
@@ -74,3 +74,34 @@ export function toSdkPrompt(prompt: string | PromptBlock[]): string | AsyncItera
     } satisfies SDKUserMessage;
   })();
 }
+
+export function piContentToSdkPromptContent(content: unknown): string | PromptBlock[] {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  const blocks = content.flatMap<PromptBlock>((item) => {
+    if (!item || typeof item !== "object") return [];
+    const block = item as Record<string, unknown>;
+
+    if (block.type === "text" && typeof block.text === "string") {
+      return [{ type: "text", text: block.text }];
+    }
+
+    if (block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") {
+      const mediaType = block.mimeType as PromptImageBlock["source"]["media_type"];
+      if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType)) {
+        return [{ type: "image", source: { type: "base64", media_type: mediaType, data: block.data } }];
+      }
+    }
+
+    return [];
+  });
+
+  if (blocks.length === 0) return "";
+  if (blocks.every((block): block is PromptTextBlock => block.type === "text")) {
+    return blocks.map((block) => block.text).join("\n");
+  }
+  return blocks;
+}
+
+
