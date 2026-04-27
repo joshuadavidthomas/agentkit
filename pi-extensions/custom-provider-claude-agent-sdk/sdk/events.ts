@@ -67,17 +67,7 @@ export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined 
   }
 
   if (message.type === "result") {
-    // The SDK emits an ack result (stop_reason: null, zero usage) when it
-    // accepts a shouldQuery: false message. The real result with end_turn /
-    // tool_use arrives later once the merged querying message completes —
-    // drop the ack so the active turn isn't finalized prematurely. num_turns
-    // is not a reliable discriminator: observed 3 on the ack and 1 on the
-    // real result.
-    const hasNoUsage =
-      !message.usage?.input_tokens && !message.usage?.output_tokens;
-    if (!message.is_error && message.stop_reason === null && hasNoUsage) {
-      return undefined;
-    }
+    if (isShouldQueryFalseAck(message)) return undefined;
     return { type: "result", result: parseClaudeResultMessage(message) };
   }
 
@@ -169,6 +159,18 @@ function parseClaudeAssistantMessage(message: ClaudeAssistantMessage): Assistant
   }
 
   return backfill;
+}
+
+// The SDK emits a synthetic result event after consuming a shouldQuery: false
+// user message — the SDK's way of saying "appended to transcript, no turn
+// fired." It carries stop_reason: null and zero token usage. The real result
+// for the merged querying message arrives later with a real stop_reason and
+// non-zero usage. num_turns is not a reliable discriminator: observed 3 on
+// the ack vs 1 on the real result.
+function isShouldQueryFalseAck(result: SDKResultMessage): boolean {
+  if (result.is_error) return false;
+  if (result.stop_reason !== null) return false;
+  return !result.usage?.input_tokens && !result.usage?.output_tokens;
 }
 
 function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
