@@ -415,6 +415,8 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
         } : {}),
         ...(message.type === "result" ? {
           stopReason: message.stop_reason,
+          subtype: message.subtype,
+          numTurns: message.num_turns,
           isError: message.is_error,
           inputTokens: message.usage?.input_tokens,
           outputTokens: message.usage?.output_tokens,
