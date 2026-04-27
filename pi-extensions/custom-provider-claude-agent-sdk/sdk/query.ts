@@ -38,14 +38,15 @@ function resolveClaudeExecutable(): string | undefined {
   }
 }
 
-// Inherit the parent process env so the spawned `claude` binary sees whatever
-// auth the user has configured. If ANTHROPIC_API_KEY is set the CLI uses API
-// billing; otherwise it falls back to OAuth credentials from `claude auth
-// login` (Max/Pro subscription). Don't override or resurrect the API key here
-// — let the user manage their own auth.
+// This provider is OAuth/subscription-only by design — if API billing is
+// what you want, pi's built-in anthropic provider is the better path. Strip
+// ANTHROPIC_API_KEY from the env we hand the spawned `claude` binary so the
+// CLI falls back to OAuth credentials from `claude auth login`, regardless
+// of what the parent shell exports.
 function createSdkEnv(): NodeJS.ProcessEnv {
+  const { ANTHROPIC_API_KEY: _stripped, ...inherited } = process.env;
   return {
-    ...process.env,
+    ...inherited,
     CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk",
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
   };
