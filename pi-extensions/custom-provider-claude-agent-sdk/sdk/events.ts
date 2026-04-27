@@ -67,11 +67,15 @@ export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined 
   }
 
   if (message.type === "result") {
-    // The SDK emits a no-op result (stop_reason: null, num_turns: 0, zero
-    // usage) when it accepts a shouldQuery: false message. The real result
-    // arrives later once the merged querying message completes — drop the ack
-    // so the active turn isn't finalized prematurely.
-    if (!message.is_error && message.stop_reason === null && message.num_turns === 0) {
+    // The SDK emits an ack result (stop_reason: null, zero usage) when it
+    // accepts a shouldQuery: false message. The real result with end_turn /
+    // tool_use arrives later once the merged querying message completes —
+    // drop the ack so the active turn isn't finalized prematurely. num_turns
+    // is not a reliable discriminator: observed 3 on the ack and 1 on the
+    // real result.
+    const hasNoUsage =
+      !message.usage?.input_tokens && !message.usage?.output_tokens;
+    if (!message.is_error && message.stop_reason === null && hasNoUsage) {
       return undefined;
     }
     return { type: "result", result: parseClaudeResultMessage(message) };
