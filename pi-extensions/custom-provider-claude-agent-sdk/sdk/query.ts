@@ -248,7 +248,10 @@ async function runSessionQuery(
   let closeAfterTurn = false;
 
   try {
-    const handoff = session.prepareForTurn() ?? buildContextMessagesHandoff(context.messages);
+    const plan = session.prepareForTurn();
+    const handoff = plan.skipHandoff
+      ? undefined
+      : plan.handoff ?? buildContextMessagesHandoff(context.messages);
     turn = session.beginTurn(new PiStreamState(model, stream));
     const activeTurn = turn;
     const mcpServer = buildPiMcpServer(context.tools, (toolName) => {
