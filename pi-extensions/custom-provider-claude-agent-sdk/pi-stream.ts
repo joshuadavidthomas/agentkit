@@ -127,8 +127,17 @@ export class PiStreamState {
   }
 
   fail(message: string, aborted: boolean) {
-    if (this.isFinished) return;
+    if (this.isFinished) {
+      debug("stream:fail", { skipped: "already-finished", aborted });
+      return;
+    }
 
+    debug("stream:fail", {
+      aborted,
+      message,
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      contentBlocks: this.output.content.length,
+    });
     this.start();
     this.isFinished = true;
     this.output.stopReason = aborted ? "aborted" : "error";

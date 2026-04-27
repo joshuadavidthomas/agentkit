@@ -112,10 +112,12 @@ async function runOneShotQuery(
   context: Context,
   options?: SimpleStreamOptions,
 ) {
+  debug("runOneShotQuery:start", { modelId: model.id, messageCount: context.messages.length });
   const abortController = createAbortController(options?.signal);
   let sdkQuery: ReturnType<typeof query> | undefined;
 
   if (abortController.signal.aborted) {
+    debug("runOneShotQuery:already-aborted");
     turn.abort("Claude Agent SDK one-shot request aborted");
     return;
   }
@@ -145,6 +147,7 @@ async function runOneShotQuery(
       state.finish("stop");
     }
   } catch (error) {
+    debug("runOneShotQuery:error", { message: errorMessage(error) });
     turn.streamState()?.fail(errorMessage(error), abortController.signal.aborted || Boolean(options?.signal?.aborted));
   } finally {
     try {
@@ -152,6 +155,7 @@ async function runOneShotQuery(
     } catch {
       // Ignore close failures.
     }
+    debug("runOneShotQuery:end");
     turn.abort("Claude Agent SDK one-shot request ended");
   }
 }
@@ -166,7 +170,10 @@ export function streamClaudeAgentSdk(
 
   const latestRole = context.messages[context.messages.length - 1]?.role;
   const activeTurn = session.currentTurn();
+  const messageCount = context.messages.length;
+
   if (activeTurn && latestRole === "toolResult") {
+    debug("streamClaudeAgentSdk:route", { route: "tool-continuation", messageCount, modelId: model.id });
     activeTurn.attachStreamState(new PiStreamState(model, stream));
     activeTurn.toolBridge.deliverToolResults(extractToolResults(context));
     void finishToolContinuation(session, activeTurn, options?.signal);
@@ -174,30 +181,37 @@ export function streamClaudeAgentSdk(
   }
 
   if (activeTurn) {
+    debug("streamClaudeAgentSdk:route", { route: "replace-active-turn", latestRole, messageCount, modelId: model.id });
     session.closeLiveQuery("Turn replaced");
   }
 
   if (latestRole === "toolResult") {
+    debug("streamClaudeAgentSdk:route", { route: "stale-tool-result", messageCount, modelId: model.id });
     const state = new PiStreamState(model, stream);
     state.start();
     queueMicrotask(() => state.finish("stop"));
     return stream;
   }
 
+  debug("streamClaudeAgentSdk:route", { route: "fresh-turn", latestRole, messageCount, modelId: model.id });
   void runSessionQuery(session, model, stream, context, options);
 
   return stream;
 }
 
 async function finishToolContinuation(session: ClaudeSession, turn: ClaudeTurn, signal?: AbortSignal) {
+  debug("finishToolContinuation:start");
   const abortPending = () => {
+    debug("finishToolContinuation:signal-abort");
     session.closeLiveQuery("Operation aborted");
   };
   signal?.addEventListener("abort", abortPending, { once: true });
 
   try {
     await turn.done();
-    if (turn.streamOutputStopReason() !== "toolUse") {
+    const stopReason = turn.streamOutputStopReason();
+    debug("finishToolContinuation:done", { stopReason });
+    if (stopReason !== "toolUse") {
       session.finishActiveTurn(turn);
       if (shouldCloseLiveQueryAfterTurn()) {
         session.closeLiveQuery("Print-mode turn finished");
@@ -334,7 +348,20 @@ async function ensureLiveQuery(
   options: SimpleStreamOptions | undefined,
   mcpServer: ReturnType<typeof buildPiMcpServer>,
 ) {
-  if (session.liveQuery()) return;
+  if (session.liveQuery()) {
+    debug("ensureLiveQuery", { reused: true, modelId: model.id });
+    return;
+  }
+
+  const resumeSessionId = session.continuityState().sdkSessionId ?? undefined;
+  debug("ensureLiveQuery", {
+    reused: false,
+    modelId: model.id,
+    resume: resumeSessionId ?? null,
+    hasMcpServer: Boolean(mcpServer),
+    debugFile: process.env.PI_CLAUDE_AGENT_SDK_DEBUG ? "/tmp/pi-claude-code-debug.log" : null,
+    executable: resolveClaudeExecutable() ?? "sdk-default",
+  });
 
   const abortController = new AbortController();
   const inputQueue = new SdkInputQueue();
@@ -342,7 +369,7 @@ async function ensureLiveQuery(
     prompt: inputQueue,
     options: {
       ...baseQueryOptions(model, abortController),
-      resume: session.continuityState().sdkSessionId ?? undefined,
+      resume: resumeSessionId,
       allowedTools: [`${MCP_TOOL_PREFIX}*`],
       permissionMode: "bypassPermissions",
       maxTurns: 999,
@@ -369,7 +396,24 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
         firstMessage({ type: message.type });
       }
       const handleStart = performance.now();
-      debug("consumeLiveQuery:message", { type: message.type, ...(message.type === "assistant" ? { stopReason: message.message.stop_reason } : {}) });
+      debug("consumeLiveQuery:message", {
+        type: message.type,
+        ...(message.type === "assistant" ? {
+          stopReason: message.message.stop_reason,
+          inputTokens: message.message.usage?.input_tokens,
+          outputTokens: message.message.usage?.output_tokens,
+          cacheRead: message.message.usage?.cache_read_input_tokens,
+          cacheCreate: message.message.usage?.cache_creation_input_tokens,
+        } : {}),
+        ...(message.type === "result" ? {
+          stopReason: message.stop_reason,
+          isError: message.is_error,
+          inputTokens: message.usage?.input_tokens,
+          outputTokens: message.usage?.output_tokens,
+          cacheRead: message.usage?.cache_read_input_tokens,
+          cacheCreate: message.usage?.cache_creation_input_tokens,
+        } : {}),
+      });
       const sdkSessionId = extractSessionId(message);
       const modelId = session.currentModelId();
       if (sdkSessionId && modelId) {

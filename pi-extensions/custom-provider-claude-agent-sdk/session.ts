@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadContinuity, appendContinuity, type SessionContinuity } from "./continuity.js";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
-import { time } from "./sdk/debug.js";
+import { debug, time } from "./sdk/debug.js";
 import type { SdkQuery } from "./sdk/query.js";
 import { SdkInputQueue, type SdkUserMessage } from "./sdk/queue.js";
 import { ToolBridge } from "./tools/bridge.js";
@@ -47,9 +47,17 @@ export class ClaudeSessionManager {
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
+    const replacing = this.sessions.has(piSessionId);
     this.sessions.get(piSessionId)?.closeLiveQuery("Session hydrated");
 
-    const session = new ClaudeSession(piSessionId, loadContinuity(sessionManager), sessionManager, this.persistSessionEntry);
+    const continuity = loadContinuity(sessionManager);
+    debug("manager:hydrateSession", {
+      piSessionId,
+      replacing,
+      hasSdkSessionId: Boolean(continuity.sdkSessionId),
+      hasSyncedEntryId: Boolean(continuity.syncedThroughEntryId),
+    });
+    const session = new ClaudeSession(piSessionId, continuity, sessionManager, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
     return session;
   }
@@ -59,6 +67,7 @@ export class ClaudeSessionManager {
   }
 
   createSession(piSessionId: string): ClaudeSession {
+    debug("manager:createSession", { piSessionId, replacing: this.sessions.has(piSessionId) });
     const session = new ClaudeSession(piSessionId, undefined, undefined, this.persistSessionEntry);
     this.sessions.set(piSessionId, session);
     return session;
@@ -70,18 +79,28 @@ export class ClaudeSessionManager {
 
   resetSessionForStructuralChange(sessionManager: PiSessionManager) {
     const session = this.currentSession(sessionManager);
+    debug("manager:resetSessionForStructuralChange", {
+      piSessionId: sessionManager.getSessionId(),
+      hasSession: Boolean(session),
+    });
     session?.setHandoffReader(sessionManager);
-    session?.resetContinuity();
+    session?.resetContinuity("Structural change");
   }
 
   markSessionSynced(sessionManager: PiSessionManager, leafId: string) {
     const session = this.currentSession(sessionManager);
+    debug("manager:markSessionSynced", {
+      piSessionId: sessionManager.getSessionId(),
+      leafId,
+      hasSession: Boolean(session),
+    });
     session?.setHandoffReader(sessionManager);
     session?.markSyncedThrough(leafId);
   }
 
   shutdownSession(piSessionId: string) {
     const session = this.sessions.get(piSessionId);
+    debug("manager:shutdownSession", { piSessionId, hasSession: Boolean(session) });
     session?.closeLiveQuery("Session shutdown");
     this.sessions.delete(piSessionId);
 
@@ -134,6 +153,7 @@ export class ClaudeSession {
   }
 
   startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue, abortController: AbortController) {
+    const replacingPriorQuery = Boolean(this.sdkQuery);
     this.inputQueue?.close();
     try {
       this.sdkAbortController?.abort();
@@ -142,19 +162,34 @@ export class ClaudeSession {
       // Ignore close failures.
     }
 
+    debug("session:startLiveQuery", {
+      piSessionId: this.piSessionId,
+      replacingPriorQuery,
+      hasSdkSessionId: Boolean(this.continuity.sdkSessionId),
+    });
+
     this.sdkQuery = sdkQuery;
     this.sdkAbortController = abortController;
     this.inputQueue = inputQueue;
   }
 
   pushUserMessage(message: SdkUserMessage): boolean {
-    return this.inputQueue?.push(message) ?? false;
+    const queueOpen = Boolean(this.inputQueue);
+    const accepted = this.inputQueue?.push(message) ?? false;
+    debug("session:pushUserMessage", { queueOpen, accepted });
+    return accepted;
   }
 
   async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0], fingerprint: string) {
-    if (this.mcpFingerprint === fingerprint) return;
+    if (this.mcpFingerprint === fingerprint) {
+      debug("session:setMcpServers", { skipped: "fingerprint-match", fingerprintBytes: fingerprint.length });
+      return;
+    }
     this.mcpFingerprint = fingerprint;
-    if (!this.sdkQuery) return;
+    if (!this.sdkQuery) {
+      debug("session:setMcpServers", { skipped: "no-live-query", fingerprintBytes: fingerprint.length });
+      return;
+    }
     const end = time("setMcpServers");
     try {
       await this.sdkQuery.setMcpServers(servers);
@@ -164,12 +199,17 @@ export class ClaudeSession {
   }
 
   async setModel(modelId: string) {
-    if (this.requestedClaudeModelId === modelId) return;
+    if (this.requestedClaudeModelId === modelId) {
+      debug("session:setModel", { skipped: "already-set", modelId });
+      return;
+    }
+    debug("session:setModel", { modelId, hasSdkQuery: Boolean(this.sdkQuery) });
     this.requestedClaudeModelId = modelId;
     await this.sdkQuery?.setModel(modelId);
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
+    debug("session:beginTurn", { piSessionId: this.piSessionId, replacingPriorTurn: Boolean(this.activeTurn) });
     this.abortActiveTurn("Turn replaced");
     const turn = new ClaudeTurn(streamState);
     this.activeTurn = turn;
@@ -182,6 +222,13 @@ export class ClaudeSession {
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
     if (this.continuity.sdkSessionId === sdkSessionId && this.continuity.lastClaudeModelId === claudeModelId) return;
+    debug("session:captureSdkSessionId", {
+      piSessionId: this.piSessionId,
+      sdkSessionId,
+      claudeModelId,
+      changed: this.continuity.sdkSessionId !== sdkSessionId,
+      modelChanged: this.continuity.lastClaudeModelId !== claudeModelId,
+    });
 
     this.continuity = {
       ...this.continuity,
@@ -192,7 +239,11 @@ export class ClaudeSession {
   }
 
   markSyncedThrough(entryId: string) {
-    if (this.continuity.syncedThroughEntryId === entryId) return;
+    if (this.continuity.syncedThroughEntryId === entryId) {
+      debug("session:markSyncedThrough", { entryId, skipped: "unchanged" });
+      return;
+    }
+    debug("session:markSyncedThrough", { entryId, prior: this.continuity.syncedThroughEntryId });
 
     this.continuity = {
       ...this.continuity,
@@ -202,6 +253,12 @@ export class ClaudeSession {
   }
 
   resetContinuity(message = "Session closed") {
+    debug("session:resetContinuity", {
+      piSessionId: this.piSessionId,
+      reason: message,
+      hadSdkSessionId: Boolean(this.continuity.sdkSessionId),
+      hadSyncedEntryId: Boolean(this.continuity.syncedThroughEntryId),
+    });
     this.closeLiveQuery(message);
     if (!this.continuity.sdkSessionId && !this.continuity.syncedThroughEntryId && !this.continuity.lastClaudeModelId) return;
 
@@ -214,23 +271,59 @@ export class ClaudeSession {
   }
 
   prepareForTurn(): string | undefined {
-    if (
-      this.continuity.sdkSessionId &&
-      (!this.continuity.syncedThroughEntryId || !this.handoffReader || !hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity))
-    ) {
-      this.resetContinuity();
+    const hadSdkSessionId = Boolean(this.continuity.sdkSessionId);
+    const hadSyncedEntryId = Boolean(this.continuity.syncedThroughEntryId);
+    const hadHandoffReader = Boolean(this.handoffReader);
+    const branchHasSyncedEntry =
+      hadSdkSessionId && hadHandoffReader && hadSyncedEntryId && this.handoffReader
+        ? hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity)
+        : false;
+
+    const wouldResetReasons: string[] = [];
+    if (hadSdkSessionId) {
+      if (!hadSyncedEntryId) wouldResetReasons.push("missing-syncedThroughEntryId");
+      if (!hadHandoffReader) wouldResetReasons.push("missing-handoffReader");
+      if (hadSyncedEntryId && hadHandoffReader && !branchHasSyncedEntry) {
+        wouldResetReasons.push("synced-entry-not-on-branch");
+      }
     }
 
-    return buildPiSessionHandoff(this.handoffReader, this.continuity);
+    debug("session:prepareForTurn", {
+      piSessionId: this.piSessionId,
+      hadSdkSessionId,
+      hadSyncedEntryId,
+      hadHandoffReader,
+      branchHasSyncedEntry,
+      willReset: wouldResetReasons.length > 0,
+      resetReasons: wouldResetReasons,
+      syncedThroughEntryId: this.continuity.syncedThroughEntryId,
+    });
+
+    if (wouldResetReasons.length > 0) {
+      this.resetContinuity(`prepareForTurn: ${wouldResetReasons.join(", ")}`);
+    }
+
+    const handoff = buildPiSessionHandoff(this.handoffReader, this.continuity);
+    debug("session:prepareForTurn:result", {
+      builtHandoff: Boolean(handoff),
+      handoffBytes: handoff?.length ?? 0,
+      hasSdkSessionIdAfter: Boolean(this.continuity.sdkSessionId),
+    });
+    return handoff;
   }
 
   finishActiveTurn(turn: ClaudeTurn) {
-    if (this.activeTurn !== turn) return;
+    if (this.activeTurn !== turn) {
+      debug("session:finishActiveTurn", { skipped: "stale-turn" });
+      return;
+    }
+    debug("session:finishActiveTurn", {});
     turn.finish();
     this.activeTurn = null;
   }
 
   abortActiveTurn(message: string) {
+    debug("session:abortActiveTurn", { reason: message, hadActiveTurn: Boolean(this.activeTurn) });
     this.activeTurn?.abort(message);
     this.activeTurn = null;
   }
@@ -240,6 +333,17 @@ export class ClaudeSession {
   }
 
   closeLiveQuery(message = "Session closed") {
+    const hadLiveQuery = Boolean(this.sdkQuery);
+    const hadActiveTurn = Boolean(this.activeTurn);
+    const hadInputQueue = Boolean(this.inputQueue);
+    debug("session:closeLiveQuery", {
+      piSessionId: this.piSessionId,
+      reason: message,
+      hadLiveQuery,
+      hadActiveTurn,
+      hadInputQueue,
+    });
+
     this.abortActiveTurn(message);
     this.inputQueue?.close();
     this.inputQueue = null;

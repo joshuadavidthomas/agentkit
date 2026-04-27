@@ -1,5 +1,6 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import { SESSION_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
+import { debug } from "./sdk/debug.js";
 
 export interface HandoffSessionReader {
   getBranch(): SessionEntry[];
@@ -125,8 +126,18 @@ function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentProm
   const targetLeafId = currentPromptIndex > 0 ? branch[currentPromptIndex - 1]?.id ?? null : null;
   const visible = buildSessionContext(sessionManager.getEntries(), targetLeafId).messages;
   const sections = visible.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
+  const handoff = joinHandoffSections("Pi session handoff for Claude Agent SDK:", sections);
 
-  return joinHandoffSections("Pi session handoff for Claude Agent SDK:", sections);
+  debug("handoff:freshSeed", {
+    branchLength: branch.length,
+    currentPromptIndex,
+    targetLeafId,
+    visibleMessages: visible.length,
+    sections: sections.length,
+    bytes: handoff?.length ?? 0,
+  });
+
+  return handoff;
 }
 
 function buildDeltaHandoff(
@@ -138,10 +149,17 @@ function buildDeltaHandoff(
   const endIndex = currentPromptIndex >= 0 ? currentPromptIndex : branch.length;
   const syncedIndex = branch.findIndex((entry) => entry.id === syncedThroughEntryId);
   if (syncedIndex < 0 || syncedIndex > endIndex) {
+    debug("handoff:delta:fallback-to-fresh", {
+      syncedThroughEntryId,
+      syncedIndex,
+      endIndex,
+      reason: syncedIndex < 0 ? "synced-entry-not-found" : "synced-entry-after-current-prompt",
+    });
     return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
   }
 
   const sections: string[] = [];
+  let compactionTrims = 0;
   for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
     if (entry.type === "custom" && entry.customType === SESSION_ENTRY_TYPE) continue;
 
@@ -150,32 +168,65 @@ function buildDeltaHandoff(
 
     if (entry.type === "compaction") {
       sections.length = 0;
+      compactionTrims += 1;
     }
 
     sections.push(section);
   }
 
-  return joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
+  const handoff = joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
+  debug("handoff:delta", {
+    branchLength: branch.length,
+    syncedIndex,
+    endIndex,
+    entriesConsidered: endIndex - (syncedIndex + 1),
+    sections: sections.length,
+    compactionTrims,
+    bytes: handoff?.length ?? 0,
+  });
+
+  return handoff;
 }
 
 export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionContinuity): boolean {
   if (!continuity.syncedThroughEntryId) return false;
-  return sessionManager.getBranch().some((entry) => entry.id === continuity.syncedThroughEntryId);
+  const branch = sessionManager.getBranch();
+  const found = branch.some((entry) => entry.id === continuity.syncedThroughEntryId);
+  debug("handoff:hasSyncedEntryOnCurrentBranch", {
+    syncedThroughEntryId: continuity.syncedThroughEntryId,
+    branchLength: branch.length,
+    found,
+  });
+  return found;
 }
 
 export function buildPiSessionHandoff(
   sessionManager: HandoffSessionReader | undefined,
   continuity: SessionContinuity,
 ): string | undefined {
-  if (!sessionManager) return undefined;
+  if (!sessionManager) {
+    debug("handoff:buildPiSessionHandoff", { skipped: "no-session-manager" });
+    return undefined;
+  }
 
   const branch = sessionManager.getBranch();
   const currentPromptIndex = findCurrentPromptIndex(branch);
 
   if (!continuity.sdkSessionId || !continuity.syncedThroughEntryId) {
+    debug("handoff:buildPiSessionHandoff", {
+      path: "fresh-seed",
+      reason: !continuity.sdkSessionId ? "no-sdk-session-id" : "no-synced-entry-id",
+      branchLength: branch.length,
+      currentPromptIndex,
+    });
     return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
   }
 
+  debug("handoff:buildPiSessionHandoff", {
+    path: "delta",
+    branchLength: branch.length,
+    currentPromptIndex,
+  });
   return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, continuity.syncedThroughEntryId);
 }
 
@@ -191,6 +242,14 @@ export function buildContextMessagesHandoff(messages: unknown[]): string | undef
 
   const priorMessages = currentPromptIndex >= 0 ? messages.slice(0, currentPromptIndex) : messages;
   const sections = priorMessages.map((message) => formatAgentMessageForHandoff(message)).filter(Boolean) as string[];
+  const handoff = joinHandoffSections("Pi context handoff for Claude Agent SDK:", sections);
 
-  return joinHandoffSections("Pi context handoff for Claude Agent SDK:", sections);
+  debug("handoff:contextFallback", {
+    totalMessages: messages.length,
+    priorMessages: priorMessages.length,
+    sections: sections.length,
+    bytes: handoff?.length ?? 0,
+  });
+
+  return handoff;
 }
