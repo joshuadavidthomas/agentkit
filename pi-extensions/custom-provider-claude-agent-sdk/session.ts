@@ -103,6 +103,7 @@ export class ClaudeSession {
   private sdkQuery: SdkQuery | null = null;
   private sdkAbortController: AbortController | null = null;
   private inputQueue: SdkInputQueue | null = null;
+  private mcpFingerprint: string | null = null;
 
   constructor(
     piSessionId: string,
@@ -149,7 +150,9 @@ export class ClaudeSession {
     return this.inputQueue?.push(message) ?? false;
   }
 
-  async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0]) {
+  async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0], fingerprint: string) {
+    if (this.mcpFingerprint === fingerprint) return;
+    this.mcpFingerprint = fingerprint;
     return this.sdkQuery?.setMcpServers(servers);
   }
 
@@ -234,6 +237,7 @@ export class ClaudeSession {
     this.inputQueue?.close();
     this.inputQueue = null;
     this.requestedClaudeModelId = null;
+    this.mcpFingerprint = null;
 
     const sdkQuery = this.sdkQuery;
     const abortController = this.sdkAbortController;

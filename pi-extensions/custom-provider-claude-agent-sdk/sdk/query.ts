@@ -7,6 +7,7 @@ import {
   type Context,
   type Model,
   type SimpleStreamOptions,
+  type Tool as PiTool,
 } from "@mariozechner/pi-ai";
 import { buildContextMessagesHandoff } from "../handoff.js";
 import { PiStreamState, applyTurnUpdate } from "../pi-stream.js";
@@ -52,6 +53,13 @@ function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+function fingerprintTools(tools: PiTool[] | undefined): string {
+  if (!tools || tools.length === 0) return "[]";
+  return JSON.stringify(
+    tools.map((tool) => [tool.name, tool.description ?? "", tool.parameters ?? null]),
+  );
+}
 
 function shouldCloseLiveQueryAfterTurn(): boolean {
   return process.argv.includes("-p") || process.argv.includes("--print");
@@ -241,7 +249,10 @@ async function runSessionQuery(
 
     await ensureLiveQuery(session, model, context, options, mcpServer);
     await session.setModel(model.id);
-    await session.setMcpServers(mcpServer ? { [MCP_SERVER_NAME]: mcpServer } : {});
+    await session.setMcpServers(
+      mcpServer ? { [MCP_SERVER_NAME]: mcpServer } : {},
+      fingerprintTools(context.tools),
+    );
 
     const abortPending = () => {
       debug("runSessionQuery:signal-abort");
