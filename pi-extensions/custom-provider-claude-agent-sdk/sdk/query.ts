@@ -263,7 +263,13 @@ async function runSessionQuery(
     let noOutputTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const inputMessages = [toSdkUserMessage(promptForTurn(context, handoff))];
-      debug("runSessionQuery:push-input", { count: inputMessages.length, replay: false, handoff: Boolean(handoff) });
+      debug("runSessionQuery:push-input", {
+        count: inputMessages.length,
+        replay: false,
+        handoff: Boolean(handoff),
+        handoffBytes: handoff?.length ?? 0,
+        handoffPreview: handoff?.slice(0, 400) ?? null,
+      });
 
       for (const message of inputMessages) {
         if (!session.pushUserMessage(message)) {
