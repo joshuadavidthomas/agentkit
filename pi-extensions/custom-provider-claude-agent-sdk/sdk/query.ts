@@ -18,7 +18,7 @@ import { createMcpTextResult, extractToolResults } from "../tools/results.js";
 import { extractSessionId, parseClaudeMessage } from "./events.js";
 import { extractLatestUserPrompt, toSdkPrompt } from "./prompt.js";
 import { SdkInputQueue } from "./queue.js";
-import { debug } from "./debug.js";
+import { debug, flushTally, tally, time } from "./debug.js";
 
 export type SdkQuery = ReturnType<typeof query>;
 
@@ -354,8 +354,15 @@ async function ensureLiveQuery(
 }
 
 async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>) {
+  const firstMessage = time("firstSdkMessage");
+  let firstObserved = false;
   try {
     for await (const message of sdkQuery) {
+      if (!firstObserved) {
+        firstObserved = true;
+        firstMessage({ type: message.type });
+      }
+      const handleStart = performance.now();
       debug("consumeLiveQuery:message", { type: message.type, ...(message.type === "assistant" ? { stopReason: message.message.stop_reason } : {}) });
       const sdkSessionId = extractSessionId(message);
       const modelId = session.currentModelId();
@@ -365,12 +372,16 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
 
       const activeTurn = session.currentTurn();
       const currentState = activeTurn?.streamState();
-      if (!activeTurn || !currentState) continue;
+      if (!activeTurn || !currentState) {
+        tally("sdkMessageHandling", performance.now() - handleStart);
+        continue;
+      }
 
       const update = parseClaudeMessage(message);
       if (update && applyTurnUpdate(update, currentState, activeTurn.toolBridge)) {
         activeTurn.detachStreamState(currentState);
       }
+      tally("sdkMessageHandling", performance.now() - handleStart);
     }
   } catch (error) {
     debug("consumeLiveQuery:error", { message: errorMessage(error) });
@@ -386,6 +397,7 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
       activeTurn?.detachStreamState(currentState);
       if (activeTurn) session.finishActiveTurn(activeTurn);
     }
+    flushTally("sdkMessageHandling", { live: session.liveQuery() === sdkQuery });
     debug("consumeLiveQuery:end", { isLive: session.liveQuery() === sdkQuery });
     if (session.liveQuery() === sdkQuery) {
       session.closeLiveQuery("Claude SDK query ended");

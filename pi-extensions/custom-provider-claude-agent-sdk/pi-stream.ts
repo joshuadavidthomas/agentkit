@@ -7,6 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
+import { debug, flushTally, tally } from "./sdk/debug.js";
 import type {
   AssistantBackfill,
   FinishedStopReason,
@@ -57,6 +58,8 @@ export class PiStreamState {
   private streamEventsReceived = false;
   private toolCallStarted = false;
   private pendingFinishedStopReason: FinishedStopReason = "stop";
+  private readonly turnStartedAt = performance.now();
+  private firstDeltaLogged = false;
 
   constructor(readonly model: Model<Api>, readonly stream: AssistantMessageEventStream) {
     this.output = {
@@ -116,6 +119,11 @@ export class PiStreamState {
     this.output.stopReason = reason;
     this.stream.push({ type: "done", reason, message: this.output });
     this.stream.end();
+    flushTally("parseToolArguments", { stopReason: reason });
+    debug("time:turnTotal", {
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      stopReason: reason,
+    });
   }
 
   fail(message: string, aborted: boolean) {
@@ -211,6 +219,7 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "text") return;
 
+    this.markFirstDelta("text");
     block.text += delta;
     this.stream.push({ type: "text_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
@@ -230,6 +239,7 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "thinking") return;
 
+    this.markFirstDelta("thinking");
     block.thinking += delta;
     this.stream.push({ type: "thinking_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
@@ -260,6 +270,7 @@ export class PiStreamState {
     const block = this.output.content[active.contentIndex];
     if (block?.type !== "toolCall") return;
 
+    this.markFirstDelta("toolCall");
     active.partialJson += delta;
     const now = Date.now();
     if (now - active.lastParseAt >= TOOL_INPUT_PARSE_THROTTLE_MS) {
@@ -267,6 +278,15 @@ export class PiStreamState {
       active.lastParseAt = now;
     }
     this.stream.push({ type: "toolcall_delta", contentIndex: active.contentIndex, delta, partial: this.output });
+  }
+
+  private markFirstDelta(kind: string) {
+    if (this.firstDeltaLogged) return;
+    this.firstDeltaLogged = true;
+    debug("time:firstDelta", {
+      ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
+      kind,
+    });
   }
 
   finishContentBlock(sourceBlockIndex: number) {
@@ -449,9 +469,12 @@ function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamStat
 
 function parseToolArguments(partialJson: string, fallback: Record<string, unknown>): Record<string, unknown> {
   if (!partialJson) return fallback;
+  const start = performance.now();
   try {
     return JSON.parse(partialJson) as Record<string, unknown>;
   } catch {
     return fallback;
+  } finally {
+    tally("parseToolArguments", performance.now() - start);
   }
 }

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadContinuity, appendContinuity, type SessionContinuity } from "./continuity.js";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
+import { time } from "./sdk/debug.js";
 import type { SdkQuery } from "./sdk/query.js";
 import { SdkInputQueue, type SdkUserMessage } from "./sdk/queue.js";
 import { ToolBridge } from "./tools/bridge.js";
@@ -153,7 +154,13 @@ export class ClaudeSession {
   async setMcpServers(servers: Parameters<SdkQuery["setMcpServers"]>[0], fingerprint: string) {
     if (this.mcpFingerprint === fingerprint) return;
     this.mcpFingerprint = fingerprint;
-    return this.sdkQuery?.setMcpServers(servers);
+    if (!this.sdkQuery) return;
+    const end = time("setMcpServers");
+    try {
+      await this.sdkQuery.setMcpServers(servers);
+    } finally {
+      end({ fingerprintBytes: fingerprint.length });
+    }
   }
 
   async setModel(modelId: string) {
