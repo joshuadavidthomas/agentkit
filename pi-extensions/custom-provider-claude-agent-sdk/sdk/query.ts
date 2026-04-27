@@ -391,7 +391,7 @@ async function ensureLiveQuery(
   });
 
   void consumeLiveQuery(session, sdkQuery);
-  session.startLiveQuery(sdkQuery, inputQueue, abortController);
+  session.startLiveQuery({ query: sdkQuery, inputQueue, abort: abortController });
 }
 
 async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typeof query>) {

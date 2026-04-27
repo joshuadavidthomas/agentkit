@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { loadContinuity, appendContinuity, type SessionContinuity } from "./continuity.js";
+import { loadContinuity, SESSION_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
 import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { debug, time } from "./sdk/debug.js";
@@ -27,33 +27,44 @@ export type TurnHandoffPlan =
   | { skipHandoff: true }
   | { skipHandoff: false; handoff: string | undefined };
 
+export interface LiveSdkConnection {
+  query: SdkQuery;
+  inputQueue: SdkInputQueue;
+  abort: AbortController;
+}
+
 type ContinuityState =
   | { kind: "live" }
   | { kind: "resumable" }
   | { kind: "stale"; reason: string }
   | { kind: "cold" };
 
-export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager {
-  const state = globalThis as ClaudeSessionManagerGlobal;
-  const existing = state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY];
-  if (existing) {
-    existing.setPersistSessionEntry((data) => appendContinuity(pi, data));
-    return existing;
-  }
-
-  const manager = new ClaudeSessionManager((data) => appendContinuity(pi, data));
-  state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY] = manager;
-  return manager;
-}
-
 export class ClaudeSessionManager {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  constructor(private persistSessionEntry: PersistSessionEntry) { }
+  static claim(pi: ExtensionAPI): ClaudeSessionManager {
+    const persist: PersistSessionEntry = (data) => {
+      debug("continuity:append", {
+        sdkSessionId: data.sdkSessionId,
+        syncedThroughEntryId: data.syncedThroughEntryId,
+        lastClaudeModelId: data.lastClaudeModelId,
+      });
+      pi.appendEntry<SessionContinuity>(SESSION_ENTRY_TYPE, data);
+    };
 
-  setPersistSessionEntry(persistSessionEntry: PersistSessionEntry) {
-    this.persistSessionEntry = persistSessionEntry;
+    const state = globalThis as ClaudeSessionManagerGlobal;
+    const existing = state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY];
+    if (existing) {
+      existing.persistSessionEntry = persist;
+      return existing;
+    }
+
+    const manager = new ClaudeSessionManager(persist);
+    state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY] = manager;
+    return manager;
   }
+
+  private constructor(private persistSessionEntry: PersistSessionEntry) { }
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
@@ -130,9 +141,7 @@ export class ClaudeSession {
   private handoffReader: HandoffSessionReader | undefined;
   private activeTurn: ClaudeTurn | null = null;
   private requestedClaudeModelId: string | null = null;
-  private sdkQuery: SdkQuery | null = null;
-  private sdkAbortController: AbortController | null = null;
-  private inputQueue: SdkInputQueue | null = null;
+  private liveConnection: LiveSdkConnection | null = null;
   private mcpFingerprint: string | null = null;
 
   constructor(
@@ -159,33 +168,22 @@ export class ClaudeSession {
   }
 
   liveQuery(): SdkQuery | undefined {
-    return this.sdkQuery ?? undefined;
+    return this.liveConnection?.query;
   }
 
-  startLiveQuery(sdkQuery: SdkQuery, inputQueue: SdkInputQueue, abortController: AbortController) {
-    const replacingPriorQuery = Boolean(this.sdkQuery);
-    this.inputQueue?.close();
-    try {
-      this.sdkAbortController?.abort();
-      this.sdkQuery?.close();
-    } catch {
-      // Ignore close failures.
-    }
-
+  startLiveQuery(connection: LiveSdkConnection) {
     debug("session:startLiveQuery", {
       piSessionId: this.piSessionId,
-      replacingPriorQuery,
+      replacingPriorQuery: Boolean(this.liveConnection),
       hasSdkSessionId: Boolean(this.continuity.sdkSessionId),
     });
-
-    this.sdkQuery = sdkQuery;
-    this.sdkAbortController = abortController;
-    this.inputQueue = inputQueue;
+    this.tearDownLiveConnection();
+    this.liveConnection = connection;
   }
 
   pushUserMessage(message: SdkUserMessage): boolean {
-    const queueOpen = Boolean(this.inputQueue);
-    const accepted = this.inputQueue?.push(message) ?? false;
+    const queueOpen = Boolean(this.liveConnection);
+    const accepted = this.liveConnection?.inputQueue.push(message) ?? false;
     debug("session:pushUserMessage", { queueOpen, accepted });
     return accepted;
   }
@@ -196,13 +194,13 @@ export class ClaudeSession {
       return;
     }
     this.mcpFingerprint = fingerprint;
-    if (!this.sdkQuery) {
+    if (!this.liveConnection) {
       debug("session:setMcpServers", { skipped: "no-live-query", fingerprintBytes: fingerprint.length });
       return;
     }
     const end = time("setMcpServers");
     try {
-      await this.sdkQuery.setMcpServers(servers);
+      await this.liveConnection.query.setMcpServers(servers);
     } finally {
       end({ fingerprintBytes: fingerprint.length });
     }
@@ -213,9 +211,9 @@ export class ClaudeSession {
       debug("session:setModel", { skipped: "already-set", modelId });
       return;
     }
-    debug("session:setModel", { modelId, hasSdkQuery: Boolean(this.sdkQuery) });
+    debug("session:setModel", { modelId, hasSdkQuery: Boolean(this.liveConnection) });
     this.requestedClaudeModelId = modelId;
-    await this.sdkQuery?.setModel(modelId);
+    await this.liveConnection?.query.setModel(modelId);
   }
 
   beginTurn(streamState: PiStreamState): ClaudeTurn {
@@ -285,7 +283,7 @@ export class ClaudeSession {
   }
 
   private classifyContinuity(): ContinuityState {
-    if (this.sdkQuery && this.continuity.sdkSessionId) return { kind: "live" };
+    if (this.liveConnection && this.continuity.sdkSessionId) return { kind: "live" };
     if (!this.continuity.sdkSessionId) return { kind: "cold" };
     if (!this.continuity.syncedThroughEntryId) return { kind: "stale", reason: "missing-syncedThroughEntryId" };
     if (!this.handoffReader) return { kind: "stale", reason: "missing-handoffReader" };
@@ -341,30 +339,31 @@ export class ClaudeSession {
   }
 
   closeLiveQuery(message = "Session closed") {
-    const hadLiveQuery = Boolean(this.sdkQuery);
-    const hadActiveTurn = Boolean(this.activeTurn);
-    const hadInputQueue = Boolean(this.inputQueue);
     debug("session:closeLiveQuery", {
       piSessionId: this.piSessionId,
       reason: message,
-      hadLiveQuery,
-      hadActiveTurn,
-      hadInputQueue,
+      hadLive: Boolean(this.liveConnection),
+      hadActiveTurn: Boolean(this.activeTurn),
     });
 
     this.abortActiveTurn(message);
-    this.inputQueue?.close();
-    this.inputQueue = null;
     this.requestedClaudeModelId = null;
     this.mcpFingerprint = null;
+    this.tearDownLiveConnection();
+  }
 
-    const sdkQuery = this.sdkQuery;
-    const abortController = this.sdkAbortController;
-    this.sdkQuery = null;
-    this.sdkAbortController = null;
+  // Null `this.liveConnection` *before* aborting/closing so re-entrant callbacks (the SDK
+  // query's close can fire handlers that hop back into the session) observe the
+  // connection as already gone. inputQueue.close is sync and safe — running it
+  // first stops accepting input before we tear down the consumer.
+  private tearDownLiveConnection() {
+    const connection = this.liveConnection;
+    if (!connection) return;
+    this.liveConnection = null;
+    connection.inputQueue.close();
     try {
-      abortController?.abort();
-      sdkQuery?.close();
+      connection.abort.abort();
+      connection.query.close();
     } catch {
       // Ignore close failures.
     }
@@ -380,13 +379,10 @@ export class ClaudeTurn {
 
   private currentStreamState: PiStreamState | null = null;
   private lastStopReason: string | undefined;
-  private completion: Promise<void>;
+  private completion!: Promise<void>;
   private complete!: () => void;
 
   constructor(streamState: PiStreamState) {
-    this.completion = new Promise((resolve) => {
-      this.complete = resolve;
-    });
     this.attachStreamState(streamState);
   }
 
