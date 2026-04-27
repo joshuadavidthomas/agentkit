@@ -38,18 +38,14 @@ function resolveClaudeExecutable(): string | undefined {
   }
 }
 
-// This provider is OAuth/subscription-only by design — if API billing is
-// what you want, pi's built-in anthropic provider is the better path. Strip
-// ANTHROPIC_API_KEY from the env we hand the spawned `claude` binary so the
-// CLI falls back to OAuth credentials from `claude auth login`, regardless
-// of what the parent shell exports.
+// Strip ANTHROPIC_API_KEY so the spawned `claude` binary falls back to OAuth
+// credentials from `claude auth login`, matching what direct interactive
+// `claude` use does. We also avoid setting CLAUDE_AGENT_SDK_CLIENT_APP — that
+// env var appears to be a server-side discriminator that flips billing from
+// Max subscription to API/extra-usage even when OAuth is the auth method.
 function createSdkEnv(): NodeJS.ProcessEnv {
   const { ANTHROPIC_API_KEY: _stripped, ...inherited } = process.env;
-  return {
-    ...inherited,
-    CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk",
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-  };
+  return inherited;
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -376,11 +372,7 @@ async function ensureLiveQuery(
       allowedTools: [`${MCP_TOOL_PREFIX}*`],
       permissionMode: "bypassPermissions",
       maxTurns: 999,
-      systemPrompt: {
-        type: "preset",
-        preset: "claude_code",
-        append: context.systemPrompt,
-      },
+      systemPrompt: { type: "preset", preset: "claude_code" },
       ...(mcpServer ? { mcpServers: { [MCP_SERVER_NAME]: mcpServer } } : { mcpServers: {} }),
     },
   });
