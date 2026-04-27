@@ -321,7 +321,6 @@ async function ensureLiveQuery(
 
   const abortController = new AbortController();
   const inputQueue = new SdkInputQueue();
-  inputQueue.startKeepAlive();
   const sdkQuery = query({
     prompt: inputQueue,
     options: {
