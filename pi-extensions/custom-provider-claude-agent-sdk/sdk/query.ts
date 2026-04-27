@@ -275,7 +275,14 @@ async function runSessionQuery(
 
     let noOutputTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const inputMessages = [toSdkUserMessage(promptForTurn(context, handoff))];
+      const inputMessages: SDKUserMessage[] = [];
+      if (handoff) {
+        // shouldQuery: false appends the handoff to the SDK transcript without
+        // triggering a turn; the SDK merges it into the next querying message
+        // when inference fires.
+        inputMessages.push(toSdkUserMessage(handoff, { shouldQuery: false }));
+      }
+      inputMessages.push(toSdkUserMessage(extractLatestUserPrompt(context)));
       debug("runSessionQuery:push-input", {
         count: inputMessages.length,
         replay: false,
@@ -322,21 +329,15 @@ async function runSessionQuery(
   }
 }
 
-function promptForTurn(context: Context, handoff: string | undefined) {
-  let prompt = extractLatestUserPrompt(context);
-  if (handoff) {
-    const prefix = `${handoff}\n\nCurrent user message:\n`;
-    prompt = typeof prompt === "string" ? `${prefix}${prompt}` : [{ type: "text" as const, text: prefix }, ...prompt];
-  }
-  return prompt;
-}
-
-function toSdkUserMessage(prompt: ReturnType<typeof extractLatestUserPrompt>): SDKUserMessage {
+function toSdkUserMessage(
+  prompt: ReturnType<typeof extractLatestUserPrompt> | string,
+  opts: { shouldQuery?: boolean } = {},
+): SDKUserMessage {
   return {
     type: "user",
     message: { role: "user", content: prompt },
     parent_tool_use_id: null,
-    shouldQuery: true,
+    shouldQuery: opts.shouldQuery ?? true,
   };
 }
 

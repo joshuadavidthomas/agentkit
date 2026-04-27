@@ -83,7 +83,7 @@ function joinHandoffSections(title: string, sections: string[]): string | undefi
   const cleaned = sections.map((section) => section.trim()).filter(Boolean);
   if (cleaned.length === 0) return undefined;
 
-  return `${title}\n\nUse this as authoritative prior conversation history for continuity. Do not answer this handoff by itself; answer only the current user message that follows.\n\n${cleaned.join("\n\n")}`;
+  return `${title}\n\nUse this as authoritative prior conversation history for continuity. The user's next message follows in a separate turn.\n\n${cleaned.join("\n\n")}`;
 }
 
 function findCurrentPromptIndex(branch: SessionEntry[]): number {
