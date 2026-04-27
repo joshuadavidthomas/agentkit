@@ -174,7 +174,7 @@ export function streamClaudeAgentSdk(
   }
 
   if (activeTurn) {
-    session.resetContinuity("Turn replaced");
+    session.closeLiveQuery("Turn replaced");
   }
 
   if (latestRole === "toolResult") {
@@ -191,7 +191,7 @@ export function streamClaudeAgentSdk(
 
 async function finishToolContinuation(session: ClaudeSession, turn: ClaudeTurn, signal?: AbortSignal) {
   const abortPending = () => {
-    session.resetContinuity("Operation aborted");
+    session.closeLiveQuery("Operation aborted");
   };
   signal?.addEventListener("abort", abortPending, { once: true });
 
@@ -241,7 +241,7 @@ async function runSessionQuery(
       const currentTurn = session.currentTurn();
       if (!currentTurn) {
         const message = `Pi turn ended before Claude Agent SDK tool ${toolName} could be routed.`;
-        session.resetContinuity(message);
+        session.closeLiveQuery(message);
         return Promise.resolve(createMcpTextResult(message, true));
       }
       return currentTurn.toolBridge.handleMcpToolCall(toolName);
@@ -256,7 +256,7 @@ async function runSessionQuery(
 
     const abortPending = () => {
       debug("runSessionQuery:signal-abort");
-      session.resetContinuity("Operation aborted");
+      session.closeLiveQuery("Operation aborted");
     };
     options?.signal?.addEventListener("abort", abortPending, { once: true });
 
