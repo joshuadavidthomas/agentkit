@@ -27,6 +27,12 @@ export type TurnHandoffPlan =
   | { skipHandoff: true }
   | { skipHandoff: false; handoff: string | undefined };
 
+type ContinuityState =
+  | { kind: "live" }
+  | { kind: "resumable" }
+  | { kind: "stale"; reason: string }
+  | { kind: "cold" };
+
 export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager {
   const state = globalThis as ClaudeSessionManagerGlobal;
   const existing = state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY];
@@ -278,68 +284,40 @@ export class ClaudeSession {
     this.persist();
   }
 
+  private classifyContinuity(): ContinuityState {
+    if (this.sdkQuery && this.continuity.sdkSessionId) return { kind: "live" };
+    if (!this.continuity.sdkSessionId) return { kind: "cold" };
+    if (!this.continuity.syncedThroughEntryId) return { kind: "stale", reason: "missing-syncedThroughEntryId" };
+    if (!this.handoffReader) return { kind: "stale", reason: "missing-handoffReader" };
+    if (!hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity)) {
+      return { kind: "stale", reason: "synced-entry-not-on-branch" };
+    }
+    return { kind: "resumable" };
+  }
+
   prepareForTurn(): TurnHandoffPlan {
-    const hasLiveQuery = Boolean(this.sdkQuery);
-    const hadSdkSessionId = Boolean(this.continuity.sdkSessionId);
-    const hadSyncedEntryId = Boolean(this.continuity.syncedThroughEntryId);
-    const hadHandoffReader = Boolean(this.handoffReader);
+    const state = this.classifyContinuity();
 
-    // Live subprocess with continuity: trust its working memory. Send only the
-    // user's prompt, no replay of prior history.
-    if (hasLiveQuery && hadSdkSessionId) {
-      debug("session:prepareForTurn", {
-        piSessionId: this.piSessionId,
-        path: "skip:live-query",
-        hadSyncedEntryId,
-      });
-      return { skipHandoff: true };
+    switch (state.kind) {
+      case "live":
+      case "resumable":
+        debug("session:prepareForTurn", { piSessionId: this.piSessionId, state: state.kind });
+        return { skipHandoff: true };
+      case "stale":
+        this.resetContinuity(`prepareForTurn: ${state.reason}`);
+      // falls through to cold
+      case "cold": {
+        const handoff = buildPiSessionHandoff(this.handoffReader);
+        debug("session:prepareForTurn", {
+          piSessionId: this.piSessionId,
+          state: state.kind,
+          ...(state.kind === "stale" ? { reason: state.reason } : {}),
+          builtHandoff: Boolean(handoff),
+          handoffBytes: handoff?.length ?? 0,
+        });
+        return { skipHandoff: false, handoff };
+      }
     }
-
-    // No live subprocess. Decide whether the next-spawned subprocess can resume
-    // by sdkSessionId or must be cold-started with a fresh-seed handoff.
-    const branchHasSyncedEntry =
-      hadSdkSessionId && hadHandoffReader && hadSyncedEntryId && this.handoffReader
-        ? hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity)
-        : false;
-
-    const resetReasons: string[] = [];
-    if (hadSdkSessionId) {
-      if (!hadSyncedEntryId) resetReasons.push("missing-syncedThroughEntryId");
-      else if (!hadHandoffReader) resetReasons.push("missing-handoffReader");
-      else if (!branchHasSyncedEntry) resetReasons.push("synced-entry-not-on-branch");
-    }
-
-    if (resetReasons.length > 0) {
-      this.resetContinuity(`prepareForTurn: ${resetReasons.join(", ")}`);
-    }
-
-    // After potential reset: if sdkSessionId still set, ensureLiveQuery will
-    // pass `resume` and the SDK will load its own transcript from disk.
-    if (this.continuity.sdkSessionId) {
-      debug("session:prepareForTurn", {
-        piSessionId: this.piSessionId,
-        path: "skip:resume-spawn",
-        hadSyncedEntryId,
-        branchHasSyncedEntry,
-      });
-      return { skipHandoff: true };
-    }
-
-    // True cold start (no sdkSessionId, or just reset): build fresh-seed.
-    const handoff = buildPiSessionHandoff(this.handoffReader);
-    debug("session:prepareForTurn", {
-      piSessionId: this.piSessionId,
-      path: "fresh-seed",
-      hadSdkSessionId,
-      hadSyncedEntryId,
-      hadHandoffReader,
-      branchHasSyncedEntry,
-      didReset: resetReasons.length > 0,
-      resetReasons,
-      builtHandoff: Boolean(handoff),
-      handoffBytes: handoff?.length ?? 0,
-    });
-    return { skipHandoff: false, handoff };
   }
 
   finishActiveTurn(turn: ClaudeTurn) {
