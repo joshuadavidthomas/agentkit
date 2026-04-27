@@ -39,7 +39,14 @@ interface StreamToolCallStart {
 type ActiveBlock =
   | { type: "text"; contentIndex: number }
   | { type: "thinking"; contentIndex: number }
-  | { type: "toolCall"; contentIndex: number; partialJson: string };
+  | { type: "toolCall"; contentIndex: number; partialJson: string; lastParseAt: number };
+
+// Throttle JSON.parse on streaming tool input. Anthropic emits input_json_delta
+// chunks at high frequency; reparsing the entire accumulated buffer on every
+// delta is O(n²) in tool input size and dominates CPU on large Edit/Write
+// payloads. Live consumers see the raw delta immediately; the structured
+// arguments lag by at most this interval, then settle to exact on block_stop.
+const TOOL_INPUT_PARSE_THROTTLE_MS = 50;
 
 export class PiStreamState {
   readonly output: AssistantMessage;
@@ -242,7 +249,7 @@ export class PiStreamState {
     this.toolCallStarted = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
-    this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "" });
+    this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "", lastParseAt: 0 });
     this.stream.push({ type: "toolcall_start", contentIndex, partial: this.output });
   }
 
@@ -254,7 +261,11 @@ export class PiStreamState {
     if (block?.type !== "toolCall") return;
 
     active.partialJson += delta;
-    block.arguments = parseToolArguments(active.partialJson, block.arguments);
+    const now = Date.now();
+    if (now - active.lastParseAt >= TOOL_INPUT_PARSE_THROTTLE_MS) {
+      block.arguments = parseToolArguments(active.partialJson, block.arguments);
+      active.lastParseAt = now;
+    }
     this.stream.push({ type: "toolcall_delta", contentIndex: active.contentIndex, delta, partial: this.output });
   }
 
