@@ -1,11 +1,6 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { SessionContinuity } from "./continuity.js";
+import type { SessionContinuity, SessionManager } from "./session.js";
 import { debug } from "./sdk/debug.js";
-
-export interface HandoffSessionReader {
-  getBranch(): SessionEntry[];
-  getEntries(): SessionEntry[];
-}
 
 function extractContentText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -96,7 +91,7 @@ function findCurrentPromptIndex(branch: SessionEntry[]): number {
   return -1;
 }
 
-function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentPromptIndex: number): string | undefined {
+function buildFreshSeedHandoff(sessionManager: SessionManager, currentPromptIndex: number): string | undefined {
   const branch = sessionManager.getBranch();
   const targetLeafId = currentPromptIndex > 0 ? branch[currentPromptIndex - 1]?.id ?? null : null;
   const visible = buildSessionContext(sessionManager.getEntries(), targetLeafId).messages;
@@ -115,7 +110,7 @@ function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentProm
   return handoff;
 }
 
-export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionContinuity): boolean {
+export function hasSyncedEntryOnCurrentBranch(sessionManager: SessionManager, continuity: SessionContinuity): boolean {
   if (!continuity.syncedThroughEntryId) return false;
   const branch = sessionManager.getBranch();
   const found = branch.some((entry) => entry.id === continuity.syncedThroughEntryId);
@@ -128,7 +123,7 @@ export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionRead
 }
 
 export function buildPiSessionHandoff(
-  sessionManager: HandoffSessionReader | undefined,
+  sessionManager: SessionManager | undefined,
 ): string | undefined {
   if (!sessionManager) {
     debug("handoff:buildPiSessionHandoff", { skipped: "no-session-manager" });

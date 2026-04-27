@@ -1,13 +1,62 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { loadContinuity, SESSION_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
-import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch, type HandoffSessionReader } from "./handoff.js";
+import type { ExtensionAPI, SessionManager as PiSessionManager } from "@mariozechner/pi-coding-agent";
+import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { debug, time } from "./sdk/debug.js";
 import type { SdkQuery } from "./sdk/query.js";
 import { SdkInputQueue, type SdkUserMessage } from "./sdk/queue.js";
 import { ToolBridge } from "./tools/bridge.js";
 
+const SESSION_ENTRY_TYPE = "claude-agent-sdk-session";
+
+export type SessionManager = Pick<PiSessionManager, "getBranch" | "getEntries" | "getSessionId" | "getLeafId">;
+
+export interface SessionContinuity {
+  sdkSessionId: string | null;
+  syncedThroughEntryId: string | null;
+  lastClaudeModelId: string | null;
+}
+
 type PersistSessionEntry = (data: SessionContinuity) => void;
+
+function loadContinuity(sessionManager: SessionManager): SessionContinuity {
+  let data: SessionContinuity = {
+    sdkSessionId: null,
+    syncedThroughEntryId: null,
+    lastClaudeModelId: null,
+  };
+
+  const branch = sessionManager.getBranch();
+  let entriesScanned = 0;
+  let matchesFound = 0;
+  for (const entry of branch) {
+    entriesScanned += 1;
+    if (entry.type !== "custom" || entry.customType !== SESSION_ENTRY_TYPE) continue;
+    matchesFound += 1;
+
+    const value = entry.data;
+    if (!value || typeof value !== "object") {
+      data = { sdkSessionId: null, syncedThroughEntryId: null, lastClaudeModelId: null };
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    data = {
+      sdkSessionId: typeof record.sdkSessionId === "string" ? record.sdkSessionId : null,
+      syncedThroughEntryId: typeof record.syncedThroughEntryId === "string" ? record.syncedThroughEntryId : null,
+      lastClaudeModelId: typeof record.lastClaudeModelId === "string" ? record.lastClaudeModelId : null,
+    };
+  }
+
+  debug("continuity:load", {
+    branchLength: branch.length,
+    entriesScanned,
+    matchesFound,
+    sdkSessionId: data.sdkSessionId,
+    syncedThroughEntryId: data.syncedThroughEntryId,
+    lastClaudeModelId: data.lastClaudeModelId,
+  });
+
+  return data;
+}
 
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
@@ -17,27 +66,6 @@ type PersistSessionEntry = (data: SessionContinuity) => void;
 const ACTIVE_CLAUDE_SESSION_MANAGER_KEY = Symbol.for("agentkit.claude-agent-sdk.active-session-manager");
 
 type ClaudeSessionManagerGlobal = typeof globalThis & { [ACTIVE_CLAUDE_SESSION_MANAGER_KEY]?: ClaudeSessionManager };
-
-export type PiSessionManager = HandoffSessionReader & {
-  getSessionId(): string;
-  getLeafId(): string | null | undefined;
-};
-
-export type TurnHandoffPlan =
-  | { skipHandoff: true }
-  | { skipHandoff: false; handoff: string | undefined };
-
-export interface LiveSdkConnection {
-  query: SdkQuery;
-  inputQueue: SdkInputQueue;
-  abort: AbortController;
-}
-
-type ContinuityState =
-  | { kind: "live" }
-  | { kind: "resumable" }
-  | { kind: "stale"; reason: string }
-  | { kind: "cold" };
 
 export class ClaudeSessionManager {
   private readonly sessions = new Map<string, ClaudeSession>();
@@ -66,7 +94,7 @@ export class ClaudeSessionManager {
 
   private constructor(private persistSessionEntry: PersistSessionEntry) { }
 
-  hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
+  hydrateSession(sessionManager: SessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
     const replacing = this.sessions.has(piSessionId);
     this.sessions.get(piSessionId)?.closeLiveQuery("Session hydrated");
@@ -83,7 +111,7 @@ export class ClaudeSessionManager {
     return session;
   }
 
-  currentSession(sessionManager: PiSessionManager): ClaudeSession | undefined {
+  currentSession(sessionManager: SessionManager): ClaudeSession | undefined {
     return this.sessions.get(sessionManager.getSessionId());
   }
 
@@ -98,24 +126,24 @@ export class ClaudeSessionManager {
     return this.sessions.get(piSessionId);
   }
 
-  resetSessionForStructuralChange(sessionManager: PiSessionManager) {
+  resetSessionForStructuralChange(sessionManager: SessionManager) {
     const session = this.currentSession(sessionManager);
     debug("manager:resetSessionForStructuralChange", {
       piSessionId: sessionManager.getSessionId(),
       hasSession: Boolean(session),
     });
-    session?.setHandoffReader(sessionManager);
+    session?.setSessionManager(sessionManager);
     session?.resetContinuity("Structural change");
   }
 
-  markSessionSynced(sessionManager: PiSessionManager, leafId: string) {
+  markSessionSynced(sessionManager: SessionManager, leafId: string) {
     const session = this.currentSession(sessionManager);
     debug("manager:markSessionSynced", {
       piSessionId: sessionManager.getSessionId(),
       leafId,
       hasSession: Boolean(session),
     });
-    session?.setHandoffReader(sessionManager);
+    session?.setSessionManager(sessionManager);
     session?.markSyncedThrough(leafId);
   }
 
@@ -134,11 +162,27 @@ export class ClaudeSessionManager {
   }
 }
 
+type TurnHandoffPlan =
+  | { skipHandoff: true }
+  | { skipHandoff: false; handoff: string | undefined };
+
+interface LiveSdkConnection {
+  query: SdkQuery;
+  inputQueue: SdkInputQueue;
+  abort: AbortController;
+}
+
+type ContinuityState =
+  | { kind: "live" }
+  | { kind: "resumable" }
+  | { kind: "stale"; reason: string }
+  | { kind: "cold" };
+
 export class ClaudeSession {
   readonly piSessionId: string;
 
   private continuity: SessionContinuity;
-  private handoffReader: HandoffSessionReader | undefined;
+  private sessionManager: SessionManager | undefined;
   private activeTurn: ClaudeTurn | null = null;
   private requestedClaudeModelId: string | null = null;
   private liveConnection: LiveSdkConnection | null = null;
@@ -147,7 +191,7 @@ export class ClaudeSession {
   constructor(
     piSessionId: string,
     data?: Partial<SessionContinuity>,
-    sessionManager?: HandoffSessionReader,
+    sessionManager?: SessionManager,
     private readonly persistSessionEntry?: PersistSessionEntry,
   ) {
     this.piSessionId = piSessionId;
@@ -156,7 +200,7 @@ export class ClaudeSession {
       syncedThroughEntryId: data?.syncedThroughEntryId ?? null,
       lastClaudeModelId: data?.lastClaudeModelId ?? null,
     };
-    this.handoffReader = sessionManager;
+    this.sessionManager = sessionManager;
   }
 
   continuityState(): SessionContinuity {
@@ -224,8 +268,8 @@ export class ClaudeSession {
     return turn;
   }
 
-  setHandoffReader(handoffReader: HandoffSessionReader | undefined) {
-    this.handoffReader = handoffReader;
+  setSessionManager(handoffReader: SessionManager | undefined) {
+    this.sessionManager = handoffReader;
   }
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
@@ -286,8 +330,8 @@ export class ClaudeSession {
     if (this.liveConnection && this.continuity.sdkSessionId) return { kind: "live" };
     if (!this.continuity.sdkSessionId) return { kind: "cold" };
     if (!this.continuity.syncedThroughEntryId) return { kind: "stale", reason: "missing-syncedThroughEntryId" };
-    if (!this.handoffReader) return { kind: "stale", reason: "missing-handoffReader" };
-    if (!hasSyncedEntryOnCurrentBranch(this.handoffReader, this.continuity)) {
+    if (!this.sessionManager) return { kind: "stale", reason: "missing-handoffReader" };
+    if (!hasSyncedEntryOnCurrentBranch(this.sessionManager, this.continuity)) {
       return { kind: "stale", reason: "synced-entry-not-on-branch" };
     }
     return { kind: "resumable" };
@@ -305,7 +349,7 @@ export class ClaudeSession {
         this.resetContinuity(`prepareForTurn: ${state.reason}`);
       // falls through to cold
       case "cold": {
-        const handoff = buildPiSessionHandoff(this.handoffReader);
+        const handoff = buildPiSessionHandoff(this.sessionManager);
         debug("session:prepareForTurn", {
           piSessionId: this.piSessionId,
           state: state.kind,
@@ -436,4 +480,3 @@ export class ClaudeTurn {
     this.complete();
   }
 }
-
