@@ -61,7 +61,6 @@ export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
 
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: "https://api.anthropic.com",
-    apiKey: "ANTHROPIC_API_KEY",
     api: API_ID,
     models: PROVIDER_MODELS,
     streamSimple: (model, context, options) => {

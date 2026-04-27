@@ -38,18 +38,17 @@ function resolveClaudeExecutable(): string | undefined {
   }
 }
 
-function createSdkEnv(apiKey?: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
+// Inherit the parent process env so the spawned `claude` binary sees whatever
+// auth the user has configured. If ANTHROPIC_API_KEY is set the CLI uses API
+// billing; otherwise it falls back to OAuth credentials from `claude auth
+// login` (Max/Pro subscription). Don't override or resurrect the API key here
+// — let the user manage their own auth.
+function createSdkEnv(): NodeJS.ProcessEnv {
+  return {
     ...process.env,
     CLAUDE_AGENT_SDK_CLIENT_APP: "agentkit/pi-custom-provider-claude-agent-sdk",
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
   };
-
-  if (apiKey && apiKey !== "ANTHROPIC_API_KEY") {
-    env.ANTHROPIC_API_KEY = apiKey;
-  }
-
-  return env;
 }
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -65,7 +64,7 @@ function shouldCloseLiveQueryAfterTurn(): boolean {
   return process.argv.includes("-p") || process.argv.includes("--print");
 }
 
-const baseQueryOptions = (model: Model<Api>, abortController: AbortController, apiKey?: string) => ({
+const baseQueryOptions = (model: Model<Api>, abortController: AbortController) => ({
   abortController,
   cwd: process.cwd(),
   pathToClaudeCodeExecutable: resolveClaudeExecutable(),
@@ -77,7 +76,7 @@ const baseQueryOptions = (model: Model<Api>, abortController: AbortController, a
     debugFile: "/tmp/pi-claude-code-debug.log",
     stderr: (data: string) => debug("claude-code:stderr", { data }),
   } : {}),
-  env: createSdkEnv(apiKey),
+  env: createSdkEnv(),
 });
 
 function createAbortController(signal?: AbortSignal): AbortController {
@@ -124,7 +123,7 @@ async function runOneShotQuery(
     sdkQuery = query({
       prompt: toSdkPrompt(extractLatestUserPrompt(context)),
       options: {
-        ...baseQueryOptions(model, abortController, options?.apiKey),
+        ...baseQueryOptions(model, abortController),
         allowedTools: [],
         systemPrompt: context.systemPrompt,
       },
@@ -335,7 +334,7 @@ async function ensureLiveQuery(
   const sdkQuery = query({
     prompt: inputQueue,
     options: {
-      ...baseQueryOptions(model, abortController, options?.apiKey),
+      ...baseQueryOptions(model, abortController),
       resume: session.continuityState().sdkSessionId ?? undefined,
       allowedTools: [`${MCP_TOOL_PREFIX}*`],
       permissionMode: "bypassPermissions",
