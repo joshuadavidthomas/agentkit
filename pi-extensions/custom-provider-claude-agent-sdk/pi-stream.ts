@@ -7,7 +7,7 @@ import {
   type ThinkingContent,
   type ToolCall,
 } from "@mariozechner/pi-ai";
-import { debug, flushTally, tally } from "./sdk/debug.js";
+import { debug } from "./sdk/debug.js";
 import type {
   AssistantBackfill,
   FinishedStopReason,
@@ -119,7 +119,6 @@ export class PiStreamState {
     this.output.stopReason = reason;
     this.stream.push({ type: "done", reason, message: this.output });
     this.stream.end();
-    flushTally("parseToolArguments", { stopReason: reason });
     debug("time:turnTotal", {
       ms: Number((performance.now() - this.turnStartedAt).toFixed(2)),
       stopReason: reason,
@@ -525,12 +524,9 @@ function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamStat
 
 function parseToolArguments(partialJson: string, fallback: Record<string, unknown>): Record<string, unknown> {
   if (!partialJson) return fallback;
-  const start = performance.now();
   try {
     return JSON.parse(partialJson) as Record<string, unknown>;
   } catch {
     return fallback;
-  } finally {
-    tally("parseToolArguments", performance.now() - start);
   }
 }

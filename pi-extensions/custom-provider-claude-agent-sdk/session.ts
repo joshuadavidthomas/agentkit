@@ -1,7 +1,7 @@
 import type { ExtensionAPI, SessionManager as PiSessionManager } from "@mariozechner/pi-coding-agent";
 import { buildPiSessionHandoff } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
-import { debug, time } from "./sdk/debug.js";
+import { debug } from "./sdk/debug.js";
 import type { SdkQuery } from "./sdk/query.js";
 import { SdkInputQueue, type SdkUserMessage } from "./sdk/queue.js";
 import { ToolBridge } from "./tools/bridge.js";
@@ -246,12 +246,7 @@ export class ClaudeSession {
       debug("session:setMcpServers", { skipped: "no-live-query", fingerprintBytes: fingerprint.length });
       return;
     }
-    const end = time("setMcpServers");
-    try {
-      await this.liveConnection.query.setMcpServers(servers);
-    } finally {
-      end({ fingerprintBytes: fingerprint.length });
-    }
+    await this.liveConnection.query.setMcpServers(servers);
   }
 
   async setModel(modelId: string) {
