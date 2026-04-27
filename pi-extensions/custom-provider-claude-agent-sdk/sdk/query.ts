@@ -289,12 +289,24 @@ async function runSessionQuery(
         handoff: Boolean(handoff),
         handoffBytes: handoff?.length ?? 0,
         handoffPreview: handoff?.slice(0, 400) ?? null,
+        messages: inputMessages.map((m) => ({
+          shouldQuery: m.shouldQuery,
+          contentBytes: (() => {
+            try { return JSON.stringify(m.message?.content ?? "").length; } catch { return -1; }
+          })(),
+        })),
       });
 
-      for (const message of inputMessages) {
+      const pushStart = performance.now();
+      for (const [index, message] of inputMessages.entries()) {
         if (!session.pushUserMessage(message)) {
           throw new Error("Claude SDK input stream is closed");
         }
+        debug("runSessionQuery:pushed", {
+          index,
+          shouldQuery: message.shouldQuery,
+          msSincePushStart: Math.round(performance.now() - pushStart),
+        });
       }
 
       noOutputTimer = setTimeout(() => {
@@ -408,6 +420,13 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
           outputTokens: message.usage?.output_tokens,
           cacheRead: message.usage?.cache_read_input_tokens,
           cacheCreate: message.usage?.cache_creation_input_tokens,
+        } : {}),
+        ...(message.type === "user" ? {
+          shouldQuery: (message as { shouldQuery?: boolean }).shouldQuery,
+          isReplay: (message as { isReplay?: boolean }).isReplay,
+          contentBytes: (() => {
+            try { return JSON.stringify((message as { message?: { content?: unknown } }).message?.content ?? "").length; } catch { return -1; }
+          })(),
         } : {}),
       });
       const sdkSessionId = extractSessionId(message);
