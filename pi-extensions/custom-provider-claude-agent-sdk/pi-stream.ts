@@ -20,6 +20,14 @@ import type {
 } from "./sdk/events.js";
 import type { ToolBridge } from "./tools/bridge.js";
 import { stripMcpToolName } from "./tools/names.js";
+//
+// Throttle JSON.parse on streaming tool input. Anthropic emits input_json_delta
+// chunks at high frequency; reparsing the entire accumulated buffer on every
+// delta is O(n²) in tool input size and dominates CPU on large Edit/Write
+// payloads. Live consumers see the raw delta immediately; the structured
+// arguments lag by at most this interval, then settle to exact on block_stop.
+const TOOL_INPUT_PARSE_THROTTLE_MS = 50;
+
 interface StreamDelta {
   sourceBlockIndex: number;
   delta: string;
@@ -42,13 +50,6 @@ type ActiveBlock =
   | { type: "thinking"; contentIndex: number }
   | { type: "toolCall"; contentIndex: number; partialJson: string; lastParseAt: number };
 
-// Throttle JSON.parse on streaming tool input. Anthropic emits input_json_delta
-// chunks at high frequency; reparsing the entire accumulated buffer on every
-// delta is O(n²) in tool input size and dominates CPU on large Edit/Write
-// payloads. Live consumers see the raw delta immediately; the structured
-// arguments lag by at most this interval, then settle to exact on block_stop.
-const TOOL_INPUT_PARSE_THROTTLE_MS = 50;
-
 export class PiStreamState {
   readonly output: AssistantMessage;
 
@@ -56,7 +57,6 @@ export class PiStreamState {
   private started = false;
   private isFinished = false;
   private streamEventsReceived = false;
-  private toolCallStarted = false;
   private pendingFinishedStopReason: FinishedStopReason = "stop";
   private readonly turnStartedAt = performance.now();
   private firstDeltaLogged = false;
@@ -148,7 +148,6 @@ export class PiStreamState {
 
   beginMessage(usage?: TurnUsage) {
     this.activeBlocks.clear();
-    this.toolCallStarted = false;
     if (usage) this.applyUsage(usage);
   }
 
@@ -238,7 +237,6 @@ export class PiStreamState {
       argsKeys: args && typeof args === "object" ? Object.keys(args) : [],
       argsBytes: JSON.stringify(args ?? {}).length,
     });
-    this.toolCallStarted = true;
     this.output.content.push({
       type: "toolCall",
       id,
@@ -300,7 +298,6 @@ export class PiStreamState {
 
   beginToolCall({ sourceBlockIndex, id, name, args }: StreamToolCallStart) {
     this.start();
-    this.toolCallStarted = true;
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
     this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "", lastParseAt: 0 });

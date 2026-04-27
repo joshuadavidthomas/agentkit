@@ -1,5 +1,5 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { SessionContinuity, SessionManager } from "./session.js";
+import type { SessionManager } from "./session.js";
 import { debug } from "./sdk/debug.js";
 
 function extractContentText(content: unknown): string {
@@ -108,18 +108,6 @@ function buildFreshSeedHandoff(sessionManager: SessionManager, currentPromptInde
   });
 
   return handoff;
-}
-
-export function hasSyncedEntryOnCurrentBranch(sessionManager: SessionManager, continuity: SessionContinuity): boolean {
-  if (!continuity.syncedThroughEntryId) return false;
-  const branch = sessionManager.getBranch();
-  const found = branch.some((entry) => entry.id === continuity.syncedThroughEntryId);
-  debug("handoff:hasSyncedEntryOnCurrentBranch", {
-    syncedThroughEntryId: continuity.syncedThroughEntryId,
-    branchLength: branch.length,
-    found,
-  });
-  return found;
 }
 
 export function buildPiSessionHandoff(

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, SessionManager as PiSessionManager } from "@mariozechner/pi-coding-agent";
-import { buildPiSessionHandoff, hasSyncedEntryOnCurrentBranch } from "./handoff.js";
+import { buildPiSessionHandoff } from "./handoff.js";
 import type { PiStreamState } from "./pi-stream.js";
 import { debug, time } from "./sdk/debug.js";
 import type { SdkQuery } from "./sdk/query.js";
@@ -170,10 +170,14 @@ interface LiveSdkConnection {
   query: SdkQuery;
   inputQueue: SdkInputQueue;
   abort: AbortController;
+  // Captured from the first SDK message that carries one. Until then the
+  // connection is "starting" — process up, identity unconfirmed.
+  sdkSessionId: string | null;
 }
 
 type ContinuityState =
   | { kind: "live" }
+  | { kind: "starting" }
   | { kind: "resumable" }
   | { kind: "stale"; reason: string }
   | { kind: "cold" };
@@ -215,14 +219,14 @@ export class ClaudeSession {
     return this.liveConnection?.query;
   }
 
-  startLiveQuery(connection: LiveSdkConnection) {
+  startLiveQuery(process: Pick<LiveSdkConnection, "query" | "inputQueue" | "abort">) {
     debug("session:startLiveQuery", {
       piSessionId: this.piSessionId,
       replacingPriorQuery: Boolean(this.liveConnection),
       hasSdkSessionId: Boolean(this.continuity.sdkSessionId),
     });
     this.tearDownLiveConnection();
-    this.liveConnection = connection;
+    this.liveConnection = { ...process, sdkSessionId: null };
   }
 
   pushUserMessage(message: SdkUserMessage): boolean {
@@ -273,6 +277,10 @@ export class ClaudeSession {
   }
 
   captureSdkSessionId(sdkSessionId: string, claudeModelId: string) {
+    if (this.liveConnection) {
+      this.liveConnection.sdkSessionId = sdkSessionId;
+    }
+
     if (this.continuity.sdkSessionId === sdkSessionId && this.continuity.lastClaudeModelId === claudeModelId) return;
     debug("session:captureSdkSessionId", {
       piSessionId: this.piSessionId,
@@ -327,24 +335,43 @@ export class ClaudeSession {
   }
 
   private classifyContinuity(): ContinuityState {
-    if (this.liveConnection && this.continuity.sdkSessionId) return { kind: "live" };
+    if (this.liveConnection?.sdkSessionId) return { kind: "live" };
+    if (this.liveConnection) return { kind: "starting" };
     if (!this.continuity.sdkSessionId) return { kind: "cold" };
     if (!this.continuity.syncedThroughEntryId) return { kind: "stale", reason: "missing-syncedThroughEntryId" };
     if (!this.sessionManager) return { kind: "stale", reason: "missing-handoffReader" };
-    if (!hasSyncedEntryOnCurrentBranch(this.sessionManager, this.continuity)) {
-      return { kind: "stale", reason: "synced-entry-not-on-branch" };
-    }
-    return { kind: "resumable" };
+
+    const branch = this.sessionManager.getBranch();
+    const onBranch = branch.some((entry) => entry.id === this.continuity.syncedThroughEntryId);
+    debug("session:syncedEntryCheck", {
+      syncedThroughEntryId: this.continuity.syncedThroughEntryId,
+      branchLength: branch.length,
+      onBranch,
+    });
+    return onBranch ? { kind: "resumable" } : { kind: "stale", reason: "synced-entry-not-on-branch" };
   }
 
   prepareForTurn(): TurnHandoffPlan {
-    const state = this.classifyContinuity();
+    let state = this.classifyContinuity();
+    // A prior turn left a connection whose sdkSessionId never landed. Tear it
+    // down before classifying the actionable case — otherwise we'd push a fresh
+    // handoff into a stranded connection from before, or skip the handoff
+    // because we mistook the half-started connection for a cold start.
+    if (state.kind === "starting") {
+      debug("session:prepareForTurn", { piSessionId: this.piSessionId, state: "starting", action: "tear-down" });
+      this.closeLiveQuery("Stranded starting connection at turn start");
+      state = this.classifyContinuity();
+    }
 
     switch (state.kind) {
       case "live":
       case "resumable":
         debug("session:prepareForTurn", { piSessionId: this.piSessionId, state: state.kind });
         return { skipHandoff: true };
+      case "starting":
+        // Unreachable — closeLiveQuery clears liveConnection, so the second
+        // classifyContinuity above can't return "starting".
+        throw new Error("classifyContinuity returned starting after closeLiveQuery");
       case "stale":
         this.resetContinuity(`prepareForTurn: ${state.reason}`);
       // falls through to cold
