@@ -199,10 +199,45 @@ export class PiStreamState {
   }
 
   backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): boolean {
-    if (this.output.content.some((existing) => existing.type === "toolCall" && existing.id === id)) {
+    const existing = this.output.content.find((b) => b.type === "toolCall" && b.id === id);
+    if (existing && existing.type === "toolCall") {
+      const existingKeys = existing.arguments ? Object.keys(existing.arguments) : [];
+      const incomingKeys = args && typeof args === "object" ? Object.keys(args) : [];
+
+      // Claude Code's preset emits tool_use as content_block_start with
+      // input: {} and surfaces the real args only via the assistant message
+      // backfill — input_json_delta never fires. Merge backfill args into the
+      // streaming-side block when it would otherwise leave args empty.
+      if (existingKeys.length === 0 && incomingKeys.length > 0) {
+        existing.arguments = args;
+        debug("stream:backfillToolCall", {
+          id,
+          name,
+          outcome: "merged-into-existing",
+          argsKeys: incomingKeys,
+          argsBytes: JSON.stringify(args ?? {}).length,
+        });
+        return false;
+      }
+
+      debug("stream:backfillToolCall", {
+        id,
+        name,
+        outcome: "skipped-already-populated",
+        existingArgsKeys: existingKeys,
+        incomingArgsKeys: incomingKeys,
+        incomingArgsBytes: JSON.stringify(args ?? {}).length,
+      });
       return false;
     }
 
+    debug("stream:backfillToolCall", {
+      id,
+      name,
+      outcome: "added",
+      argsKeys: args && typeof args === "object" ? Object.keys(args) : [],
+      argsBytes: JSON.stringify(args ?? {}).length,
+    });
     this.toolCallStarted = true;
     this.output.content.push({
       type: "toolCall",
@@ -269,6 +304,13 @@ export class PiStreamState {
     this.output.content.push({ type: "toolCall", id, name, arguments: args });
     const contentIndex = this.output.content.length - 1;
     this.activeBlocks.set(sourceBlockIndex, { type: "toolCall", contentIndex, partialJson: "", lastParseAt: 0 });
+    debug("stream:beginToolCall", {
+      sourceBlockIndex,
+      id,
+      name,
+      initialArgsKeys: args && typeof args === "object" ? Object.keys(args) : [],
+      initialArgsBytes: JSON.stringify(args ?? {}).length,
+    });
     this.stream.push({ type: "toolcall_start", contentIndex, partial: this.output });
   }
 
@@ -311,6 +353,14 @@ export class PiStreamState {
       this.stream.push({ type: "thinking_end", contentIndex: active.contentIndex, content: block.thinking, partial: this.output });
     } else if (block?.type === "toolCall" && active.type === "toolCall") {
       block.arguments = parseToolArguments(active.partialJson, block.arguments);
+      debug("stream:finishToolCall", {
+        id: block.id,
+        name: block.name,
+        partialJsonBytes: active.partialJson.length,
+        partialJsonPreview: active.partialJson.slice(0, 400),
+        finalArgsKeys: block.arguments ? Object.keys(block.arguments) : [],
+        finalArgsBytes: JSON.stringify(block.arguments ?? {}).length,
+      });
       this.stream.push({ type: "toolcall_end", contentIndex: active.contentIndex, toolCall: block, partial: this.output });
     }
   }
