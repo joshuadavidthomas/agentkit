@@ -84,10 +84,14 @@ export class PiStreamState {
   }
 
   finishToolUseIfPresent() {
-    if (!this.toolCallStarted) return false;
+    if (!this.hasToolCall()) return false;
 
     this.finish("toolUse");
     return true;
+  }
+
+  hasToolCall() {
+    return this.output.content.some((block) => block.type === "toolCall");
   }
 
   start() {
@@ -120,16 +124,17 @@ export class PiStreamState {
 
   beginMessage(usage?: TurnUsage) {
     this.activeBlocks.clear();
+    this.toolCallStarted = false;
     if (usage) this.applyUsage(usage);
   }
 
   applyUsage(usage: TurnUsage | undefined) {
     if (!usage) return;
 
-    this.output.usage.input = usage.inputTokens ?? this.output.usage.input;
-    this.output.usage.output = usage.outputTokens ?? this.output.usage.output;
-    this.output.usage.cacheRead = usage.cacheReadTokens ?? this.output.usage.cacheRead;
-    this.output.usage.cacheWrite = usage.cacheWriteTokens ?? this.output.usage.cacheWrite;
+    this.output.usage.input = Math.max(this.output.usage.input, usage.inputTokens ?? 0);
+    this.output.usage.output = Math.max(this.output.usage.output, usage.outputTokens ?? 0);
+    this.output.usage.cacheRead = Math.max(this.output.usage.cacheRead, usage.cacheReadTokens ?? 0);
+    this.output.usage.cacheWrite = Math.max(this.output.usage.cacheWrite, usage.cacheWriteTokens ?? 0);
     // Pi uses totalTokens as context/compaction pressure. Claude SDK cache-read
     // tokens are provider billing/cache-hit accounting, not additional context
     // window growth, so keep cacheRead for cost accounting but exclude it from
@@ -141,6 +146,10 @@ export class PiStreamState {
   setStopReason(reason: FinishedStopReason) {
     this.output.stopReason = reason;
     this.pendingFinishedStopReason = reason;
+  }
+
+  hasMeaningfulStopReason(): boolean {
+    return this.pendingFinishedStopReason !== "stop";
   }
 
   finishWithPendingStopReason() {
@@ -165,7 +174,11 @@ export class PiStreamState {
     } as ThinkingContent);
   }
 
-  backfillToolCall(id: string, name: string, args: ToolCall["arguments"]) {
+  backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): boolean {
+    if (this.output.content.some((existing) => existing.type === "toolCall" && existing.id === id)) {
+      return false;
+    }
+
     this.toolCallStarted = true;
     this.output.content.push({
       type: "toolCall",
@@ -173,6 +186,7 @@ export class PiStreamState {
       name,
       arguments: args,
     });
+    return true;
   }
 
   beginTextBlock(sourceBlockIndex: number) {
@@ -268,7 +282,7 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
       state.markStreamingContentReceived();
       return applyTurnEvent(update.event, state, toolBridge);
     case "assistantBackfill":
-      return applyAssistantBackfill(update.backfill, update.usage, state, toolBridge);
+      return applyAssistantBackfill(update.backfill, update.stopReason, update.usage, state, toolBridge);
     case "result":
       return applyTurnResult(update.result, state);
   }
@@ -276,37 +290,39 @@ export function applyTurnUpdate(update: TurnUpdate, state: PiStreamState, toolBr
 
 function applyAssistantBackfill(
   backfill: AssistantBackfill[],
+  stopReason: FinishedStopReason,
   usage: TurnUsage | undefined,
   state: PiStreamState,
   toolBridge: ToolBridge,
 ): boolean {
-  // The assistant SDK message carries the most accurate usage (cache token
-  // stats from the Anthropic API), and arrives between the streamed
-  // message_stop and the SDK result message. Apply usage here so it lands in
-  // the done event, even when stream events already produced the visible
-  // content.
+  // The live SDK stream emits assistant messages with stop_reason: null.
+  // The authoritative stop_reason arrives via stream_event: message_delta.
+  // Don't let the backfill's null→"stop" overwrite a meaningful stop reason
+  // already set by stream events.
+  if (stopReason !== "stop" || !state.hasMeaningfulStopReason()) {
+    state.setStopReason(stopReason);
+  }
   state.applyUsage(usage);
 
-  if (state.acceptsAssistantBackfill() && backfill.length > 0) {
-    toolBridge.beginMessage();
-    for (const item of backfill) {
-      applyAssistantBackfillItem(item, state, toolBridge);
+  if (backfill.length > 0) {
+    if (state.acceptsAssistantBackfill()) {
+      toolBridge.beginMessage();
+      for (const item of backfill) {
+        applyAssistantBackfillItem(item, state, toolBridge);
+      }
+    } else {
+      // Claude Code can emit streamed thinking/text and then later surface the
+      // final tool_use only on assistant backfill. Do not drop those delayed
+      // tool calls just because earlier stream events arrived.
+      for (const item of backfill) {
+        if (item.type === "toolCall") {
+          applyAssistantBackfillItem(item, state, toolBridge);
+        }
+      }
     }
     if (state.finishToolUseIfPresent()) return true;
   }
 
-  // Finish the stream as soon as the assistant SDK message arrives, so the
-  // user-visible "working..." clears without waiting for the SDK result
-  // message. Only do this once visible text is present — some models (e.g.
-  // Haiku with thinking) deliver no text in stream events or the assistant
-  // message and only carry text in the result message; those turns must wait
-  // for applyTurnResult to backfill the text before finishing.
-  const hasText = state.output.content.some(
-    (block) => block.type === "text" && block.text.trim().length > 0,
-  );
-  if (hasText) {
-    state.finishWithPendingStopReason();
-  }
   return false;
 }
 
@@ -331,6 +347,11 @@ function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
   const hasText = state.output.content.some((block) => block.type === "text" && block.text.trim().length > 0);
   if (!hasText && result.text) {
     state.backfillText(result.text);
+  }
+
+  if (result.stopReason === "toolUse" && !state.hasToolCall()) {
+    state.setStopReason("toolUse");
+    return false;
   }
 
   state.finish(result.stopReason);
@@ -408,8 +429,9 @@ function applyAssistantBackfillItem(item: AssistantBackfill, state: PiStreamStat
       return;
     case "toolCall": {
       const name = stripMcpToolName(item.mcpToolName);
-      state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"]);
-      toolBridge.register(item.id);
+      if (state.backfillToolCall(item.id, name, item.input as ToolCall["arguments"])) {
+        toolBridge.register(item.id);
+      }
     }
   }
 }

@@ -10,10 +10,9 @@ type PersistSessionEntry = (data: SessionContinuity) => void;
 
 // Pi can evaluate this extension more than once in the same process: explicit
 // `-e` plus installed extension, reloads, parent sessions plus scouts/subagents.
-// The model registry is shared, so a later instance must not overwrite the
-// registered `streamSimple` function for an active parent turn; tool-result
-// callbacks would then route to an instance with an empty session map. Keep one
-// active Claude session manager as the owner of this provider registration.
+// Keep the session manager global so provider re-registration on reload uses
+// the existing session map instead of routing tool-result callbacks to a fresh,
+// empty manager.
 const ACTIVE_CLAUDE_SESSION_MANAGER_KEY = Symbol.for("agentkit.claude-agent-sdk.active-session-manager");
 
 type ClaudeSessionManagerGlobal = typeof globalThis & { [ACTIVE_CLAUDE_SESSION_MANAGER_KEY]?: ClaudeSessionManager };
@@ -23,9 +22,13 @@ export type PiSessionManager = HandoffSessionReader & {
   getLeafId(): string | null | undefined;
 };
 
-export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager | undefined {
+export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManager {
   const state = globalThis as ClaudeSessionManagerGlobal;
-  if (state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY]) return undefined;
+  const existing = state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY];
+  if (existing) {
+    existing.setPersistSessionEntry((data) => appendContinuity(pi, data));
+    return existing;
+  }
 
   const manager = new ClaudeSessionManager((data) => appendContinuity(pi, data));
   state[ACTIVE_CLAUDE_SESSION_MANAGER_KEY] = manager;
@@ -35,7 +38,11 @@ export function claimClaudeSessionManager(pi: ExtensionAPI): ClaudeSessionManage
 export class ClaudeSessionManager {
   private readonly sessions = new Map<string, ClaudeSession>();
 
-  constructor(private readonly persistSessionEntry: PersistSessionEntry) { }
+  constructor(private persistSessionEntry: PersistSessionEntry) { }
+
+  setPersistSessionEntry(persistSessionEntry: PersistSessionEntry) {
+    this.persistSessionEntry = persistSessionEntry;
+  }
 
   hydrateSession(sessionManager: PiSessionManager): ClaudeSession {
     const piSessionId = sessionManager.getSessionId();
@@ -184,8 +191,8 @@ export class ClaudeSession {
     this.persist();
   }
 
-  resetContinuity() {
-    this.closeLiveQuery();
+  resetContinuity(message = "Session closed") {
+    this.closeLiveQuery(message);
     if (!this.continuity.sdkSessionId && !this.continuity.syncedThroughEntryId && !this.continuity.lastClaudeModelId) return;
 
     this.continuity = {

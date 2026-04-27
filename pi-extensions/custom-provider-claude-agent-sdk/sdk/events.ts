@@ -48,7 +48,7 @@ export type TurnResult =
 
 export type TurnUpdate =
   | { type: "event"; event: TurnEvent }
-  | { type: "assistantBackfill"; backfill: AssistantBackfill[]; usage?: TurnUsage }
+  | { type: "assistantBackfill"; backfill: AssistantBackfill[]; stopReason: FinishedStopReason; usage?: TurnUsage }
   | { type: "result"; result: TurnResult };
 
 export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined {
@@ -61,6 +61,7 @@ export function parseClaudeMessage(message: SDKMessage): TurnUpdate | undefined 
     return {
       type: "assistantBackfill",
       backfill: parseClaudeAssistantMessage(message),
+      stopReason: mapStopReason(message.message.stop_reason),
       usage: parseClaudeAssistantUsage(message.message.usage),
     };
   }

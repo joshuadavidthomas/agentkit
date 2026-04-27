@@ -6,11 +6,6 @@ export interface HandoffSessionReader {
   getEntries(): SessionEntry[];
 }
 
-function truncateText(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars - 1)}…`;
-}
-
 function extractContentText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -32,7 +27,7 @@ function extractContentText(content: unknown): string {
 
     if (block.type === "toolCall") {
       const name = typeof block.name === "string" ? block.name : "tool";
-      const args = block.arguments ? truncateText(JSON.stringify(block.arguments), 800) : "{}";
+      const args = block.arguments ? JSON.stringify(block.arguments) : "{}";
       parts.push(`[Tool call ${name} ${args}]`);
     }
   }
@@ -46,30 +41,30 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
 
   if (entry.role === "user") {
     const text = extractContentText(entry.content);
-    return text ? `User:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `User:\n${text}` : undefined;
   }
 
   if (entry.role === "assistant") {
     const text = extractContentText(entry.content);
-    return text ? `Assistant:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `Assistant:\n${text}` : undefined;
   }
 
   if (entry.role === "toolResult") {
     const toolName = typeof entry.toolName === "string" ? entry.toolName : "tool";
     const text = extractContentText(entry.content);
     const prefix = entry.isError ? `Tool result (${toolName}, error):` : `Tool result (${toolName}):`;
-    return text ? `${prefix}\n${truncateText(text, 4000)}` : prefix;
+    return text ? `${prefix}\n${text}` : prefix;
   }
 
   if (entry.role === "bashExecution") {
     const command = typeof entry.command === "string" ? entry.command : "";
     const output = typeof entry.output === "string" ? entry.output : "";
-    return truncateText(`Ran \`${command}\`\n\n${output || "(no output)"}`, 4000);
+    return `Ran \`${command}\`\n\n${output || "(no output)"}`;
   }
 
   if (entry.role === "custom") {
     const text = extractContentText(entry.content);
-    return text ? `Context:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `Context:\n${text}` : undefined;
   }
 
   if (entry.role === "compactionSummary" && typeof entry.summary === "string") {
@@ -90,7 +85,7 @@ function formatSessionEntryForHandoff(entry: SessionEntry): string | undefined {
 
   if (entry.type === "custom_message") {
     const text = extractContentText(entry.content);
-    return text ? `Context:\n${truncateText(text, 4000)}` : undefined;
+    return text ? `Context:\n${text}` : undefined;
   }
 
   if (entry.type === "model_change") {
@@ -112,10 +107,7 @@ function joinHandoffSections(title: string, sections: string[]): string | undefi
   const cleaned = sections.map((section) => section.trim()).filter(Boolean);
   if (cleaned.length === 0) return undefined;
 
-  return truncateText(
-    `${title}\n\nUse this as authoritative prior conversation history for continuity. Do not answer this handoff by itself; answer only the current user message that follows.\n\n${cleaned.join("\n\n")}`,
-    20000,
-  );
+  return `${title}\n\nUse this as authoritative prior conversation history for continuity. Do not answer this handoff by itself; answer only the current user message that follows.\n\n${cleaned.join("\n\n")}`;
 }
 
 function findCurrentPromptIndex(branch: SessionEntry[]): number {

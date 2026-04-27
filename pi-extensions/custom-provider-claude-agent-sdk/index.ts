@@ -21,7 +21,6 @@ const PROVIDER_MODELS: ProviderModelConfig[] = getModels("anthropic")
 
 export default function claudeAgentSdkProvider(pi: ExtensionAPI) {
   const claudeSessions = claimClaudeSessionManager(pi);
-  if (!claudeSessions) return;
 
   pi.on("session_start", (event, ctx) => {
     const session = claudeSessions.hydrateSession(ctx.sessionManager);
