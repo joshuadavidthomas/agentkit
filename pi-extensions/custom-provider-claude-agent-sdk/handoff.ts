@@ -1,5 +1,5 @@
 import { buildSessionContext, type SessionEntry } from "@mariozechner/pi-coding-agent";
-import { SESSION_ENTRY_TYPE, type SessionContinuity } from "./continuity.js";
+import type { SessionContinuity } from "./continuity.js";
 import { debug } from "./sdk/debug.js";
 
 export interface HandoffSessionReader {
@@ -79,31 +79,6 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
   return undefined;
 }
 
-function formatSessionEntryForHandoff(entry: SessionEntry): string | undefined {
-  if (entry.type === "message") {
-    return formatAgentMessageForHandoff(entry.message);
-  }
-
-  if (entry.type === "custom_message") {
-    const text = extractContentText(entry.content);
-    return text ? `Context:\n${text}` : undefined;
-  }
-
-  if (entry.type === "model_change") {
-    return `Model switched to ${entry.provider}/${entry.modelId}.`;
-  }
-
-  if (entry.type === "compaction") {
-    return `The Pi session compacted part of this interval into the following summary:\n\n<summary>\n${entry.summary}\n</summary>`;
-  }
-
-  if (entry.type === "branch_summary") {
-    return `The following is a summary of a branch that this conversation came back from:\n\n<summary>\n${entry.summary}\n</summary>`;
-  }
-
-  return undefined;
-}
-
 function joinHandoffSections(title: string, sections: string[]): string | undefined {
   const cleaned = sections.map((section) => section.trim()).filter(Boolean);
   if (cleaned.length === 0) return undefined;
@@ -140,54 +115,6 @@ function buildFreshSeedHandoff(sessionManager: HandoffSessionReader, currentProm
   return handoff;
 }
 
-function buildDeltaHandoff(
-  sessionManager: HandoffSessionReader,
-  branch: SessionEntry[],
-  currentPromptIndex: number,
-  syncedThroughEntryId: string,
-): string | undefined {
-  const endIndex = currentPromptIndex >= 0 ? currentPromptIndex : branch.length;
-  const syncedIndex = branch.findIndex((entry) => entry.id === syncedThroughEntryId);
-  if (syncedIndex < 0 || syncedIndex > endIndex) {
-    debug("handoff:delta:fallback-to-fresh", {
-      syncedThroughEntryId,
-      syncedIndex,
-      endIndex,
-      reason: syncedIndex < 0 ? "synced-entry-not-found" : "synced-entry-after-current-prompt",
-    });
-    return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
-  }
-
-  const sections: string[] = [];
-  let compactionTrims = 0;
-  for (const entry of branch.slice(syncedIndex + 1, endIndex)) {
-    if (entry.type === "custom" && entry.customType === SESSION_ENTRY_TYPE) continue;
-
-    const section = formatSessionEntryForHandoff(entry);
-    if (!section) continue;
-
-    if (entry.type === "compaction") {
-      sections.length = 0;
-      compactionTrims += 1;
-    }
-
-    sections.push(section);
-  }
-
-  const handoff = joinHandoffSections("Pi session handoff since Claude Agent SDK last synced:", sections);
-  debug("handoff:delta", {
-    branchLength: branch.length,
-    syncedIndex,
-    endIndex,
-    entriesConsidered: endIndex - (syncedIndex + 1),
-    sections: sections.length,
-    compactionTrims,
-    bytes: handoff?.length ?? 0,
-  });
-
-  return handoff;
-}
-
 export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionReader, continuity: SessionContinuity): boolean {
   if (!continuity.syncedThroughEntryId) return false;
   const branch = sessionManager.getBranch();
@@ -202,7 +129,6 @@ export function hasSyncedEntryOnCurrentBranch(sessionManager: HandoffSessionRead
 
 export function buildPiSessionHandoff(
   sessionManager: HandoffSessionReader | undefined,
-  continuity: SessionContinuity,
 ): string | undefined {
   if (!sessionManager) {
     debug("handoff:buildPiSessionHandoff", { skipped: "no-session-manager" });
@@ -212,22 +138,11 @@ export function buildPiSessionHandoff(
   const branch = sessionManager.getBranch();
   const currentPromptIndex = findCurrentPromptIndex(branch);
 
-  if (!continuity.sdkSessionId || !continuity.syncedThroughEntryId) {
-    debug("handoff:buildPiSessionHandoff", {
-      path: "fresh-seed",
-      reason: !continuity.sdkSessionId ? "no-sdk-session-id" : "no-synced-entry-id",
-      branchLength: branch.length,
-      currentPromptIndex,
-    });
-    return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
-  }
-
   debug("handoff:buildPiSessionHandoff", {
-    path: "delta",
     branchLength: branch.length,
     currentPromptIndex,
   });
-  return buildDeltaHandoff(sessionManager, branch, currentPromptIndex, continuity.syncedThroughEntryId);
+  return buildFreshSeedHandoff(sessionManager, currentPromptIndex);
 }
 
 export function buildContextMessagesHandoff(messages: unknown[]): string | undefined {

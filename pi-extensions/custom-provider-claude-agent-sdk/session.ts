@@ -326,7 +326,7 @@ export class ClaudeSession {
     }
 
     // True cold start (no sdkSessionId, or just reset): build fresh-seed.
-    const handoff = buildPiSessionHandoff(this.handoffReader, this.continuity);
+    const handoff = buildPiSessionHandoff(this.handoffReader);
     debug("session:prepareForTurn", {
       piSessionId: this.piSessionId,
       path: "fresh-seed",
