@@ -243,6 +243,10 @@ export class ClaudeSession {
   }
 
   markSyncedThrough(entryId: string) {
+    if (!this.continuity.sdkSessionId) {
+      debug("session:markSyncedThrough", { entryId, skipped: "no-sdk-session-id" });
+      return;
+    }
     if (this.continuity.syncedThroughEntryId === entryId) {
       debug("session:markSyncedThrough", { entryId, skipped: "unchanged" });
       return;
