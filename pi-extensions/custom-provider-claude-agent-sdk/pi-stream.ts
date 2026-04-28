@@ -157,11 +157,11 @@ export class PiStreamState {
     this.output.usage.output = Math.max(this.output.usage.output, usage.outputTokens ?? 0);
     this.output.usage.cacheRead = Math.max(this.output.usage.cacheRead, usage.cacheReadTokens ?? 0);
     this.output.usage.cacheWrite = Math.max(this.output.usage.cacheWrite, usage.cacheWriteTokens ?? 0);
-    // Pi uses totalTokens as context/compaction pressure. Claude SDK cache-read
-    // tokens are provider billing/cache-hit accounting, not additional context
-    // window growth, so keep cacheRead for cost accounting but exclude it from
-    // totalTokens.
-    this.output.usage.totalTokens = this.output.usage.input + this.output.usage.output + this.output.usage.cacheWrite;
+    this.output.usage.totalTokens =
+      this.output.usage.input
+      + this.output.usage.output
+      + this.output.usage.cacheRead
+      + this.output.usage.cacheWrite;
     calculateCost(this.model, this.output.usage);
   }
 
@@ -413,8 +413,6 @@ function applyAssistantBackfill(
 }
 
 function applyTurnResult(result: TurnResult, state: PiStreamState): boolean {
-  state.applyUsage(result.usage);
-
   if (state.finished) {
     // Stream was already finished by the assistant message path. Apply any
     // final usage tweak from result and detach.
