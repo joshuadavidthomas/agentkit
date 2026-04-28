@@ -197,7 +197,8 @@ export class PiStreamState {
   }
 
   backfillToolCall(id: string, name: string, args: ToolCall["arguments"]): boolean {
-    const existing = this.output.content.find((b) => b.type === "toolCall" && b.id === id);
+    const existingIndex = this.output.content.findIndex((b) => b.type === "toolCall" && b.id === id);
+    const existing = existingIndex >= 0 ? this.output.content[existingIndex] : undefined;
     if (existing && existing.type === "toolCall") {
       const existingKeys = existing.arguments ? Object.keys(existing.arguments) : [];
       const incomingKeys = args && typeof args === "object" ? Object.keys(args) : [];
@@ -205,7 +206,10 @@ export class PiStreamState {
       // Claude Code's preset emits tool_use as content_block_start with
       // input: {} and surfaces the real args only via the assistant message
       // backfill — input_json_delta never fires. Merge backfill args into the
-      // streaming-side block when it would otherwise leave args empty.
+      // streaming-side block when it would otherwise leave args empty, then
+      // re-emit toolcall_end so the host re-renders the inline label with the
+      // real arguments instead of staying stuck on the empty `{}` it saw at
+      // content_block_start.
       if (existingKeys.length === 0 && incomingKeys.length > 0) {
         existing.arguments = args;
         debug("stream:backfillToolCall", {
@@ -214,6 +218,12 @@ export class PiStreamState {
           outcome: "merged-into-existing",
           argsKeys: incomingKeys,
           argsBytes: JSON.stringify(args ?? {}).length,
+        });
+        this.stream.push({
+          type: "toolcall_end",
+          contentIndex: existingIndex,
+          toolCall: existing,
+          partial: this.output,
         });
         return false;
       }
