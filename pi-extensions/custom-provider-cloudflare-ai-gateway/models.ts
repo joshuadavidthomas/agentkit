@@ -1,12 +1,14 @@
 /**
- * Dynamic model loading from models.dev
+ * Dynamic model loading for Cloudflare AI Gateway.
  *
- * Three-layer resolution:
+ * Resolution order at read time:
  *   1. Disk cache (~/.cache/pi/cloudflare-ai-gateway-models.json)
  *   2. Embedded snapshot (works offline, first run)
- *   3. Background fetch to refresh cache for next startup
  *
- * Data source: https://models.dev/api.json (same as OpenCode)
+ * Background refresh order (writes to disk cache for next startup):
+ *   1. Live /compat/models on the configured gateway, intersected with
+ *      models.dev provider data for metadata (preferred — authoritative)
+ *   2. models.dev cloudflare-ai-gateway provider list (curated subset)
  */
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
@@ -16,26 +18,64 @@ import { dirname, join } from "path";
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const PROVIDER_KEY = "cloudflare-ai-gateway";
 
-// Refresh cache if older than 1 hour
 const CACHE_TTL_MS = 60 * 60 * 1000;
+
+// Gateway provider slug -> models.dev provider key.
+// Slugs come from /compat/models id prefixes; models.dev keys are the
+// top-level keys in https://models.dev/api.json.
+const GATEWAY_TO_MODELSDEV_PROVIDER: Record<string, string> = {
+	"openai": "openai",
+	"anthropic": "anthropic",
+	"google-ai-studio": "google",
+	"google-vertex-ai": "google-vertex",
+	"grok": "xai",
+	"groq": "groq",
+	"mistral": "mistral",
+	"cohere": "cohere",
+	"deepseek": "deepseek",
+	"cerebras": "cerebras",
+	"perplexity-ai": "perplexity",
+	"workers-ai": "cloudflare-workers-ai",
+};
+
+export interface GatewayContext {
+	accountId: string;
+	gatewayName: string;
+	token: string;
+}
+
+interface GatewayModel {
+	id: string;
+	cost_in?: number;
+	cost_out?: number;
+	owned_by?: string;
+}
+
+interface GatewayModelsResponse {
+	data: GatewayModel[];
+}
+
+interface ModelsDevApi {
+	[providerKey: string]: ModelsDevProvider;
+}
 
 interface ModelsDevModel {
 	id: string;
-	name: string;
-	reasoning: boolean;
-	modalities: {
-		input: string[];
-		output: string[];
+	name?: string;
+	reasoning?: boolean;
+	modalities?: {
+		input?: string[];
+		output?: string[];
 	};
-	cost: {
-		input: number;
-		output: number;
+	cost?: {
+		input?: number;
+		output?: number;
 		cache_read?: number;
 		cache_write?: number;
 	};
-	limit: {
-		context: number;
-		output: number;
+	limit?: {
+		context?: number;
+		output?: number;
 	};
 }
 
@@ -63,24 +103,24 @@ function getCachePath(): string {
 	return join(homedir(), ".cache", "pi", "cloudflare-ai-gateway-models.json");
 }
 
-function transformModel(model: ModelsDevModel): ModelConfig {
-	const input = model.modalities.input.filter(
+function transformModel(model: ModelsDevModel, idOverride?: string): ModelConfig {
+	const input = (model.modalities?.input ?? []).filter(
 		(m): m is "text" | "image" => m === "text" || m === "image",
 	);
 
 	return {
-		id: model.id,
-		name: model.name,
-		reasoning: model.reasoning,
+		id: idOverride ?? model.id,
+		name: model.name ?? model.id,
+		reasoning: model.reasoning ?? false,
 		input: input.length > 0 ? input : ["text"],
 		cost: {
-			input: model.cost.input ?? 0,
-			output: model.cost.output ?? 0,
-			cacheRead: model.cost.cache_read ?? 0,
-			cacheWrite: model.cost.cache_write ?? 0,
+			input: model.cost?.input ?? 0,
+			output: model.cost?.output ?? 0,
+			cacheRead: model.cost?.cache_read ?? 0,
+			cacheWrite: model.cost?.cache_write ?? 0,
 		},
-		contextWindow: model.limit.context,
-		maxTokens: model.limit.output,
+		contextWindow: model.limit?.context ?? 0,
+		maxTokens: model.limit?.output ?? 0,
 	};
 }
 
@@ -118,36 +158,98 @@ function saveToCache(models: ModelConfig[]): void {
 	}
 }
 
-async function fetchModels(): Promise<ModelConfig[] | null> {
+async function fetchModelsDev(): Promise<ModelsDevApi | null> {
 	try {
 		const response = await fetch(MODELS_DEV_API_URL);
-
 		if (!response.ok) {
 			console.warn(
 				`[Cloudflare AI Gateway] Failed to fetch models.dev: ${response.status} ${response.statusText}`,
 			);
 			return null;
 		}
-
-		const data = (await response.json()) as Record<string, ModelsDevProvider>;
-		const provider = data[PROVIDER_KEY];
-
-		if (!provider?.models) {
-			console.warn(
-				`[Cloudflare AI Gateway] No "${PROVIDER_KEY}" provider found in models.dev data`,
-			);
-			return null;
-		}
-
-		const models = Object.values(provider.models).map(transformModel);
-		models.sort((a, b) => a.id.localeCompare(b.id));
-		return models;
+		return (await response.json()) as ModelsDevApi;
 	} catch (error) {
 		console.warn(
 			`[Cloudflare AI Gateway] Failed to fetch models.dev: ${error instanceof Error ? error.message : error}`,
 		);
 		return null;
 	}
+}
+
+async function fetchGatewayModels(ctx: GatewayContext): Promise<GatewayModelsResponse | null> {
+	const url = `https://gateway.ai.cloudflare.com/v1/${ctx.accountId}/${ctx.gatewayName}/compat/models`;
+	try {
+		const response = await fetch(url, {
+			headers: { Authorization: `Bearer ${ctx.token}` },
+		});
+		if (!response.ok) {
+			console.warn(
+				`[Cloudflare AI Gateway] /compat/models returned ${response.status} ${response.statusText}`,
+			);
+			return null;
+		}
+		return (await response.json()) as GatewayModelsResponse;
+	} catch (error) {
+		console.warn(
+			`[Cloudflare AI Gateway] /compat/models fetch failed: ${error instanceof Error ? error.message : error}`,
+		);
+		return null;
+	}
+}
+
+function enrichGatewayModels(
+	gateway: GatewayModelsResponse,
+	modelsDev: ModelsDevApi,
+): ModelConfig[] {
+	const out: ModelConfig[] = [];
+	for (const entry of gateway.data) {
+		const slash = entry.id.indexOf("/");
+		if (slash <= 0) continue;
+
+		const gwSlug = entry.id.slice(0, slash);
+		const bareId = entry.id.slice(slash + 1);
+
+		const modelsDevKey = GATEWAY_TO_MODELSDEV_PROVIDER[gwSlug];
+		if (!modelsDevKey) continue;
+
+		const provider = modelsDev[modelsDevKey];
+		const match = provider?.models?.[bareId];
+		if (!match) continue;
+
+		out.push(transformModel(match, entry.id));
+	}
+	return out;
+}
+
+async function fetchFromCloudflareGateway(ctx: GatewayContext): Promise<ModelConfig[] | null> {
+	if (!ctx.accountId || !ctx.gatewayName || !ctx.token) return null;
+
+	const [gateway, modelsDev] = await Promise.all([fetchGatewayModels(ctx), fetchModelsDev()]);
+	if (!gateway || !modelsDev) return null;
+
+	const models = enrichGatewayModels(gateway, modelsDev);
+	if (models.length === 0) {
+		console.warn(
+			"[Cloudflare AI Gateway] /compat/models returned no entries that matched models.dev",
+		);
+		return null;
+	}
+	return models;
+}
+
+async function fetchFromModelsDevFallback(): Promise<ModelConfig[] | null> {
+	const data = await fetchModelsDev();
+	if (!data) return null;
+
+	const provider = data[PROVIDER_KEY];
+	if (!provider?.models) {
+		console.warn(
+			`[Cloudflare AI Gateway] No "${PROVIDER_KEY}" provider found in models.dev data`,
+		);
+		return null;
+	}
+
+	return Object.values(provider.models).map((m) => transformModel(m));
 }
 
 function isCacheStale(): boolean {
@@ -166,20 +268,33 @@ function isCacheStale(): boolean {
 }
 
 /**
- * Fetch models from models.dev and update the cache.
- * Non-blocking — errors are logged but don't affect the extension.
+ * Refresh the cache. Tries the gateway's /compat/models first (authoritative
+ * for the user's gateway, requires a token), falls back to the models.dev
+ * cloudflare-ai-gateway provider list.
+ *
+ * Resolves to the freshly fetched + sorted models when the cache was updated,
+ * or `null` when the cache was already fresh (no fetch performed) or the
+ * fetch failed. Errors are caught and logged — the promise never rejects.
  */
-export function refreshModelsInBackground(): void {
-	if (!isCacheStale()) return;
+export function refreshModels(ctx: GatewayContext): Promise<ModelConfig[] | null> {
+	if (!isCacheStale()) return Promise.resolve(null);
 
-	fetchModels()
+	const run = async (): Promise<ModelConfig[] | null> => {
+		return (await fetchFromCloudflareGateway(ctx)) ?? (await fetchFromModelsDevFallback());
+	};
+
+	return run()
 		.then((models) => {
-			if (models && models.length > 0) {
-				saveToCache(models);
-			}
+			if (!models || models.length === 0) return null;
+			models.sort((a, b) => a.id.localeCompare(b.id));
+			saveToCache(models);
+			return models;
 		})
-		.catch(() => {
-			// Silently ignore — we have cache or snapshot as fallback
+		.catch((err) => {
+			console.warn(
+				`[Cloudflare AI Gateway] Background refresh failed: ${err instanceof Error ? err.message : err}`,
+			);
+			return null;
 		});
 }
 

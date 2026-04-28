@@ -39,16 +39,19 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getModels, refreshModelsInBackground } from "./models.js";
+import { type ModelConfig, getModels, refreshModels } from "./models.js";
 
 interface CloudflareConfig {
 	accountId: string;
 	gatewayName: string;
 }
 
+function getAgentDir(): string {
+	return process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+}
+
 function getConfigPath(): string {
-	const agentDir = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-	return join(agentDir, "cloudflare-ai-gateway.json");
+	return join(getAgentDir(), "cloudflare-ai-gateway.json");
 }
 
 function loadConfig(): CloudflareConfig | null {
@@ -78,10 +81,26 @@ function loadConfig(): CloudflareConfig | null {
 	}
 }
 
+function loadTokenFromAuthJson(): string {
+	const authPath = join(getAgentDir(), "auth.json");
+	if (!existsSync(authPath)) return "";
+	try {
+		const auth = JSON.parse(readFileSync(authPath, "utf-8")) as Record<
+			string,
+			{ type?: string; key?: string }
+		>;
+		return auth["cloudflare-ai-gateway"]?.key ?? "";
+	} catch {
+		return "";
+	}
+}
+
 const config = loadConfig();
 
 const CLOUDFLARE_ACCOUNT_ID = config?.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? "";
 const CLOUDFLARE_AI_GATEWAY_NAME = config?.gatewayName ?? process.env.CLOUDFLARE_AI_GATEWAY_NAME ?? "";
+const CLOUDFLARE_AI_GATEWAY_TOKEN =
+	loadTokenFromAuthJson() || (process.env.CLOUDFLARE_AI_GATEWAY_TOKEN ?? "");
 
 const AI_GATEWAY_BASE_URL =
 	CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_AI_GATEWAY_NAME
@@ -97,17 +116,26 @@ export default function (pi: ExtensionAPI) {
 		console.warn("[Cloudflare AI Gateway] Or set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_GATEWAY_NAME environment variables.");
 	}
 
-	const models = getModels();
+	const ctx = {
+		accountId: CLOUDFLARE_ACCOUNT_ID,
+		gatewayName: CLOUDFLARE_AI_GATEWAY_NAME,
+		token: CLOUDFLARE_AI_GATEWAY_TOKEN,
+	};
 
-	pi.registerProvider("cloudflare-ai-gateway", {
-		baseUrl: AI_GATEWAY_BASE_URL,
-		apiKey: "CLOUDFLARE_AI_GATEWAY_TOKEN",
-		api: "openai-completions",
-		models,
-		authHeader: true,
-		headers: {},
+	const register = (models: ModelConfig[]) => {
+		pi.registerProvider("cloudflare-ai-gateway", {
+			baseUrl: AI_GATEWAY_BASE_URL,
+			apiKey: "CLOUDFLARE_AI_GATEWAY_TOKEN",
+			api: "openai-completions",
+			models,
+			authHeader: true,
+			headers: {},
+		});
+	};
+
+	register(getModels());
+
+	refreshModels(ctx).then((fresh) => {
+		if (fresh) register(fresh);
 	});
-
-	// Refresh model cache in background for next startup
-	refreshModelsInBackground();
 }

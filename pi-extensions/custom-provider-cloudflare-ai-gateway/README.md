@@ -65,15 +65,7 @@ export CLOUDFLARE_AI_GATEWAY_TOKEN=your-cloudflare-api-token
 
 #### Option B: BYOK (Store keys in Cloudflare)
 
-Store your upstream provider API keys in the Cloudflare AI Gateway dashboard (OpenAI, Anthropic, etc.). No local API key needed.
-
-#### Option C: Request Headers (Provider keys)
-
-Pass upstream provider keys in request headers. Set via environment variables:
-```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+Store your upstream provider API keys in the Cloudflare AI Gateway dashboard (OpenAI, Anthropic, etc.). No local API key needed for chat requests, but model-list refresh (`/compat/models`) still requires a Cloudflare API token — without one the extension falls back to the cached/snapshot model list.
 
 ## Configuration Summary
 
@@ -116,21 +108,16 @@ pi -e ./packages/coding-agent/examples/extensions/custom-provider-cloudflare-ai-
 
 ## Available Models
 
-The extension includes models from multiple providers:
+The model list is built dynamically. On first run an embedded snapshot is used; in the background the extension refreshes the list and writes it to `~/.cache/pi/cloudflare-ai-gateway-models.json` for the next startup.
 
-### OpenAI (via AI Gateway)
-- `gpt-4o` - GPT-4o with vision
-- `gpt-4o-mini` - Fast, cost-effective GPT-4o-mini
+Resolution order for the background refresh:
 
-### Anthropic (via AI Gateway)
-- `claude-sonnet-4` - Claude Sonnet 4 with reasoning
-- `claude-opus-4` - Claude Opus 4 with reasoning
+1. **Live `/compat/models`** on your configured gateway, intersected with [models.dev](https://models.dev/api.json) for metadata (name, context window, reasoning flag, modalities, cache costs). Requires `accountId` + `gatewayName` + a Cloudflare API token. This is the authoritative list of models routable through your gateway.
+2. **models.dev fallback** — the curated `cloudflare-ai-gateway` provider entry on models.dev (used when no token is available).
 
-### Workers AI (Cloudflare's inference platform)
-- `@cf/meta/llama-3.3-70b-instruct-fp8-fast` - Llama 3.3 70B
-- `@cf/deepseek/deepseek-r1-distill-qwen-32b` - DeepSeek R1 (reasoning model)
+When a refresh succeeds in the background, the provider is automatically re-registered with the fresh list — no `/reload` needed.
 
-**Note:** Edit `index.ts` to add/remove models based on your gateway configuration.
+Providers enriched via models.dev (the only ones that produce models in the final list): `openai`, `anthropic`, `google-ai-studio`, `google-vertex-ai`, `grok`, `groq`, `mistral`, `cohere`, `deepseek`, `cerebras`, `perplexity-ai`, `workers-ai`. Models that exist in your gateway but are not in models.dev (e.g. fine-tunes, dated snapshot variants models.dev hasn't picked up yet, OpenRouter/Bedrock/Azure passthroughs) are dropped from the curated list. To use one of those, add it to the cache file by hand.
 
 ## Cloudflare AI Gateway Features
 
@@ -153,19 +140,10 @@ View request logs, costs, and performance metrics in the Cloudflare dashboard.
 
 ### Adding New Models
 
-Edit the `MODELS` array in `index.ts`:
+The curated list is generated automatically. To add a model that isn't covered:
 
-```typescript
-{
-  id: "your-model-id",  // Must match gateway routing config
-  name: "Display Name",
-  reasoning: false,     // Set to true if model supports extended thinking
-  input: ["text", "image"],
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 128000,
-  maxTokens: 4096
-}
-```
+- **One-off:** edit `~/.cache/pi/cloudflare-ai-gateway-models.json` directly (it'll be overwritten on the next refresh).
+- **Persistent:** extend `GATEWAY_TO_MODELSDEV_PROVIDER` in `models.ts` if a new gateway provider slug needs to be mapped, or extend `SNAPSHOT_MODELS` if you want it shipped with the extension.
 
 ### Using Provider-Specific Endpoints
 
