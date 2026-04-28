@@ -430,6 +430,11 @@ async function consumeLiveQuery(session: ClaudeSession, sdkQuery: ReturnType<typ
         session.captureSdkSessionId(sdkSessionId, modelId);
       }
 
+      if (message.type === "system" && message.subtype === "compact_boundary") {
+        session.markContinuityStale(`SDK ${message.compact_metadata.trigger}-compact`);
+        continue;
+      }
+
       const activeTurn = session.currentTurn();
       const currentState = activeTurn?.streamState();
       if (!activeTurn || !currentState) continue;

@@ -191,6 +191,7 @@ export class ClaudeSession {
   private requestedClaudeModelId: string | null = null;
   private liveConnection: LiveSdkConnection | null = null;
   private mcpFingerprint: string | null = null;
+  private pendingStaleReason: string | null = null;
 
   constructor(
     piSessionId: string,
@@ -319,6 +320,7 @@ export class ClaudeSession {
       hadSyncedEntryId: Boolean(this.continuity.syncedThroughEntryId),
     });
     this.closeLiveQuery(message);
+    this.pendingStaleReason = null;
     if (!this.continuity.sdkSessionId && !this.continuity.syncedThroughEntryId && !this.continuity.lastClaudeModelId) return;
 
     this.continuity = {
@@ -329,7 +331,22 @@ export class ClaudeSession {
     this.persist();
   }
 
+  // The SDK has its own internal auto-compact. When it fires (announced via
+  // SDKCompactBoundaryMessage), we leave the in-flight query untouched and flag
+  // the session so the next prepareForTurn rebuilds context from Pi's transcript
+  // instead of resuming an SDK session whose state has diverged from ours.
+  markContinuityStale(reason: string) {
+    if (this.pendingStaleReason === reason) return;
+    debug("session:markContinuityStale", {
+      piSessionId: this.piSessionId,
+      reason,
+      hasLive: Boolean(this.liveConnection),
+    });
+    this.pendingStaleReason = reason;
+  }
+
   private classifyContinuity(): ContinuityState {
+    if (this.pendingStaleReason) return { kind: "stale", reason: this.pendingStaleReason };
     if (this.liveConnection?.sdkSessionId) return { kind: "live" };
     if (this.liveConnection) return { kind: "starting" };
     if (!this.continuity.sdkSessionId) return { kind: "cold" };

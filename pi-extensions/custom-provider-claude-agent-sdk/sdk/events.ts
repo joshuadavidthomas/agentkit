@@ -43,8 +43,8 @@ export type AssistantBackfill =
   | { type: "toolCall"; id: string; mcpToolName: string; input: unknown };
 
 export type TurnResult =
-  | { type: "error"; message: string; text?: string; usage?: TurnUsage }
-  | { type: "done"; stopReason: FinishedStopReason; text?: string; usage?: TurnUsage };
+  | { type: "error"; message: string; text?: string }
+  | { type: "done"; stopReason: FinishedStopReason; text?: string };
 
 export type TurnUpdate =
   | { type: "event"; event: TurnEvent }
@@ -174,7 +174,6 @@ function isShouldQueryFalseAck(result: SDKResultMessage): boolean {
 }
 
 function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
-  const usage = parseClaudeUsage(result.usage);
   const text = "result" in result && result.result.trim() ? result.result : undefined;
 
   if (result.is_error) {
@@ -182,11 +181,10 @@ function parseClaudeResultMessage(result: SDKResultMessage): TurnResult {
       type: "error",
       message: text ?? (result.subtype === "success" ? "Unknown Claude Agent SDK error" : result.errors.join("\n")),
       text,
-      usage,
     };
   }
 
-  return { type: "done", stopReason: mapStopReason(result.stop_reason), text, usage };
+  return { type: "done", stopReason: mapStopReason(result.stop_reason), text };
 }
 
 function parseClaudeUsage(usage: {
