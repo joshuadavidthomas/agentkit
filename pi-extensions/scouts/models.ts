@@ -85,15 +85,15 @@ export const ORACLE_FAMILY_PARTNERS: Record<string, string[]> = {
 // like `anthropic/claude-opus-4-6` still stay exact.
 export const PRIMARY_PROVIDERS_BY_FAMILY: Record<string, string[]> = {
   anthropic: ["claude-agent-sdk", "anthropic"],
-  openai: ["openai", "openai-codex", "github-copilot"],
+  openai: ["openai-codex", "openai", "github-copilot"],
 };
 
 export const DEFAULT_WORKLOAD_MODEL_POLICY: WorkloadModelPolicy = {
   targetsByProvider: {
     openai: {
       fast: { modelId: "gpt-5.4-mini", thinkingLevel: "low" },
-      balanced: { modelId: "gpt-5.4", thinkingLevel: "medium" },
-      deep: { modelId: "gpt-5.4", thinkingLevel: "xhigh" },
+      balanced: { modelId: "gpt-5.5", thinkingLevel: "medium" },
+      deep: { modelId: "gpt-5.5", thinkingLevel: "high" },
     },
     "openai-codex": {
       fast: { modelId: "gpt-5.4-mini", thinkingLevel: "low" },
