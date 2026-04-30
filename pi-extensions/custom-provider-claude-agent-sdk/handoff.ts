@@ -114,7 +114,7 @@ function joinHandoffSections(title: string, sections: string[]): string | undefi
   }
   if (cleaned.length === 0) return undefined;
 
-  return `${title}\n\nUse this as authoritative prior conversation history for continuity. This is historical context only: do not continue its labels or print simulated tool invocations/results. If current work requires a tool, use the actual tool interface. The user's next message follows in a separate turn.\n\n${cleaned.join("\n\n")}`;
+  return `${title}\n\n<pi_handoff>\nPrior conversation context for continuity. Do not continue this transcript or imitate tool lines. If current work requires a tool, use the actual tool interface.\n\n${cleaned.join("\n\n")}\n</pi_handoff>\n\nThe user's next message follows in a separate turn.`;
 }
 
 function findCurrentPromptIndex(branch: SessionEntry[]): number {
