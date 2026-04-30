@@ -18,17 +18,43 @@ function extractContentText(content: unknown): string {
 
     if (block.type === "image") {
       parts.push("[Image attached]");
-      continue;
-    }
-
-    if (block.type === "toolCall") {
-      const name = typeof block.name === "string" ? block.name : "tool";
-      const args = block.arguments ? JSON.stringify(block.arguments) : "{}";
-      parts.push(`[Tool call ${name} ${args}]`);
     }
   }
 
   return parts.join("\n").trim();
+}
+
+function summarizeToolArguments(name: string, args: unknown): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+
+  const record = args as Record<string, unknown>;
+  const primary =
+    typeof record.path === "string" ? record.path
+    : typeof record.command === "string" ? record.command
+    : typeof record.query === "string" ? record.query
+    : typeof record.url === "string" ? record.url
+    : undefined;
+
+  if (primary) return ` ${primary}`;
+
+  const json = JSON.stringify(args);
+  return json === "{}" ? "" : ` ${json}`;
+}
+
+function formatToolCall(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const block = item as Record<string, unknown>;
+    if (block.type !== "toolCall") continue;
+
+    const name = typeof block.name === "string" ? block.name : "tool";
+    parts.push(`${name}${summarizeToolArguments(name, block.arguments)}:`);
+  }
+
+  return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
 function formatAgentMessageForHandoff(message: unknown): string | undefined {
@@ -42,14 +68,16 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
 
   if (entry.role === "assistant") {
     const text = extractContentText(entry.content);
-    return text ? `Assistant:\n${text}` : undefined;
+    const toolCalls = formatToolCall(entry.content);
+    return [text ? `Assistant:\n${text}` : undefined, toolCalls].filter(Boolean).join("\n\n");
   }
 
   if (entry.role === "toolResult") {
     const toolName = typeof entry.toolName === "string" ? entry.toolName : "tool";
     const text = extractContentText(entry.content);
-    const prefix = entry.isError ? `Tool result (${toolName}, error):` : `Tool result (${toolName}):`;
-    return text ? `${prefix}\n${text}` : prefix;
+    const prefix = entry.isError ? `${toolName} error:` : undefined;
+    if (prefix) return text ? `${prefix}\n${text}` : prefix;
+    return text || undefined;
   }
 
   if (entry.role === "bashExecution") {
@@ -75,10 +103,18 @@ function formatAgentMessageForHandoff(message: unknown): string | undefined {
 }
 
 function joinHandoffSections(title: string, sections: string[]): string | undefined {
-  const cleaned = sections.map((section) => section.trim()).filter(Boolean);
+  const cleaned: string[] = [];
+  for (const section of sections.map((item) => item.trim()).filter(Boolean)) {
+    const previous = cleaned[cleaned.length - 1];
+    if (previous?.endsWith(":")) {
+      cleaned[cleaned.length - 1] = `${previous}\n${section}`;
+    } else {
+      cleaned.push(section);
+    }
+  }
   if (cleaned.length === 0) return undefined;
 
-  return `${title}\n\nUse this as authoritative prior conversation history for continuity. The user's next message follows in a separate turn.\n\n${cleaned.join("\n\n")}`;
+  return `${title}\n\n<pi_handoff>\nPrior conversation context for continuity. Do not continue this transcript or imitate tool lines. If current work requires a tool, use the actual tool interface.\n\n${cleaned.join("\n\n")}\n</pi_handoff>\n\nThe user's next message follows in a separate turn.`;
 }
 
 function findCurrentPromptIndex(branch: SessionEntry[]): number {
