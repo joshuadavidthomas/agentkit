@@ -36,12 +36,6 @@ When the assistant asks multiple questions, `/answer` (or `Ctrl+.`) extracts the
 
 Integrates [Beans](https://github.com/hmans/beans) with pi by running `beans prime` in a project using Beans to track issues and injecting its output into the system prompt at session start and after compaction.
 
-#### [custom-provider-cloudflare-ai-gateway](./pi-extensions/custom-provider-cloudflare-ai-gateway/)
-
-Custom provider that routes AI models through [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/)'s OpenAI-compatible endpoint. Supports multiple upstream providers (OpenAI, Anthropic, Workers AI) through a unified interface with Cloudflare's observability, caching, and rate limiting.
-
-Model definitions are sourced from [models.dev](https://models.dev) (65+ models), cached locally at `~/.cache/pi/cloudflare-ai-gateway-models.json`, and refreshed hourly in the background. An embedded snapshot provides offline/first-run support. Configure via `~/.pi/agent/cloudflare-ai-gateway.json` with your account ID and gateway name.
-
 #### [custom-provider-claude-agent-sdk](./pi-extensions/custom-provider-claude-agent-sdk/)
 
 Claude Agent SDK provider for pi using Anthropic's stable `query()` API. It registers the `claude-agent-sdk` provider and mirrors pi's built-in Anthropic Claude model list, so model IDs look like `claude-agent-sdk/claude-sonnet-4-6`.
@@ -49,14 +43,6 @@ Claude Agent SDK provider for pi using Anthropic's stable `query()` API. It regi
 The provider runs one live streaming SDK query per active pi session/branch. Claude sees pi tools through an in-process MCP server, but pi still executes the tools, renders them, records tool calls/results, and applies its normal permission and extension hooks. Built-in Claude Code tools are disabled so tool execution stays pi-native.
 
 Session continuity is persisted in pi custom session entries and restored on resume. Structural boundaries such as `/compact`, `/new`, forks, and branch/tree switches close/reset the live SDK query as needed; model switching away and back closes the process without resetting SDK continuity for the same pi session. Print mode closes the live query after each final turn so CLI invocations exit.
-
-#### [custom-provider-zai](./pi-extensions/custom-provider-zai/)
-
-Vendored from [vedang/agents](https://github.com/vedang/agents).
-
-Custom provider for [ZAI](https://z.ai/) GLM models through Cerebras and ZAI endpoints. Supports GLM-4.7 (via Cerebras for fast inference, or via ZAI with reasoning), and GLM-5 (via ZAI with reasoning).
-
-Routes requests to the correct backend based on model ID, with per-request sampling knobs (temperature, top_p, clear_thinking) configurable via environment variables or options. Requires `CEREBRAS_API_KEY` and/or `ZAI_API_KEY` (via config file or environment variables).
 
 #### [dcg](./pi-extensions/dcg.ts)
 
@@ -307,8 +293,6 @@ Rust skills reference and adapt guidance from several sources, including:
 - [The Typestate Pattern in Rust](https://cliffle.com/blog/rust-typestate/) by Cliff L. Biffle
 
 AI writing tropes skill from [Xe/site](https://github.com/Xe/site) (zlib, Christine Dodrill). Content sourced from [tropes.fyi](https://tropes.fyi).
-
-Z.ai custom pi provider extension from [vedang/agents](https://github.com/vedang/agents) ([DWTFYWT](https://github.com/vedang/agents/blob/49d1e6984268cb1604d0bcc084cc7241ced0a4e8/LICENSE.txt), Vedang Manerikar).
 
 Peon-ping pi extension uses the [peon-ping](https://github.com/PeonPing/peon-ping) sound pack registry and [OpenPeon](https://github.com/PeonPing/og-packs) sound packs (CC-BY-NC-4.0).
 
