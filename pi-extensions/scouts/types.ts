@@ -30,6 +30,7 @@ export interface ScoutDetails {
   status: ScoutStatus;
   subagentProvider?: string;
   subagentModelId?: string;
+  summaryPath?: string;
   runs: ScoutRunDetails[];
 }
 

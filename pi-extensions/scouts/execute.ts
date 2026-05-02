@@ -3,7 +3,11 @@
 // Handles session creation, model resolution with fallback, abort propagation,
 // turn budget enforcement, event tracking, and final result construction.
 
+import { randomBytes } from "node:crypto";
 import events from "node:events";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Api, Model, ThinkingLevel } from "@mariozechner/pi-ai";
 import type {
@@ -64,6 +68,34 @@ const EVENTTARGET_MAX_LISTENERS_STATE_KEY = Symbol.for("pi.eventTargetMaxListene
 type BuiltinToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
 const BUILTIN_TOOL_NAMES = new Set<BuiltinToolName>(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const SINGLE_SCOUT_UPDATE_INTERVAL_MS = 150;
+
+function getTempFilePath(scoutName: string): string {
+  const id = randomBytes(8).toString("hex");
+  const safeName = scoutName.replace(/[^a-z0-9_-]/gi, "-").toLowerCase() || "scout";
+  return join(tmpdir(), `pi-${safeName}-${id}.log`);
+}
+
+function saveSummary(scoutName: string, output: string): string | undefined {
+  const summaryPath = getTempFilePath(scoutName);
+  try {
+    writeFileSync(summaryPath, output, "utf8");
+    return summaryPath;
+  } catch {
+    return undefined;
+  }
+}
+
+function appendSummaryNotice(output: string, summaryPath: string | undefined): string {
+  if (!summaryPath) return output;
+
+  const notice = `[saved to: ${summaryPath}]`;
+  const summaryHeadingPattern = /^(#{1,6}[ \t]*)?Summary[ \t]*$/im;
+  if (summaryHeadingPattern.test(output)) {
+    return output.replace(summaryHeadingPattern, (_match, hashes = "") => `${hashes}Summary ${notice}`);
+  }
+
+  return `Summary ${notice}\n${output}`;
+}
 
 type EventTargetMaxListenersState = { depth: number; savedDefault?: number };
 type ScoutExecutionResult = {
@@ -266,9 +298,11 @@ class ScoutWorkflow {
     run.summaryText = this.planningError;
     run.endedAt = Date.now();
 
+    const summaryPath = saveSummary(this.config.name, this.planningError!);
+
     return {
-      content: [{ type: "text", text: this.planningError! }],
-      details: { mode: "single", status: "error", runs: this.runs } satisfies ScoutDetails,
+      content: [{ type: "text", text: appendSummaryNotice(this.planningError!, summaryPath) }],
+      details: { mode: "single", status: "error", summaryPath, runs: this.runs } satisfies ScoutDetails,
       isError: true,
     };
   }
@@ -551,14 +585,18 @@ class ScoutWorkflow {
   private buildResult(): ScoutExecutionResult {
     const run = this.currentRun();
     const status = computeOverallStatus(this.runs);
+    const output = run.summaryText ?? "(no output)";
+    const summaryPath = saveSummary(this.config.name, output);
+
     return {
-      content: [{ type: "text", text: run.summaryText ?? "(no output)" }],
+      content: [{ type: "text", text: appendSummaryNotice(output, summaryPath) }],
       details: {
         mode: "single",
         status,
         runs: this.runs,
         subagentProvider: this.currentModel?.provider,
         subagentModelId: this.currentModel?.id,
+        summaryPath,
       } satisfies ScoutDetails,
       isError: status === "error",
     };

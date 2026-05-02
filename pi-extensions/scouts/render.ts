@@ -232,7 +232,7 @@ class ScoutToolListComponent extends Container {
 function stripLeadingSummaryHeading(text: string): string {
   return text
     .trim()
-    .replace(/^(?:#{1,6}[ \t]*)?Summary[ \t]*\r?\n(?:[ \t]*\r?\n)*/i, "");
+    .replace(/^(?:#{1,6}[ \t]*)?Summary(?:[ \t]*\[[^\r\n]*\])?[ \t]*\r?\n(?:[ \t]*\r?\n)*/i, "");
 }
 
 function compactPreviewLines(text: string, maxLines: number): string {
@@ -360,7 +360,7 @@ class ScoutResultBodyComponent extends Container {
   private toolList = new ScoutToolListComponent();
   private textList = new ScoutTextListComponent();
 
-  update(status: ScoutStatus, run: ScoutRunDetails, expanded: boolean, theme: Theme): void {
+  update(status: ScoutStatus, run: ScoutRunDetails, expanded: boolean, theme: Theme, summaryPath?: string): void {
     this.clear();
 
     const toolItems = run.displayItems.filter((item): item is Extract<DisplayItem, { type: "tool" }> => item.type === "tool");
@@ -426,7 +426,8 @@ class ScoutResultBodyComponent extends Container {
       } else {
         this.addChild(this.topSpacer);
       }
-      this.summaryLabelText.setText(theme.fg("dim", "Summary"));
+      const summaryLabel = summaryPath ? `Summary [saved to: ${summaryPath}]` : "Summary";
+      this.summaryLabelText.setText(theme.fg("dim", summaryLabel));
       this.addChild(this.summaryLabelText);
       const visibleTextItems = showExpanded ? textItems : textItems.slice(-1);
       const collapsedPreviewLines = parallelCompact
@@ -445,7 +446,6 @@ class ScoutResultBodyComponent extends Container {
     }
 
     if (hasCondensedDetails && canExpand) {
-      this.addChild(this.summarySpacer);
       this.expandHintText.setText(theme.fg("dim", keyHint("app.tools.expand", "to expand details")));
       this.addChild(this.expandHintText);
     }
@@ -456,7 +456,6 @@ class ScoutDetailsComponent extends Container {
   private titleText = new Text("", 0, 0);
   private promptText = new Text("", 0, 0);
   private body = new ScoutResultBodyComponent();
-  private footerSpacer = new Spacer(1);
   private statusLine = new ScoutResultStatusComponent();
 
   constructor(
@@ -495,14 +494,13 @@ class ScoutDetailsComponent extends Container {
 
     this.titleText.setText(titleParts.join(" "));
     this.promptText.setText(theme.fg("muted", promptText));
-    this.body.update(status, run, options.expanded, theme);
+    this.body.update(status, run, options.expanded, theme, details.summaryPath);
     this.statusLine.update(details, status, run, theme, requestRender);
 
     this.clear();
     this.addChild(this.titleText);
     if (promptText) this.addChild(this.promptText);
     this.addChild(this.body);
-    this.addChild(this.footerSpacer);
     this.addChild(this.statusLine);
   }
 }
